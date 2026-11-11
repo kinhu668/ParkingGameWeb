@@ -1,0 +1,19 @@
+{
+  "hud.speed": "車速",
+  "hud.speedUnit": "mph",
+  "hud.controls": "操作",
+  "hud.controlDrive": "油門／倒車",
+  "hud.controlSteer": "轉向",
+  "hud.controlHandbrake": "手煞車",
+  "hud.controlRestart": "重來",
+  "hud.keySpace": "空白鍵",
+  "hud.language": "切換語言",
+  "hud.languageTarget": "English",
+  "status.parked": "停車成功！",
+  "status.restartHint": "按 R 重來",
+  "show.unknown": "找不到這個展示物件，可用的有：",
+  "bench.running": "效能測試中…",
+  "bench.avgFps": "平均 FPS",
+  "bench.low1": "最低 1% FPS",
+  "bench.drawCalls": "繪製呼叫數"
+}

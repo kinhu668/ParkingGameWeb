@@ -1,0 +1,146 @@
+/* 介面樣式：疊在畫布上的 HUD。只用系統字型，不內嵌、不下載任何字型檔。 */
+
+:root {
+  --ui-font: system-ui, 'PingFang TC', 'Microsoft JhengHei', 'Noto Sans TC', 'Noto Sans CJK TC',
+    sans-serif;
+  --ui-text: #f4f6f8;
+  --ui-text-dim: rgb(244 246 248 / 0.72);
+  --ui-panel: rgb(16 20 26 / 0.58);
+  --ui-panel-hover: rgb(34 42 54 / 0.74);
+  --ui-border: rgb(255 255 255 / 0.16);
+  --ui-gap: 16px;
+}
+
+body {
+  font-family: var(--ui-font);
+}
+
+/* HUD 蓋滿整個畫面但不擋滑鼠；只有按鈕接收點擊。 */
+#hud {
+  position: fixed;
+  inset: 0;
+  padding: max(var(--ui-gap), env(safe-area-inset-top)) max(var(--ui-gap), env(safe-area-inset-right))
+    max(var(--ui-gap), env(safe-area-inset-bottom)) max(var(--ui-gap), env(safe-area-inset-left));
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto 1fr;
+  gap: var(--ui-gap);
+  align-items: start;
+  pointer-events: none;
+  user-select: none;
+  color: var(--ui-text);
+  font-family: var(--ui-font);
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.hud-panel {
+  border: 1px solid var(--ui-border);
+  border-radius: 12px;
+  background: var(--ui-panel);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.28);
+}
+
+/* 車速：左上 */
+.hud-speed {
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: start;
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: baseline;
+  column-gap: 6px;
+  padding: 10px 18px 12px;
+}
+
+.hud-speed-label {
+  grid-column: 1 / -1;
+  color: var(--ui-text-dim);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+}
+
+.hud-speed-value {
+  min-width: 2.6ch;
+  font-size: 40px;
+  font-weight: 600;
+  line-height: 1.1;
+  text-align: right;
+  /* 數字等寬，車速變動時不左右抖動。 */
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-speed-unit {
+  color: var(--ui-text-dim);
+  font-size: 16px;
+}
+
+/* 語言按鈕：右上 */
+.hud-language {
+  grid-column: 2;
+  grid-row: 1;
+  padding: 9px 16px;
+  color: inherit;
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: background-color 0.15s ease;
+}
+
+.hud-language:hover {
+  background: var(--ui-panel-hover);
+}
+
+.hud-language:focus-visible {
+  outline: 2px solid var(--ui-text);
+  outline-offset: 2px;
+}
+
+/* 操作說明：左下 */
+.hud-controls {
+  grid-column: 1;
+  grid-row: 2;
+  align-self: end;
+  justify-self: start;
+  padding: 12px 18px 14px;
+}
+
+.hud-controls-title {
+  margin-bottom: 8px;
+  color: var(--ui-text-dim);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+}
+
+.hud-controls-list {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  gap: 7px 14px;
+  margin: 0;
+}
+
+.hud-controls-keys {
+  display: flex;
+  gap: 4px;
+}
+
+.hud-controls-action {
+  margin: 0;
+}
+
+.hud-key {
+  display: inline-block;
+  min-width: 1.5em;
+  padding: 1px 6px;
+  border: 1px solid var(--ui-border);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  background: rgb(255 255 255 / 0.1);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+}

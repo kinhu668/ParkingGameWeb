@@ -1,0 +1,19 @@
+{
+  "hud.speed": "Speed",
+  "hud.speedUnit": "mph",
+  "hud.controls": "Controls",
+  "hud.controlDrive": "Throttle / Reverse",
+  "hud.controlSteer": "Steer",
+  "hud.controlHandbrake": "Handbrake",
+  "hud.controlRestart": "Restart",
+  "hud.keySpace": "Space",
+  "hud.language": "Switch language",
+  "hud.languageTarget": "繁體中文",
+  "status.parked": "Parked!",
+  "status.restartHint": "Press R to restart",
+  "show.unknown": "Unknown showcase object. Available:",
+  "bench.running": "Benchmark running…",
+  "bench.avgFps": "Average FPS",
+  "bench.low1": "1% low FPS",
+  "bench.drawCalls": "Draw calls"
+}
