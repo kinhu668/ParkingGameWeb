@@ -1,8 +1,9 @@
-// HUD 裡不需要 DOM 就能驗證的部分：車速文字與語言按鈕的切換目標。
-import { describe, expect, test } from 'vitest';
-import { LOCALES } from '../src/core/i18n';
+// HUD 裡不需要 DOM 就能驗證的部分：車速文字、語言按鈕的切換目標、鏡頭名稱的翻譯鍵。
+import { beforeEach, describe, expect, test } from 'vitest';
+import { GAME_CAMERA_VIEWS } from '../src/core/cameraView';
+import { LOCALES, setLocale, t } from '../src/core/i18n';
 import { mphToMps } from '../src/core/units';
-import { formatSpeedMph, otherLocale } from '../src/ui/hud';
+import { cameraViewLabelKey, formatSpeedMph, otherLocale } from '../src/ui/hud';
 
 describe('formatSpeedMph', () => {
   test('m/s 換成 mph，固定一位小數', () => {
@@ -26,5 +27,28 @@ describe('otherLocale', () => {
     for (const locale of LOCALES) {
       expect(otherLocale(otherLocale(locale))).toBe(locale);
     }
+  });
+});
+
+describe('cameraViewLabelKey：鏡頭名稱', () => {
+  beforeEach(() => {
+    setLocale('zh-TW');
+  });
+
+  test('每個鏡頭模式各有自己的名稱，沒有兩個模式共用', () => {
+    const keys = GAME_CAMERA_VIEWS.map(cameraViewLabelKey);
+    expect(new Set(keys).size).toBe(GAME_CAMERA_VIEWS.length);
+  });
+
+  test.each([
+    ['chase_near', '近距離跟車', 'Chase Cam (Near)'],
+    ['chase_far', '遠距離跟車', 'Chase Cam (Far)'],
+    ['hood', '引擎蓋', 'Hood Cam'],
+    ['cockpit', '駕駛座', 'Cockpit'],
+    ['top', '俯視', 'Top-Down'],
+  ] as const)('%s：中文「%s」、英文 “%s”，切換語言後跟著變', (view, chinese, english) => {
+    expect(t(cameraViewLabelKey(view))).toBe(chinese);
+    setLocale('en');
+    expect(t(cameraViewLabelKey(view))).toBe(english);
   });
 });

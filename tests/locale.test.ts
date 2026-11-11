@@ -49,6 +49,17 @@ describe('翻譯檔', () => {
     expect(Object.keys(MESSAGES[locale] ?? {})).toEqual(expect.arrayContaining(PLANNED_KEYS));
   });
 
+  test('操作說明有「切換鏡頭」，五個鏡頭模式各有名稱', () => {
+    expect(zhTW['hud.controlCamera']).toBe('切換鏡頭');
+    expect(en['hud.controlCamera']).toBe('Change camera');
+    for (const locale of Object.keys(MESSAGES)) {
+      const cameraKeys = Object.keys(MESSAGES[locale] ?? {}).filter((key) => key.startsWith('camera.'));
+      expect(cameraKeys.sort(), locale).toEqual(
+        ['camera.chase_far', 'camera.chase_near', 'camera.cockpit', 'camera.hood', 'camera.top'],
+      );
+    }
+  });
+
   test('中文版真的是中文、英文版真的是英文（防止兩份檔貼反）', () => {
     expect(zhTW['hud.speed']).toMatch(/[一-鿿]/);
     expect(en['hud.speed']).toMatch(/^[\x20-\x7e]+$/);
