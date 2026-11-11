@@ -58,7 +58,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = 
   medium: {
     level: 'medium',
     tireMarks: { maxSegments: 160, lifetimeS: 10 },
-    particles: { dust: 24, leaves: 36 },
+    particles: { dust: 64, leaves: 36 },
     headlights: { groundPool: true, spotLights: 0 },
     maxPixelRatio: 1.5,
     toneMapping: 'agx',
@@ -89,7 +89,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = 
   high: {
     level: 'high',
     tireMarks: { maxSegments: 360, lifetimeS: 16 },
-    particles: { dust: 64, leaves: 100 },
+    particles: { dust: 110, leaves: 100 },
     headlights: { groundPool: true, spotLights: 1 },
     maxPixelRatio: 2,
     toneMapping: 'agx',
@@ -120,7 +120,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = 
   ultra: {
     level: 'ultra',
     tireMarks: { maxSegments: 600, lifetimeS: 24 },
-    particles: { dust: 96, leaves: 160 },
+    particles: { dust: 160, leaves: 160 },
     headlights: { groundPool: true, spotLights: 2 },
     maxPixelRatio: 2,
     toneMapping: 'agx',
@@ -980,15 +980,18 @@ export const PARTICLE_CONFIG = {
   },
 
   dust: {
-    /** 受黃昏光的塵土色，以及一顆粒子最濃時的不透明度（很淡，疊幾顆才看得出來）。 */
-    color: 0xa89b8a,
-    opacity: 0.2,
+    /**
+     * 受黃昏光的塵土色（比柏油亮、偏暖，在陰影裡的地面上也分得出來），以及一顆粒子最濃時的不透明度：
+     * 單顆仍是半透明的薄霧，幾顆疊在後輪旁才是一團看得出來的揚塵，蓋不住標線。
+     */
+    color: 0xcfbfa3,
+    opacity: 0.34,
     /** 粒子的直徑：剛揚起與消失前。 */
-    startSizeM: ftToM(1.1),
-    endSizeM: ftToM(3.4),
+    startSizeM: ftToM(1.3),
+    endSizeM: ftToM(3.8),
     /** 壽命（秒）的範圍。 */
-    minLifetimeS: 0.9,
-    maxLifetimeS: 1.7,
+    minLifetimeS: 1.1,
+    maxLifetimeS: 2.0,
     /** 車速低於這個值不揚塵。 */
     minSpeedMps: mphToMps(0.6),
     /** 每走 1 公尺揚起的粒子數 = 粒子上限 × 這個比例（上限小的級別揚得少，粒子不會還沒淡掉就被蓋掉）。 */

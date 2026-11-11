@@ -357,8 +357,28 @@ describe('灰塵 dust', () => {
     expect(dustOpacity(0.8)).toBeLessThan(dustOpacity(0.5));
     expect(dustOpacity(1)).toBe(0);
     expect(dustOpacity(Infinity)).toBe(0);
-    expect(PARTICLE_CONFIG.dust.opacity).toBeLessThanOrEqual(0.25);
+    // 單顆仍是半透明的薄霧（蓋不住標線），但不會淡到看不見。
+    expect(PARTICLE_CONFIG.dust.opacity).toBeLessThanOrEqual(0.4);
+    expect(PARTICLE_CONFIG.dust.opacity).toBeGreaterThanOrEqual(0.3);
   });
+
+  test.each(['medium', 'high', 'ultra'] as const)(
+    '%s：倒車 5 m 揚起一團看得出來的灰塵（同時存在的粒子夠多），粒子上限夠用',
+    (level) => {
+      const capacity = QUALITY_PRESETS[level].particles.dust;
+      const cloud = createDustCloud(capacity, DEFAULT_SEED);
+      const start = poseAt(0, 0);
+      cloud.advance(start, DT);
+      // 倒車的車速約 9 mph（4 m/s）：每幀退 4 m/s × DT。
+      const stepM = -4 * DT;
+      const steps = Math.round(5 / Math.abs(stepM));
+      const spawned = drive(cloud, start, stepM, steps);
+      expect(spawned).toBeGreaterThanOrEqual(18);
+      expect(cloud.liveCount()).toBeGreaterThanOrEqual(14);
+      // 直線等速時還沒用到上限：最舊的粒子是自己淡掉的，不是被蓋掉的。
+      expect(cloud.liveCount()).toBeLessThan(capacity);
+    },
+  );
 
   test('貼圖是程式裡畫的柔邊圓點：中心不透明、四角透明、每次相同', () => {
     const size = PARTICLE_CONFIG.dust.spriteSizePx;
@@ -507,6 +527,10 @@ describe('效果的畫質級別 createSceneEffects', () => {
     expect(QUALITY_PRESETS.high.particles.leaves).toBeGreaterThan(
       QUALITY_PRESETS.medium.particles.leaves,
     );
+    // medium 也要有足夠的灰塵才看得出來；級別之間有明顯差距。
+    expect(QUALITY_PRESETS.medium.particles.dust).toBeGreaterThanOrEqual(48);
+    expect(QUALITY_PRESETS.high.particles.dust).toBeGreaterThan(QUALITY_PRESETS.medium.particles.dust);
+    expect(QUALITY_PRESETS.ultra.particles.dust).toBeGreaterThan(QUALITY_PRESETS.high.particles.dust);
     // 克制：最高級別的粒子也只有幾百個。
     expect(QUALITY_PRESETS.ultra.particles.dust).toBeLessThanOrEqual(200);
     expect(QUALITY_PRESETS.ultra.particles.leaves).toBeLessThanOrEqual(300);
