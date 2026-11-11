@@ -404,14 +404,37 @@ export const GROUND_NOISE_CONFIG = {
   blotchWeights: [0.55, 0.3, 0.15],
 } as const;
 
-/** 車位標線。 */
+/**
+ * 車位標線：磨損過的漆。幾何仍是完整的矩形外框（外緣就是判定用的車位邊界），
+ * 缺口、毛邊、褪色在著色器裡依車位本地座標算，所以每次畫出來都一樣。
+ */
 export const SPOT_MARKING_CONFIG = {
   /** 線寬（4 英吋）。線畫在車位邊界的內側，外緣就是邊界。 */
   lineWidthM: ftToM(1 / 3),
   /** 標線離地高度；夠高才不會與地面共面閃爍，又低到看不出浮起來。 */
   liftM: ftToM(0.03),
-  color: 0xf1f1ea,
+  /** 舊漆：不是全新的純白。 */
+  color: 0xe4e2d6,
   roughness: 0.82,
+  /** 漆面剝落的噪聲：最大一層的格子大小，往下兩層各縮小這個倍數。 */
+  chipSizeM: ftToM(0.42),
+  chipLacunarity: 3.1,
+  /** 整段磨損的噪聲格子大小（沿線看到的一段一段深淺）。 */
+  patchSizeM: ftToM(2.6),
+  /** 基本磨損量（0 = 全新、1 = 全掉光）；整段磨損、線的邊緣、輪胎壓過處各自再加上的量。 */
+  baseWear: 0.22,
+  patchWear: 0.3,
+  edgeWear: 0.26,
+  tireWear: 0.34,
+  /** 剝落邊緣的柔和度（噪聲值的範圍）；越小邊緣越銳利。 */
+  chipSoftness: 0.05,
+  /** 輪胎壓過的位置：車從車位後方進來，左右輪各在離中線這麼遠的地方壓過後緣的線。 */
+  tireTrackOffsetM: ftToM(2.6),
+  tireTrackHalfWidthM: ftToM(0.55),
+  /** 褪色：漆面乘上的最暗比例（噪聲決定哪裡褪得多）。 */
+  fadeMin: 0.62,
+  /** 整體不透明度：舊漆薄，略透出底下的柏油。 */
+  opacity: 0.94,
 } as const;
 
 /** 車輛外觀。整體長寬高與軸距來自 VehicleConfig，這裡只放比例與顏色。 */

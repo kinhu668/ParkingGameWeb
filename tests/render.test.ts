@@ -1,11 +1,11 @@
 // 算圖層裡可以不開瀏覽器就驗證的部分：鏡頭平滑、車輛模型的朝向約定、車位標線的範圍。
 // 地面（柏油）的測試在 ground.test.ts。
-import { Box3, Mesh, Object3D, Vector3 } from 'three';
+import { Box3, Mesh, MeshStandardMaterial, Object3D, ShaderLib, Vector3 } from 'three';
 import { describe, expect, test } from 'vitest';
 import { forward } from '../src/core/heading';
 import { degToRad, ftToM } from '../src/core/units';
 import { parkingSpotFromFt } from '../src/level/parkingJudge';
-import { createSpotMarkings } from '../src/props/spotMarkings';
+import { createSpotMarkings, patchPaintShader } from '../src/props/spotMarkings';
 import { createFollowCamera, createPresetCamera, smoothingFactor } from '../src/render/followCamera';
 import { CAMERA_CONFIG, FIXED_CAMERA_CONFIG, SPOT_MARKING_CONFIG } from '../src/render/renderConfig';
 import { SHOWCASE_IDS, createShowcaseObject } from '../src/render/showcase';
@@ -183,6 +183,51 @@ describe('車位標線 spotMarkings', () => {
         Math.abs(positions.getZ(index)) < innerHalfLengthM - tolerance;
       expect(insideHole).toBe(false);
     }
+  });
+});
+
+describe('磨損的漆面 spotMarkings 材質', () => {
+  const markings = createSpotMarkings(
+    parkingSpotFromFt({ centerXFt: 0, centerZFt: 0, widthFt: 9, lengthFt: 18, headingDeg: 0 }),
+  );
+
+  test('半透明（剝落處透出柏油）、不寫深度、只收陰影', () => {
+    const material = markings.material;
+    expect(material).toBeInstanceOf(MeshStandardMaterial);
+    if (!(material instanceof MeshStandardMaterial)) {
+      return;
+    }
+    expect(material.transparent).toBe(true);
+    expect(material.depthWrite).toBe(false);
+    expect(markings.receiveShadow).toBe(true);
+    expect(markings.castShadow).toBe(false);
+  });
+
+  test('磨損的片段插得進這一版 three 的 MeshStandardMaterial', () => {
+    const source = {
+      vertexShader: ShaderLib.standard.vertexShader,
+      fragmentShader: ShaderLib.standard.fragmentShader,
+    };
+    patchPaintShader(source);
+    expect(source.vertexShader).toContain('vPaintXZ = transformed.xz;');
+    expect(source.fragmentShader).toContain('diffuseColor.a *= paintCoverage;');
+    expect(source.fragmentShader).not.toContain('#include <map_fragment>');
+    expect(() =>
+      patchPaintShader({ vertexShader: 'void main() {}', fragmentShader: 'void main() {}' }),
+    ).toThrow();
+  });
+
+  test('磨損有限度：線仍然清楚到能停車對位', () => {
+    const config = SPOT_MARKING_CONFIG;
+    // 剝落噪聲的平均是 0.5：磨損量低於它，就有過半的漆留著。
+    expect(config.baseWear).toBeGreaterThan(0);
+    expect(config.baseWear).toBeLessThan(0.35);
+    // 線的正中央、沒被輪胎壓過的地方，即使在整段磨損最重處也還有漆。
+    expect(config.baseWear + config.patchWear).toBeLessThan(0.6);
+    expect(config.opacity).toBeGreaterThan(0.8);
+    expect(config.fadeMin).toBeGreaterThan(0.5);
+    // 輪胎磨痕在車位寬度以內。
+    expect(config.tireTrackOffsetM + config.tireTrackHalfWidthM).toBeLessThan(ftToM(4.5));
   });
 });
 
