@@ -1,10 +1,24 @@
-// 疊在畫布上的 HTML HUD：車速（mph）、簡要操作說明、語言切換按鈕、停車成功畫面。
+// 疊在畫布上的 HTML HUD：車速（mph）、簡要操作說明、語言切換按鈕、目前鏡頭名稱、停車成功畫面。
 // 所有文字都走翻譯鍵；語言切換時就地更新，不重新載入頁面。
+import type { GameCameraView } from '../core/cameraView';
 import { getLocale, onLocaleChange, setLocale, t, type Locale, type TranslationKey } from '../core/i18n';
 import { mpsToMph } from '../core/units';
 
 /** 車速顯示到小數第幾位；停車判定門檻是 0.5 mph，整數不夠看。 */
 const SPEED_DECIMALS = 1;
+
+/** 鏡頭名稱出現後多久完全淡出（毫秒），以及其中維持不透明的比例。 */
+const CAMERA_LABEL_FADE_MS = 2600;
+const CAMERA_LABEL_HOLD_FRACTION = 0.65;
+
+/** 鏡頭模式 → 名稱的翻譯鍵；少列一個模式會編譯失敗。 */
+const CAMERA_VIEW_LABELS: Readonly<Record<GameCameraView, TranslationKey>> = {
+  chase_near: 'camera.chase_near',
+  chase_far: 'camera.chase_far',
+  hood: 'camera.hood',
+  cockpit: 'camera.cockpit',
+  top: 'camera.top',
+};
 
 /** 鍵帽上的字：實體鍵的字母直接寫，有名字的鍵（空白鍵）走翻譯鍵。 */
 type KeyCap = { readonly text: string } | { readonly key: TranslationKey };
@@ -15,7 +29,13 @@ const CONTROL_ROWS: readonly { readonly caps: readonly KeyCap[]; readonly label:
   { caps: [{ text: 'A' }, { text: 'D' }], label: 'hud.controlSteer' },
   { caps: [{ key: 'hud.keySpace' }], label: 'hud.controlHandbrake' },
   { caps: [{ text: 'R' }], label: 'hud.controlRestart' },
+  { caps: [{ text: 'V' }], label: 'hud.controlCamera' },
 ];
+
+/** 這個鏡頭模式的名稱翻譯鍵。 */
+export function cameraViewLabelKey(view: GameCameraView): TranslationKey {
+  return CAMERA_VIEW_LABELS[view];
+}
 
 /** 車速文字：m/s 換成 mph 的絕對值（倒車也顯示正數），固定小數位。 */
 export function formatSpeedMph(speedMps: number): string {
@@ -30,6 +50,11 @@ export function otherLocale(locale: Locale): Locale {
 export interface Hud {
   /** 每幀呼叫；車速文字或「已停妥」有變才動 DOM。parked 為 true 時顯示成功畫面。 */
   update(speedMps: number, parked: boolean): void;
+  /**
+   * 顯示目前的鏡頭名稱（進場與每次切換時呼叫）：短暫出現後淡出。
+   * 淡出只是看不見，`#hud-camera` 的文字與 `data-view` 一直留著。
+   */
+  showCameraView(view: GameCameraView): void;
 }
 
 /** 在 root 裡建立 HUD，並訂閱語言切換。 */
@@ -93,6 +118,13 @@ export function createHud(root: HTMLElement): Hud {
     translatedElement('dd', 'hud-controls-action', controlsList, row.label);
   }
 
+  // 鏡頭名稱：下方置中。還沒呼叫 showCameraView 之前是空的。
+  const cameraLabel = element('div', 'hud-panel hud-camera', root);
+  cameraLabel.id = 'hud-camera';
+  cameraLabel.setAttribute('role', 'status');
+  let shownView: GameCameraView | undefined;
+  let cameraLabelFade: Animation | undefined;
+
   // 停車成功畫面：先隱藏，已停妥才顯示；重來後再藏起來。
   const statusOverlay = element('div', 'hud-status', root);
   statusOverlay.id = 'hud-status';
@@ -105,6 +137,9 @@ export function createHud(root: HTMLElement): Hud {
   function renderTexts(): void {
     for (const entry of translated) {
       entry.element.textContent = t(entry.key);
+    }
+    if (shownView !== undefined) {
+      cameraLabel.textContent = t(cameraViewLabelKey(shownView));
     }
     // 按鈕上的字是另一種語言寫的，標上 lang 讓字型與螢幕報讀正確。
     languageButton.lang = otherLocale(getLocale());
@@ -129,6 +164,17 @@ export function createHud(root: HTMLElement): Hud {
         shownParked = parked;
         statusOverlay.hidden = !parked;
       }
+    },
+    showCameraView(view: GameCameraView): void {
+      shownView = view;
+      cameraLabel.dataset.view = view;
+      cameraLabel.textContent = t(cameraViewLabelKey(view));
+      // 重新從不透明開始：先停掉上一次還沒跑完的淡出。
+      cameraLabelFade?.cancel();
+      cameraLabelFade = cameraLabel.animate(
+        [{ opacity: 1 }, { opacity: 1, offset: CAMERA_LABEL_HOLD_FRACTION }, { opacity: 0 }],
+        { duration: CAMERA_LABEL_FADE_MS, fill: 'forwards' },
+      );
     },
   };
 }

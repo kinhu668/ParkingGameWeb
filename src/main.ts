@@ -67,6 +67,7 @@ function runGame(canvas: HTMLCanvasElement): void {
     resolveInitialView(window.location.search, viewStorage),
     PROTOTYPE_LAYOUT.startState,
   );
+  hud.showCameraView(gameCamera.view());
 
   // 內插需要相鄰兩步的車輛狀態：previousVehicle = 上一步、session.vehicle = 最新一步。
   let session = startSession(PROTOTYPE_LAYOUT);
@@ -89,11 +90,12 @@ function runGame(canvas: HTMLCanvasElement): void {
       gameCamera.snapTo(session.vehicle);
     }
 
-    // V 切換鏡頭：換到循環順序的下一個，記住選擇。
+    // V 切換鏡頭：換到循環順序的下一個，記住選擇，HUD 顯示名稱。
     if (input.consumeToggleCamera()) {
       const view = nextGameCameraView(gameCamera.view());
       gameCamera.setView(view);
       storeView(viewStorage, view);
+      hud.showCameraView(view);
     }
 
     const loop = advanceFixedLoop(accumulatorSeconds, frameSeconds);
