@@ -1,17 +1,16 @@
-// 程序化的轎車模型：放樣的曲面車殼（carBody.ts）、內裝（carInterior.ts）、輪子（carWheel.ts）、後視鏡、輪拱內襯，
-// 以及頭燈／尾燈／倒車燈的材質。
+// 程序化的轎車模型：放樣的曲面車殼（carBody.ts）與併進去的配件（carFittings.ts：保險桿、燈組、車牌、門縫）、
+// 內裝（carInterior.ts）、輪子（carWheel.ts）、後視鏡、雨刷、輪拱內襯，以及頭燈／尾燈／倒車燈的材質。
 // 建模約定：車頭朝本地 −Z、右側是本地 +X、輪胎著地點在 y = 0、原點在車身中心的地面投影。
 // 外框（含後視鏡與輪胎）剛好是 VehicleConfig 的長寬高；碰撞與停車判定用的矩形不受外觀影響。
 import {
   BoxGeometry,
-  CircleGeometry,
   CylinderGeometry,
   DoubleSide,
   Group,
   Mesh,
   MeshPhysicalMaterial,
   MeshStandardMaterial,
-  SphereGeometry,
+  PlaneGeometry,
   type BufferGeometry,
   type Material,
 } from 'three';
@@ -19,7 +18,8 @@ import { forward, headingToRotationY } from '../core/heading';
 import type { VehicleDetail } from '../render/quality';
 import { CAR_DETAIL_CONFIG, CAR_VISUAL_CONFIG as VISUAL } from '../render/renderConfig';
 import type { DriveInput, VehiclePose } from './bicycleModel';
-import { BODY_LAYOUT, createBodyGeometries, type BodyPart } from './carBody';
+import { BODY_LAYOUT, bodyTopHeightM, type BodyPart } from './carBody';
+import { createBeamGeometry, createBodyGeometries } from './carFittings';
 import { createCarInterior } from './carInterior';
 import { createBrakeDiscGeometry, createRimGeometry, createTireGeometry } from './carWheel';
 import { VEHICLE_CONFIG_SI } from './vehicleConfig';
@@ -75,27 +75,67 @@ function lamp(color: number, glowColor: number, intensity: number): MeshStandard
 }
 
 /**
- * 後視鏡：鏡殼（壓扁的球）、朝後的鏡面、接到車門的支臂。
- * 鏡殼最外側的頂點剛好在車寬的一半，所以整台車的外框寬度等於 VehicleConfig 的車寬。
+ * 車外後視鏡：方正的鏡殼（烤漆）、朝後的黑色鏡框與鏡面、接到車門的支臂。
+ * 從駕駛座看過去是「黑框裡一面鏡子」，不是一顆浮著的色塊。
+ * 鏡殼最外側剛好在車寬的一半，所以整台車的外框寬度等於 VehicleConfig 的車寬。
  */
 function createMirror(side: number, paint: Material, trim: Material, mirrorGlass: Material): Group {
-  const shellHalfM = { x: 0.1, y: 0.06, z: 0.05 };
+  const shellM = { x: 0.19, y: 0.12, z: 0.07 };
   const mirror = new Group();
+  mirror.name = 'doorMirror';
   mirror.position.set(
-    side * (HALF_WIDTH_M - shellHalfM.x),
+    side * (HALF_WIDTH_M - shellM.x / 2),
     BODY_LAYOUT.cowlHeightM + 0.09,
     BODY_LAYOUT.windshieldBaseZM + 0.3,
   );
-  mirror.add(
-    shadowMesh(new SphereGeometry(1, 16, 10).scale(shellHalfM.x, shellHalfM.y, shellHalfM.z), paint),
-  );
-  const face = new Mesh(new CircleGeometry(1, 20).scale(0.8 * shellHalfM.x, 0.8 * shellHalfM.y, 1), mirrorGlass);
-  face.position.z = 0.6 * shellHalfM.z;
-  mirror.add(face);
-  const arm = shadowMesh(new BoxGeometry(0.1, 0.025, 0.05), trim);
-  arm.position.set(-side * 0.11, -0.03, 0);
-  mirror.add(arm);
+  mirror.add(shadowMesh(new BoxGeometry(shellM.x, shellM.y, shellM.z), paint));
+  // 鏡框比鏡殼略小、貼在朝後的那一面；鏡面再比鏡框小一圈。
+  const frame = shadowMesh(new BoxGeometry(shellM.x - 0.012, shellM.y - 0.012, 0.012), trim);
+  frame.name = 'doorMirror:frame';
+  frame.position.z = shellM.z / 2;
+  const face = new Mesh(new PlaneGeometry(shellM.x - 0.04, shellM.y - 0.04), mirrorGlass);
+  face.name = 'doorMirror:glass';
+  face.position.z = shellM.z / 2 + 0.007;
+  const arm = shadowMesh(new BoxGeometry(0.12, 0.035, 0.05), trim);
+  arm.position.set(-side * 0.12, -0.035, 0);
+  mirror.add(frame, face, arm);
   return mirror;
+}
+
+/**
+ * 雨刷：兩支靜止的雨刷停在前擋下緣（刷片貼著玻璃橫放、刷臂從集水槽伸上來）。
+ * 駕駛座看得到它們在儀表板前方，但低於視線，不擋路。
+ */
+function createWipers(material: Material): Group {
+  const wipers = new Group();
+  wipers.name = 'wipers';
+  const bladeZM = BODY_LAYOUT.windshieldBaseZM + 0.085;
+  const pivotZM = BODY_LAYOUT.windshieldBaseZM + 0.01;
+  /** 玻璃（或集水槽）表面上方一點點。 */
+  const above = (xM: number, zM: number): readonly [number, number, number] => [
+    xM,
+    bodyTopHeightM(zM, xM) + 0.014,
+    zM,
+  ];
+  // 左駕：刷臂的軸在左邊與中間，刷片朝右躺。
+  for (const [fromXM, toXM] of [
+    [-0.56, -0.04],
+    [0.06, 0.58],
+  ] as const) {
+    const blade = new Mesh(
+      createBeamGeometry(above(fromXM, bladeZM), above(toXM, bladeZM + 0.03), 0.014),
+      material,
+    );
+    blade.name = 'wiper:blade';
+    const middleXM = (fromXM + toXM) / 2;
+    const arm = new Mesh(
+      createBeamGeometry(above(fromXM + 0.03, pivotZM), above(middleXM, bladeZM + 0.015), 0.01),
+      material,
+    );
+    arm.name = 'wiper:arm';
+    wipers.add(blade, arm);
+  }
+  return wipers;
 }
 
 /**
@@ -137,6 +177,15 @@ export function createCarMesh(detail: VehicleDetail = 'high'): CarMesh {
     VISUAL.taillightEmissiveIntensity,
   );
   const reverseLightMaterial = lamp(VISUAL.reverseLightOffColor, VISUAL.reverseLightColor, 0);
+  const chrome = new MeshStandardMaterial({
+    color: VISUAL.chromeColor,
+    roughness: VISUAL.chromeRoughness,
+    metalness: 1,
+  });
+  const plate = new MeshStandardMaterial({
+    color: VISUAL.plateColor,
+    roughness: VISUAL.plateRoughness,
+  });
   const bodyMaterials: Readonly<Record<BodyPart, Material>> = {
     paint,
     glass,
@@ -144,6 +193,8 @@ export function createCarMesh(detail: VehicleDetail = 'high'): CarMesh {
     headlight: lamp(VISUAL.headlightColor, VISUAL.headlightColor, VISUAL.headlightEmissiveIntensity),
     taillight: taillightMaterial,
     reverseLight: reverseLightMaterial,
+    chrome,
+    plate,
     headliner,
     cabinTrim,
   };
@@ -155,6 +206,7 @@ export function createCarMesh(detail: VehicleDetail = 'high'): CarMesh {
   for (const [part, geometry] of createBodyGeometries(detail)) {
     const mesh = shadowMesh(geometry, bodyMaterials[part]);
     mesh.castShadow = part !== 'glass';
+    mesh.name = `body:${part}`;
     bodyMeshes.set(part, mesh);
     root.add(mesh);
   }
@@ -165,15 +217,16 @@ export function createCarMesh(detail: VehicleDetail = 'high'): CarMesh {
     throw new Error('車殼缺少烤漆、玻璃或頂篷分區');
   }
 
-  const interior = createCarInterior();
-  root.add(interior.root);
-
   const mirrorGlass = new MeshStandardMaterial({
     color: VISUAL.mirrorGlassColor,
     roughness: VISUAL.minGlossRoughness,
     metalness: 1,
   });
+  const interior = createCarInterior(mirrorGlass);
+  root.add(interior.root);
+
   root.add(createMirror(-1, paint, trim, mirrorGlass), createMirror(1, paint, trim, mirrorGlass));
+  root.add(createWipers(trim));
 
   // 輪子：樞軸（轉向，繞 Y）→ 滾動軸（繞 X）→ 輪胎、輪圈、煞車盤。幾何的外側面朝 +X，左側轉半圈。
   const { wheelSegments } = CAR_DETAIL_CONFIG[detail];

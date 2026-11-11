@@ -565,7 +565,7 @@ export const CAR_VISUAL_CONFIG = {
   deckRiseM: ftToM(0.2),
   tailDropM: ftToM(0.12),
   /** 前擋與後擋玻璃頂端往車艙中心收的距離（斜度）。 */
-  windshieldRakeM: ftToM(2.0),
+  windshieldRakeM: ftToM(2.45),
   rearWindowRakeM: ftToM(2.3),
   /** 車頂與引擎蓋中線比兩側高出的弧度。 */
   crownM: ftToM(0.09),
@@ -577,11 +577,13 @@ export const CAR_VISUAL_CONFIG = {
   roofRailM: ftToM(0.15),
   /** B 柱前後寬度的一半，以及它在車頂前緣後方多遠。 */
   pillarHalfWidthM: ftToM(0.14),
-  bPillarBehindHeaderM: ftToM(1.9),
-  /** 車頭、車尾收圓的深度，以及收圓的超橢圓指數（越大越方）。 */
-  noseDepthM: ftToM(0.85),
-  tailDepthM: ftToM(0.7),
-  endExponent: 4.2,
+  bPillarBehindHeaderM: ftToM(1.45),
+  /** 車頭、車尾端面收邊的深度，以及超橢圓指數（越大越方：端面幾乎是平的，只有邊緣收圓角）。 */
+  noseDepthM: ftToM(0.75),
+  tailDepthM: ftToM(0.65),
+  endExponent: 6.5,
+  /** 車殼的端面比車長每端內縮這麼多；凸出來補滿車長的是保險桿（與前車牌）。 */
+  bodyEndInsetM: ftToM(0.11),
 
   wheelRadiusM: ftToM(1.1),
   wheelWidthM: ftToM(0.75),
@@ -658,13 +660,13 @@ export const CAR_DETAIL_CONFIG = {
   low: {
     stationStepM: 0.34,
     archSegments: 6,
-    endScales: [0.95, 0.84, 0.62, 0.32, 0],
+    endScales: [0.975, 0.92, 0.8, 0.45, 0],
     wheelSegments: 20,
   },
   high: {
     stationStepM: 0.16,
     archSegments: 12,
-    endScales: [0.985, 0.95, 0.89, 0.8, 0.66, 0.48, 0.26, 0],
+    endScales: [0.992, 0.97, 0.94, 0.9, 0.84, 0.72, 0.4, 0],
     wheelSegments: 40,
   },
 } as const;
@@ -674,6 +676,12 @@ export const CAR_DETAIL_CONFIG = {
  * 位置都以車位自己的方向為準（車位本地座標：+X 右、−Z 車位前方）；數量跟著畫質級別走（QUALITY_PRESETS 的 props）。
  * 假車位與目標車位同寬同長，沿前方路緣一列（A 列，目標車位在其中）、場地中段背靠背兩列（B 列）、後方路緣一列（C 列）；
  * 車位中線兩側留一條直通的通道，起點就在通道上。
+  /** 鍍鉻飾件（水箱罩橫條、燈框、門把）。 */
+  chromeColor: 0xc9ced4,
+  chromeRoughness: 0.22,
+  /** 車牌底色與字的顏色（字用黑飾條的材質）。 */
+  plateColor: 0xeeece4,
+  plateRoughness: 0.6,
  */
 export const LOT_PROPS_CONFIG = {
   /** 禁區：起點到車位的通路，中線左右各這麼寬以內不放任何擺設（車寬 6 ft 的一半 + 6 ft）。 */

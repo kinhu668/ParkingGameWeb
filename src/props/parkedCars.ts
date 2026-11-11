@@ -15,7 +15,8 @@ import {
 import { headingToRotationY } from '../core/heading';
 import type { VehicleDetail } from '../render/quality';
 import { CAR_VISUAL_CONFIG as VISUAL, LOT_PROPS_CONFIG as LOT } from '../render/renderConfig';
-import { BODY_LAYOUT, createBodyGeometries, type BodyPart } from '../vehicle/carBody';
+import { BODY_LAYOUT, type BodyPart } from '../vehicle/carBody';
+import { createBodyGeometries } from '../vehicle/carFittings';
 import {
   createBrakeDiscGeometry,
   createRimGeometry,
@@ -24,7 +25,7 @@ import {
 import { VEHICLE_CONFIG_SI } from '../vehicle/vehicleConfig';
 import type { PropPlacement } from './lotLayout';
 
-/** 背景車畫的車殼分區（沒有車艙內襯：玻璃不透明，看不進去）。 */
+/** 背景車畫的車身分區（沒有車艙內襯：玻璃不透明，看不進去）。配件（保險桿、燈組、車牌、門縫）已併在各分區裡。 */
 export const PARKED_CAR_BODY_PARTS: readonly BodyPart[] = [
   'paint',
   'glass',
@@ -32,6 +33,8 @@ export const PARKED_CAR_BODY_PARTS: readonly BodyPart[] = [
   'headlight',
   'taillight',
   'reverseLight',
+  'chrome',
+  'plate',
 ];
 
 /** 背景車輪胎一圈的段數（偶數）：比玩家車少，遠看沒有差別。 */
@@ -102,6 +105,12 @@ export function createParkedCars(
     headlight: lampOff(VISUAL.headlightColor),
     taillight: lampOff(VISUAL.taillightColor),
     reverseLight: lampOff(VISUAL.reverseLightOffColor),
+    chrome: new MeshStandardMaterial({
+      color: VISUAL.chromeColor,
+      roughness: VISUAL.chromeRoughness,
+      metalness: 1,
+    }),
+    plate: new MeshStandardMaterial({ color: VISUAL.plateColor, roughness: VISUAL.plateRoughness }),
     headliner: trim,
     cabinTrim: trim,
   };

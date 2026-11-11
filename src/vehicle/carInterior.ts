@@ -1,4 +1,4 @@
-// 內裝：儀表板（有厚度的斷面沿車寬擠出）、儀表罩與錶框、中控螢幕、飾條、方向盤、座椅、防火牆與後置物板。
+// 內裝：儀表板（有厚度的斷面沿車寬擠出）、儀表罩與錶框、中控螢幕、飾條、方向盤、座椅、防火牆與後置物板、車內後視鏡。
 // 從車外透過玻璃看得到車艙輪廓，駕駛座視角看得到儀表板上緣與方向盤上半圈；全部低於視線，不擋正前方。
 import {
   BoxGeometry,
@@ -7,6 +7,7 @@ import {
   Group,
   Mesh,
   MeshStandardMaterial,
+  PlaneGeometry,
   RingGeometry,
   Shape,
   SphereGeometry,
@@ -15,8 +16,7 @@ import {
   type Material,
 } from 'three';
 import { CAR_VISUAL_CONFIG as VISUAL, GAME_CAMERA_CONFIG } from '../render/renderConfig';
-import { BODY_LAYOUT } from './carBody';
-import { VEHICLE_CONFIG_SI } from './vehicleConfig';
+import { BODY_LAYOUT, bodyTopHeightM } from './carBody';
 
 export interface CarInterior {
   readonly root: Group;
@@ -101,7 +101,41 @@ function createSeat(material: Material, xM: number, backZM: number, widthM: numb
   return seat;
 }
 
-export function createCarInterior(): CarInterior {
+/**
+ * 車內後視鏡：黑色鏡框（外殼）裡一面朝後的鏡子，用一根支桿掛在前擋上緣中央的頂篷下。
+ * 鏡面朝後、略偏向駕駛，從駕駛座看是右上方一面掛著的鏡子。
+ */
+function createRearViewMirror(frame: Material, glass: Material): Group {
+  const sizeM = { x: 0.2, y: 0.056, z: 0.028 };
+  const mountZM = BODY_LAYOUT.windshieldTopZM + 0.01;
+  const roofM = bodyTopHeightM(mountZM, 0);
+  const mirror = new Group();
+  mirror.name = 'rearViewMirror';
+
+  const head = new Group();
+  head.position.set(0, roofM - 0.088, mountZM + 0.055);
+  // 鏡頭略轉向駕駛（左側）。
+  head.rotation.y = -0.22;
+  const housing = shadowMesh(new BoxGeometry(sizeM.x, sizeM.y, sizeM.z), frame);
+  housing.name = 'rearViewMirror:frame';
+  const face = new Mesh(new PlaneGeometry(sizeM.x - 0.022, sizeM.y - 0.02), glass);
+  face.name = 'rearViewMirror:glass';
+  face.position.z = sizeM.z / 2 + 0.002;
+  head.add(housing, face);
+
+  // 支桿：從鏡殼背面斜上去接到前擋上緣的頂篷。
+  const stem = shadowMesh(new BoxGeometry(0.02, 0.07, 0.02), frame);
+  stem.name = 'rearViewMirror:stem';
+  stem.position.set(0, roofM - 0.045, mountZM + 0.03);
+  stem.rotation.x = 0.5;
+  mirror.add(head, stem);
+  return mirror;
+}
+
+/**
+ * @param mirrorGlass 鏡面的材質（與車外後視鏡共用）
+ */
+export function createCarInterior(mirrorGlass: Material): CarInterior {
   const dash = new MeshStandardMaterial({
     color: VISUAL.dashboardColor,
     roughness: VISUAL.dashboardRoughness,
@@ -185,10 +219,7 @@ export function createCarInterior(): CarInterior {
     box(dash, [2 * INNER_HALF_WIDTH_M, COWL_M - FLOOR_M, 0.02], [0, (COWL_M + FLOOR_M) / 2, BODY_LAYOUT.windshieldBaseZM + 0.02]),
   );
 
-  // 車內後視鏡：掛在前擋上緣中央、頂篷下方。
-  root.add(
-    box(dash, [0.17, 0.045, 0.015], [0, VEHICLE_CONFIG_SI.heightM - 0.13, BODY_LAYOUT.windshieldTopZM + 0.02]),
-  );
+  root.add(createRearViewMirror(dash, mirrorGlass));
 
   return { root, steeringWheel };
 }

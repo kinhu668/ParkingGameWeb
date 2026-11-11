@@ -20,11 +20,13 @@ import {
   CAMERA_CONFIG,
   CAR_VISUAL_CONFIG,
   FIXED_CAMERA_CONFIG,
+  GAME_CAMERA_CONFIG,
   SPOT_MARKING_CONFIG,
 } from '../src/render/renderConfig';
 import { SHOWCASE_IDS, createShowcaseObject } from '../src/render/showcase';
 import type { DriveInput } from '../src/vehicle/bicycleModel';
 import { BODY_LAYOUT } from '../src/vehicle/carBody';
+import { createBodyGeometries, createCarFittings, plateText } from '../src/vehicle/carFittings';
 import {
   carLightsFor,
   createCarMesh,
@@ -270,6 +272,212 @@ describe('車輛模型 carMesh', () => {
     );
     updateCarMesh(car, { x: 0, z: 0, headingRad: 0, steerRad: 0 });
     expect(car.steeringWheel.rotation.z).toBeCloseTo(0, DIGITS);
+  });
+});
+
+describe('車身配件 carFittings（燈組、車牌、門縫、保險桿、雨刷）', () => {
+  /** 配件的外框（車的本地座標）。 */
+  function fittingBounds(name: string): Box3 {
+    const fitting = createCarFittings().find((candidate) => candidate.name === name);
+    if (fitting === undefined) {
+      throw new Error(`沒有配件 ${name}`);
+    }
+    fitting.geometry.computeBoundingBox();
+    return fitting.geometry.boundingBox ?? new Box3();
+  }
+
+  test('前後車牌、門縫、引擎蓋與行李廂蓋的接縫、保險桿、燈組、門把都在', () => {
+    const names = createCarFittings().map((fitting) => fitting.name);
+    for (const name of [
+      'plate:front',
+      'plate:front:text',
+      'plate:rear',
+      'plate:rear:text',
+      'seam:doors',
+      'seam:hood',
+      'seam:trunk',
+      'bumper:front',
+      'bumper:rear',
+      'headlamp:housing',
+      'headlamp:lens',
+      'taillamp:lens',
+      'reverselamp:lens',
+      'handle:doors',
+    ]) {
+      expect(names).toContain(name);
+    }
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  test('配件併進車身的材質分區：玩家車的網格用名稱與 userData.fittings 查得到', () => {
+    const car = createCarMesh();
+    const fittingsOf = (part: string): string[] => {
+      const mesh = car.root.getObjectByName(`body:${part}`);
+      expect(mesh).toBeInstanceOf(Mesh);
+      return ((mesh as Mesh).geometry.userData.fittings ?? []) as string[];
+    };
+    expect(fittingsOf('plate')).toEqual(['plate:front', 'plate:rear']);
+    expect(fittingsOf('paint')).toEqual(['bumper:front', 'bumper:rear']);
+    expect(fittingsOf('trim')).toEqual(expect.arrayContaining(['seam:doors', 'seam:hood', 'seam:trunk']));
+    expect(fittingsOf('headlight')).toEqual(['headlamp:lens']);
+    expect(fittingsOf('taillight')).toEqual(['taillamp:lens']);
+    expect(fittingsOf('reverseLight')).toEqual(['reverselamp:lens']);
+    // 低細分（背景車用）也有同一批配件。
+    const low = createBodyGeometries('low');
+    expect(low.get('plate')?.userData.fittings).toEqual(['plate:front', 'plate:rear']);
+  });
+
+  test('車牌號碼由種子決定：三個字母、一槓、四個數字，同種子相同、換種子不同', () => {
+    expect(plateText(1234)).toMatch(/^[A-Z]{3}-\d{4}$/);
+    expect(plateText(1234)).toBe(plateText(1234));
+    const seeds = [1, 2, 3, 4, 5, 6, 7, 8];
+    expect(new Set(seeds.map(plateText)).size).toBeGreaterThan(4);
+  });
+
+  test('車牌：前後各一塊，橫向的矩形、有厚度，在車身中線上；字在牌面範圍內、凸出牌面', () => {
+    for (const [end, outward] of [
+      ['front', -1],
+      ['rear', 1],
+    ] as const) {
+      const plate = fittingBounds(`plate:${end}`);
+      const size = plate.getSize(new Vector3());
+      expect(size.x).toBeGreaterThan(2 * size.y);
+      expect(size.z).toBeGreaterThan(0.004);
+      expect(plate.getCenter(new Vector3()).x).toBeCloseTo(0, 6);
+      expect(plate.getCenter(new Vector3()).z * outward).toBeGreaterThan(2);
+
+      const text = fittingBounds(`plate:${end}:text`);
+      expect(text.min.x).toBeGreaterThan(plate.min.x);
+      expect(text.max.x).toBeLessThan(plate.max.x);
+      expect(text.min.y).toBeGreaterThan(plate.min.y);
+      expect(text.max.y).toBeLessThan(plate.max.y);
+      const plateFace = outward > 0 ? plate.max.z : -plate.min.z;
+      const textFace = outward > 0 ? text.max.z : -text.min.z;
+      expect(textFace).toBeGreaterThan(plateFace);
+    }
+  });
+
+  test('燈組是橫向的矩形燈罩（不是楔形）：左右各一組、寬大於高的兩倍，嵌在黑色燈殼裡', () => {
+    for (const [lens, housing] of [
+      ['headlamp:lens', 'headlamp:housing'],
+      ['taillamp:lens', 'taillamp:housing'],
+    ] as const) {
+      const fitting = createCarFittings().find((candidate) => candidate.name === lens);
+      const positions = fitting?.geometry.getAttribute('position');
+      expect(positions).toBeDefined();
+      const right = new Box3();
+      const left = new Box3();
+      const vertex = new Vector3();
+      for (let index = 0; index < (positions?.count ?? 0); index += 1) {
+        vertex.fromBufferAttribute(positions as NonNullable<typeof positions>, index);
+        (vertex.x > 0 ? right : left).expandByPoint(vertex);
+      }
+      const size = right.getSize(new Vector3());
+      expect(size.x).toBeGreaterThan(2 * size.y);
+      // 矩形：每個頂點的高度都在上緣或下緣（楔形會有收尖的中間值）。
+      for (let index = 0; index < (positions?.count ?? 0); index += 1) {
+        const y = vertex.fromBufferAttribute(positions as NonNullable<typeof positions>, index).y;
+        expect(Math.min(Math.abs(y - right.min.y), Math.abs(y - right.max.y))).toBeLessThan(1e-6);
+      }
+      // 左右對稱。
+      expect(left.min.x).toBeCloseTo(-right.max.x, 6);
+      expect(left.max.x).toBeCloseTo(-right.min.x, 6);
+      // 燈殼的框比燈罩大一圈。
+      const shell = fittingBounds(housing);
+      expect(shell.max.x).toBeGreaterThan(right.max.x);
+      expect(shell.max.y).toBeGreaterThan(right.max.y);
+      expect(shell.min.y).toBeLessThan(right.min.y);
+    }
+    // 倒車燈在尾燈內側。
+    expect(fittingBounds('reverselamp:lens').max.x).toBeLessThan(fittingBounds('taillamp:lens').max.x);
+  });
+
+  test('門縫很細：左右兩側都有，從門檻到窗台，線寬不到 1 公分', () => {
+    const doors = fittingBounds('seam:doors');
+    expect(doors.max.x).toBeGreaterThan(BODY_LAYOUT.halfWidthM - 0.01);
+    expect(doors.min.x).toBeCloseTo(-doors.max.x, 6);
+    // 只比鈑金凸出半個線寬。
+    expect(doors.max.x - BODY_LAYOUT.halfWidthM).toBeLessThan(0.005);
+    expect(doors.max.y).toBeGreaterThan(BODY_LAYOUT.cowlHeightM - 0.02);
+    expect(doors.min.y).toBeLessThan(CAR_VISUAL_CONFIG.groundClearanceM + 0.15);
+    // 前門前緣在前擋下緣附近，後門後緣在後輪拱之前。
+    expect(doors.min.z).toBeGreaterThan(BODY_LAYOUT.windshieldBaseZM - 0.01);
+    expect(doors.max.z).toBeLessThan(VEHICLE_CONFIG_SI.wheelbaseM / 2 - BODY_LAYOUT.archRadiusM + 0.01);
+    // 引擎蓋的縫在車頭這一半、行李廂蓋的在車尾那一半，都在頂面上。
+    expect(fittingBounds('seam:hood').max.z).toBeLessThan(BODY_LAYOUT.windshieldBaseZM);
+    expect(fittingBounds('seam:trunk').min.z).toBeGreaterThan(BODY_LAYOUT.rearWindowBaseZM);
+    expect(fittingBounds('seam:hood').min.y).toBeGreaterThan(0.6);
+  });
+
+  test('保險桿是另一件：比車殼的端面凸出，後保險桿的正面就是車尾', () => {
+    const rear = fittingBounds('bumper:rear');
+    expect(rear.max.z).toBeCloseTo(VEHICLE_CONFIG_SI.lengthM / 2, 6);
+    expect(rear.max.z).toBeGreaterThan(BODY_LAYOUT.tailTipZM + 0.01);
+    const front = fittingBounds('bumper:front');
+    expect(front.min.z).toBeLessThan(BODY_LAYOUT.noseTipZM - 0.01);
+    expect(front.min.z).toBeGreaterThanOrEqual(-VEHICLE_CONFIG_SI.lengthM / 2);
+    // 比鈑金略寬，但不超過車寬（後視鏡的外緣）。
+    expect(front.max.x).toBeLessThan(VEHICLE_CONFIG_SI.widthM / 2);
+    expect(front.max.x).toBeGreaterThan(BODY_LAYOUT.halfWidthM * 0.93);
+  });
+
+  test('雨刷：兩支（刷片 + 刷臂）停在前擋下緣，低於駕駛的眼睛、不投影到別處去', () => {
+    const car = createCarMesh();
+    const wipers = car.root.getObjectByName('wipers');
+    expect(wipers).toBeDefined();
+    const blades = wipers?.children.filter((child) => child.name === 'wiper:blade') ?? [];
+    const arms = wipers?.children.filter((child) => child.name === 'wiper:arm') ?? [];
+    expect(blades).toHaveLength(2);
+    expect(arms).toHaveLength(2);
+    car.root.updateMatrixWorld(true);
+    const bounds = new Box3().setFromObject(wipers as Object3D);
+    expect(bounds.min.z).toBeGreaterThan(BODY_LAYOUT.windshieldBaseZM - 0.02);
+    expect(bounds.max.z).toBeLessThan(BODY_LAYOUT.windshieldBaseZM + 0.2);
+    expect(bounds.min.y).toBeGreaterThan(BODY_LAYOUT.cowlHeightM - 0.01);
+    // 刷片斜躺在玻璃下緣：最高點比前擋下緣高不到 20 公分，比駕駛的眼睛低 15 公分以上。
+    expect(bounds.max.y).toBeLessThan(BODY_LAYOUT.cowlHeightM + 0.2);
+    expect(bounds.max.y).toBeLessThan(GAME_CAMERA_CONFIG.cockpit.heightM - 0.15);
+    wipers?.traverse((object) => {
+      expect(object.castShadow).toBe(false);
+    });
+    expect(Math.abs(bounds.max.x)).toBeLessThan(BODY_LAYOUT.cabinHalfWidthM);
+  });
+
+  test('後視鏡有鏡框：車內後視鏡是黑框 + 鏡面 + 支桿，車外後視鏡也有框', () => {
+    const car = createCarMesh();
+    car.root.updateMatrixWorld(true);
+    const frame = car.root.getObjectByName('rearViewMirror:frame');
+    const glass = car.root.getObjectByName('rearViewMirror:glass');
+    const stem = car.root.getObjectByName('rearViewMirror:stem');
+    expect(frame).toBeInstanceOf(Mesh);
+    expect(glass).toBeInstanceOf(Mesh);
+    expect(stem).toBeInstanceOf(Mesh);
+    const frameBox = new Box3().setFromObject(frame as Object3D);
+    const glassBox = new Box3().setFromObject(glass as Object3D);
+    // 鏡面比鏡框小一圈、在鏡框朝後（朝駕駛）的那一面。
+    expect(glassBox.getSize(new Vector3()).x).toBeLessThan(frameBox.getSize(new Vector3()).x);
+    expect(glassBox.min.y).toBeGreaterThan(frameBox.min.y);
+    expect(glassBox.max.y).toBeLessThan(frameBox.max.y);
+    expect(glassBox.getCenter(new Vector3()).z).toBeGreaterThan(frameBox.getCenter(new Vector3()).z);
+    // 鏡框是深色的，鏡面是亮的金屬面，兩者分得出來。
+    const frameMaterial = (frame as Mesh).material as MeshStandardMaterial;
+    const glassMaterial = (glass as Mesh).material as MeshStandardMaterial;
+    expect(frameMaterial.color.getHSL({ h: 0, s: 0, l: 0 }).l).toBeLessThan(0.3);
+    expect(glassMaterial.color.getHSL({ h: 0, s: 0, l: 0 }).l).toBeGreaterThan(0.6);
+    expect(glassMaterial.metalness).toBe(1);
+    // 支桿把鏡子接到頂篷：最高點貼近車頂，鏡子整個在車頂下方。
+    const stemBox = new Box3().setFromObject(stem as Object3D);
+    expect(stemBox.max.y).toBeGreaterThan(frameBox.max.y);
+    expect(stemBox.max.y).toBeLessThan(VEHICLE_CONFIG_SI.heightM);
+    expect(stemBox.max.y).toBeGreaterThan(VEHICLE_CONFIG_SI.heightM - 0.12);
+
+    const doorFrames: Object3D[] = [];
+    car.root.traverse((object) => {
+      if (object.name === 'doorMirror:frame') {
+        doorFrames.push(object);
+      }
+    });
+    expect(doorFrames).toHaveLength(2);
   });
 });
 
