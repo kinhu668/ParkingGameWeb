@@ -22,6 +22,8 @@ export interface SceneEffects {
 /** 灰塵與落葉各用自己的亂數序列（種子加上這個位移），互不影響，也不影響場地擺設。 */
 const DUST_SEED_OFFSET = 0x51;
 const LEAF_SEED_OFFSET = 0xa7;
+/** 車離開第一次擺放的位置這麼遠（公尺）就算開動了。 */
+const WIND_START_DISTANCE_M = 0.001;
 
 /**
  * @param spot 目標車位（落葉避開它與通路）
@@ -56,11 +58,20 @@ export function createSceneEffects(
     root.add(leaves.mesh);
   }
 
+  // 風從車第一次動起來才開始吹：還沒開車之前場景是靜止的，同一個鏡頭畫出來的畫面每一幀都一樣
+  // （切一圈鏡頭回來可以逐像素比較）；開動之後落葉就一直飄，車停下來也不會停。
+  let parkedAt: GroundVector | undefined;
+  let windBlowing = false;
   let elapsedSeconds = 0;
   return {
     root,
     update(pose, frameSeconds) {
-      elapsedSeconds += frameSeconds;
+      parkedAt ??= { x: pose.x, z: pose.z };
+      windBlowing ||=
+        Math.hypot(pose.x - parkedAt.x, pose.z - parkedAt.z) > WIND_START_DISTANCE_M;
+      if (windBlowing) {
+        elapsedSeconds += frameSeconds;
+      }
       tireMarks?.update(pose, frameSeconds);
       dust?.update(pose, frameSeconds);
       leaves?.setTime(elapsedSeconds);

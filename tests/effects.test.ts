@@ -552,4 +552,30 @@ describe('效果的畫質級別 createSceneEffects', () => {
     expect(dust.visible).toBe(true);
     expect(leaves.instanceMatrix.array).not.toEqual(before);
   });
+
+  test('車還沒開動之前場景是靜止的：時間照走，落葉、痕、灰塵都不變；開動之後落葉一直飄，停車也不停', () => {
+    const effects = createSceneEffects(HIGH, SPOT, START, DEFAULT_SEED);
+    const leaves = effects.root.getObjectByName('leaves') as InstancedMesh;
+    const marks = effects.root.getObjectByName('tireMarks') as Mesh;
+    const dust = effects.root.getObjectByName('dust') as Points;
+    const before = leaves.instanceMatrix.array.slice();
+    // 停在原地 5 秒（含原地打方向盤）：畫面每一幀都一樣。
+    for (let frame = 0; frame < 300; frame += 1) {
+      effects.update({ ...poseAt(0, 0), steerRad: frame % 2 === 0 ? 0.3 : 0 }, DT);
+    }
+    expect(leaves.instanceMatrix.array).toEqual(before);
+    expect(marks.visible).toBe(false);
+    expect(dust.visible).toBe(false);
+
+    // 往前開一小段再停住：之後即使車不動，落葉也繼續飄。
+    const stopped = straightRun(poseAt(0, 0), 0.05, 10).at(-1) ?? poseAt(0, 0);
+    for (const pose of straightRun(poseAt(0, 0), 0.05, 10)) {
+      effects.update(pose, DT);
+    }
+    const afterDriving = leaves.instanceMatrix.array.slice();
+    for (let frame = 0; frame < 120; frame += 1) {
+      effects.update(stopped, DT);
+    }
+    expect(leaves.instanceMatrix.array).not.toEqual(afterDriving);
+  });
 });
