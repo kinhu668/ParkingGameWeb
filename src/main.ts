@@ -1,4 +1,10 @@
 // 進入點：讀網址參數，啟動一般遊戲／展示（?show）／固定鏡頭截圖（?cam）／效能測試（?bench）其中一種。
+import {
+  nextGameCameraView,
+  resolveInitialView,
+  storeView,
+  type ViewStorage,
+} from './core/cameraView';
 import { advanceFixedLoop } from './core/fixedLoop';
 import { PHYSICS_HZ } from './core/gameConfig';
 import { detectLocale, getLocale, onLocaleChange, setLocale } from './core/i18n';
@@ -15,7 +21,8 @@ import {
   type SessionSnapshot,
 } from './level/session';
 import { runBench } from './render/benchMode';
-import { createFollowCamera, createPresetCamera } from './render/followCamera';
+import { createPresetCamera } from './render/followCamera';
+import { createGameCamera } from './render/gameCamera';
 import { createRenderer, fitRendererToCanvas } from './render/renderer';
 import { createGameScene } from './render/scene';
 import { runShowcase } from './render/showcase';
@@ -33,7 +40,16 @@ declare global {
   }
 }
 
-/** 一般遊戲：固定步長物理迴圈 + 算圖內插 + 鍵盤開車 + 停車判定 + HUD。 */
+/** 記住鏡頭用的 localStorage；瀏覽器停用儲存時連讀 `window.localStorage` 都會丟例外，那就當作沒有。 */
+function browserStorage(): ViewStorage | undefined {
+  try {
+    return window.localStorage;
+  } catch {
+    return undefined;
+  }
+}
+
+/** 一般遊戲：固定步長物理迴圈 + 算圖內插 + 鍵盤開車 + 停車判定 + 可切換的鏡頭（V）+ HUD。 */
 function runGame(canvas: HTMLCanvasElement): void {
   const hudRoot = document.querySelector<HTMLElement>('#hud');
   if (hudRoot === null) {
@@ -42,12 +58,15 @@ function runGame(canvas: HTMLCanvasElement): void {
 
   const renderer = createRenderer(canvas);
   const gameScene = createGameScene(renderer.capabilities.getMaxAnisotropy(), PROTOTYPE_LAYOUT.spot);
-  const followCamera = createFollowCamera(
-    PROTOTYPE_LAYOUT.startState.x,
-    PROTOTYPE_LAYOUT.startState.z,
-  );
   const input = attachKeyboardInput(window);
   const hud = createHud(hudRoot);
+
+  // 進場的鏡頭：?view= > 上次存的 > 預設。
+  const viewStorage = browserStorage();
+  const gameCamera = createGameCamera(
+    resolveInitialView(window.location.search, viewStorage),
+    PROTOTYPE_LAYOUT.startState,
+  );
 
   // 內插需要相鄰兩步的車輛狀態：previousVehicle = 上一步、session.vehicle = 最新一步。
   let session = startSession(PROTOTYPE_LAYOUT);
@@ -67,6 +86,14 @@ function runGame(canvas: HTMLCanvasElement): void {
       session = restartSession(session);
       previousVehicle = session.vehicle;
       accumulatorSeconds = 0;
+      gameCamera.snapTo(session.vehicle);
+    }
+
+    // V 切換鏡頭：換到循環順序的下一個，記住選擇。
+    if (input.consumeToggleCamera()) {
+      const view = nextGameCameraView(gameCamera.view());
+      gameCamera.setView(view);
+      storeView(viewStorage, view);
     }
 
     const loop = advanceFixedLoop(accumulatorSeconds, frameSeconds);
@@ -79,9 +106,11 @@ function runGame(canvas: HTMLCanvasElement): void {
 
     const pose = interpolateVehiclePose(previousVehicle, session.vehicle, loop.alpha);
     gameScene.update(pose);
-    followCamera.update(pose.x, pose.z, frameSeconds);
-    fitRendererToCanvas(renderer, followCamera.camera);
-    renderer.render(gameScene.scene, followCamera.camera);
+    // 駕駛座視角要藏起車艙玻璃與車頂，其他模式恢復。
+    gameScene.setInteriorView(gameCamera.view() === 'cockpit');
+    gameCamera.update(pose, session.vehicle.speedMps, frameSeconds);
+    fitRendererToCanvas(renderer, gameCamera.camera);
+    renderer.render(gameScene.scene, gameCamera.camera);
     hud.update(session.vehicle.speedMps, session.parked);
 
     requestAnimationFrame(frame);
