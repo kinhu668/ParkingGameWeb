@@ -581,6 +581,69 @@ describe('駕駛座視角的車身 setCarInteriorView', () => {
       expect(run.to - run.from).toBeGreaterThan(1);
     }
   });
+
+  test('車內後視鏡整面在畫面裡：右上方、視線上方、不貼邊也不擋正前方，沒有被頂篷或柱子遮住', () => {
+    const { car, eye, camera } = cockpitCar();
+    setCarInteriorView(car, true);
+    camera.aspect = 16 / 9;
+    camera.updateProjectionMatrix();
+    camera.updateMatrixWorld(true);
+    car.root.updateMatrixWorld(true);
+
+    const housing = car.root.getObjectByName('rearViewMirror:housing');
+    const glass = car.root.getObjectByName('rearViewMirror:glass');
+    if (!(housing instanceof Mesh) || !(glass instanceof Mesh)) {
+      throw new Error('找不到車內後視鏡');
+    }
+    // 鏡殼的八個角投影到畫面（NDC：x、y 在 [−1, 1] 內才看得到）。
+    housing.geometry.computeBoundingBox();
+    const bounds = housing.geometry.boundingBox ?? new Box3();
+    const corners: Vector3[] = [];
+    for (const x of [bounds.min.x, bounds.max.x]) {
+      for (const y of [bounds.min.y, bounds.max.y]) {
+        for (const z of [bounds.min.z, bounds.max.z]) {
+          corners.push(new Vector3(x, y, z).applyMatrix4(housing.matrixWorld).project(camera));
+        }
+      }
+    }
+    const xs = corners.map((corner) => corner.x);
+    const ys = corners.map((corner) => corner.y);
+    // 整面鏡子離畫面邊緣至少 3%（不被切掉），而且在鏡頭前方。
+    expect(Math.max(...xs)).toBeLessThan(0.94);
+    expect(Math.max(...ys)).toBeLessThan(0.94);
+    for (const corner of corners) {
+      expect(corner.z).toBeLessThan(1);
+      expect(corner.z).toBeGreaterThan(-1);
+    }
+    // 在畫面右上方：整個在畫面中線右邊、水平視線（NDC y ≈ 0.07）上方，不擋正前方的路面。
+    expect(Math.min(...xs)).toBeGreaterThan(0.3);
+    expect(Math.min(...ys)).toBeGreaterThan(0.15);
+    // 夠大，一眼看得出是一面鏡子：寬度佔畫面寬的 10% 以上、高度佔 5% 以上。
+    expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(0.2);
+    expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(0.1);
+
+    // 從眼睛看向鏡面中心與四個角落附近，第一個打到的就是鏡面（沒有被頂篷、A 柱、鏡框擋住）。
+    const meshes = visibleMeshes(car);
+    glass.geometry.computeBoundingBox();
+    const face = glass.geometry.boundingBox ?? new Box3();
+    for (const [u, v] of [
+      [0.5, 0.5],
+      [0.1, 0.1],
+      [0.9, 0.1],
+      [0.1, 0.9],
+      [0.9, 0.9],
+    ] as const) {
+      const target = new Vector3(
+        face.min.x + u * (face.max.x - face.min.x),
+        face.min.y + v * (face.max.y - face.min.y),
+        0,
+      ).applyMatrix4(glass.matrixWorld);
+      const hit = firstHit(meshes, eye, target.clone().sub(eye));
+      expect(hit?.object.name).toBe('rearViewMirror:glass');
+      // 離眼睛比近平面遠得多，不會被切掉。
+      expect(hit?.distance).toBeGreaterThan(5 * camera.near);
+    }
+  });
 });
 
 describe('俯視鏡頭 top', () => {

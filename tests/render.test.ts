@@ -25,7 +25,7 @@ import {
 } from '../src/render/renderConfig';
 import { SHOWCASE_IDS, createShowcaseObject } from '../src/render/showcase';
 import type { DriveInput } from '../src/vehicle/bicycleModel';
-import { BODY_LAYOUT } from '../src/vehicle/carBody';
+import { BODY_LAYOUT, bodyTopHeightM } from '../src/vehicle/carBody';
 import { createBodyGeometries, createCarFittings, plateText } from '../src/vehicle/carFittings';
 import {
   carLightsFor,
@@ -470,6 +470,29 @@ describe('車身配件 carFittings（燈組、車牌、門縫、保險桿、雨�
     expect(stemBox.max.y).toBeGreaterThan(frameBox.max.y);
     expect(stemBox.max.y).toBeLessThan(VEHICLE_CONFIG_SI.heightM);
     expect(stemBox.max.y).toBeGreaterThan(VEHICLE_CONFIG_SI.heightM - 0.12);
+    // 支桿很短（不到 15 公分），下端接在鏡殼上緣。
+    expect(stemBox.getSize(new Vector3()).length()).toBeLessThan(0.15);
+    expect(stemBox.min.y).toBeLessThan(frameBox.max.y + 0.01);
+
+    // 鏡框外面還有一圈鍍鉻邊，背後是深色鏡殼：由外到內是亮邊 → 黑框 → 鏡面。
+    const rim = car.root.getObjectByName('rearViewMirror:rim');
+    const housing = car.root.getObjectByName('rearViewMirror:housing');
+    expect(rim).toBeInstanceOf(Mesh);
+    expect(housing).toBeInstanceOf(Mesh);
+    const rimMaterial = (rim as Mesh).material as MeshStandardMaterial;
+    expect(rimMaterial.metalness).toBe(1);
+    expect(rimMaterial.color.getHSL({ h: 0, s: 0, l: 0 }).l).toBeGreaterThan(0.6);
+    const rimSize = new Box3().setFromObject(rim as Object3D).getSize(new Vector3());
+    expect(rimSize.x).toBeGreaterThan(frameBox.getSize(new Vector3()).x);
+    // 整組掛在前擋上緣前方的玻璃內側、車艙中線上，低於車頂、高於駕駛的眼睛。
+    const mirrorBox = new Box3().setFromObject(car.root.getObjectByName('rearViewMirror') as Object3D);
+    expect(mirrorBox.max.z).toBeLessThan(BODY_LAYOUT.windshieldTopZM + 0.01);
+    expect(mirrorBox.min.z).toBeGreaterThan(BODY_LAYOUT.windshieldTopZM - 0.25);
+    expect(mirrorBox.min.y).toBeGreaterThan(GAME_CAMERA_CONFIG.cockpit.heightM);
+    expect(Math.abs(mirrorBox.getCenter(new Vector3()).x)).toBeLessThan(0.02);
+    // 鏡殼不穿出玻璃：最高點低於它最前緣那裡的玻璃表面。
+    const headBox = new Box3().setFromObject(car.root.getObjectByName('rearViewMirror:head') as Object3D);
+    expect(headBox.max.y).toBeLessThan(bodyTopHeightM(headBox.min.z, 0));
 
     const doorFrames: Object3D[] = [];
     car.root.traverse((object) => {

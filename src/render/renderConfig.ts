@@ -640,6 +640,23 @@ export const CAR_VISUAL_CONFIG = {
   steeringWheelRadiusM: ftToM(0.58),
   steeringWheelTiltRad: degToRad(24),
   steeringRatio: 8,
+  /**
+   * 車內後視鏡。鏡殼中心在前擋上緣前方 aheadOfHeaderM、比該處的玻璃低 belowGlassM（貼著玻璃內側掛著）；
+   * 離駕駛的眼睛夠遠，整面鏡子才在駕駛座畫面的右上方、不被畫面邊緣切掉。
+   * yawRad：鏡面轉向駕駛的角度；tiltRad：往下俯的角度；rimM、bezelM：鍍鉻邊與黑色鏡框的寬度。
+   */
+  rearViewMirror: {
+    sizeM: { x: 0.22, y: 0.07, z: 0.03 },
+    aheadOfHeaderM: 0.1,
+    belowGlassM: 0.07,
+    yawRad: 0.3,
+    tiltRad: 0.1,
+    rimM: 0.006,
+    bezelM: 0.008,
+    /** 支桿的粗細，以及頂端的底座在前擋上緣前方多遠（越靠前，從駕駛座看支桿越短）。 */
+    stemM: 0.016,
+    mountAheadOfHeaderM: 0.03,
+  },
 
   bodyColor: 0x1f63b3,
   bodyRoughness: 0.32,

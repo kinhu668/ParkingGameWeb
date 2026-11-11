@@ -17,6 +17,7 @@ import {
 } from 'three';
 import { CAR_VISUAL_CONFIG as VISUAL, GAME_CAMERA_CONFIG } from '../render/renderConfig';
 import { BODY_LAYOUT, bodyTopHeightM } from './carBody';
+import { createBeamGeometry } from './carFittings';
 
 export interface CarInterior {
   readonly root: Group;
@@ -102,33 +103,59 @@ function createSeat(material: Material, xM: number, backZM: number, widthM: numb
 }
 
 /**
- * 車內後視鏡：黑色鏡框（外殼）裡一面朝後的鏡子，用一根支桿掛在前擋上緣中央的頂篷下。
- * 鏡面朝後、略偏向駕駛，從駕駛座看是右上方一面掛著的鏡子。
+ * 車內後視鏡：深色鏡殼、朝後的一圈鍍鉻邊、黑色鏡框與鏡面，用一根短支桿掛在前擋上緣中央的頂篷下。
+ * 鏡殼在前擋上緣「前方」、貼著玻璃內側：離駕駛的眼睛夠遠，整面鏡子才落在畫面右上方、不被畫面邊緣切掉。
+ * 鏡面朝後、轉向駕駛並略往下俯；整組在視線上方，不擋正前方的路面。
  */
-function createRearViewMirror(frame: Material, glass: Material): Group {
-  const sizeM = { x: 0.2, y: 0.056, z: 0.028 };
-  const mountZM = BODY_LAYOUT.windshieldTopZM + 0.01;
-  const roofM = bodyTopHeightM(mountZM, 0);
+function createRearViewMirror(
+  shell: Material,
+  rim: Material,
+  glass: Material,
+): Group {
+  const { sizeM, aheadOfHeaderM, belowGlassM, yawRad, tiltRad, rimM, bezelM, stemM, mountAheadOfHeaderM } =
+    VISUAL.rearViewMirror;
+  const headerZM = BODY_LAYOUT.windshieldTopZM;
+  const headZM = headerZM - aheadOfHeaderM;
+  const headYM = bodyTopHeightM(headZM, 0) - belowGlassM;
   const mirror = new Group();
   mirror.name = 'rearViewMirror';
 
   const head = new Group();
-  head.position.set(0, roofM - 0.088, mountZM + 0.055);
-  // 鏡頭略轉向駕駛（左側）。
-  head.rotation.y = -0.22;
-  const housing = shadowMesh(new BoxGeometry(sizeM.x, sizeM.y, sizeM.z), frame);
-  housing.name = 'rearViewMirror:frame';
-  const face = new Mesh(new PlaneGeometry(sizeM.x - 0.022, sizeM.y - 0.02), glass);
+  head.name = 'rearViewMirror:head';
+  head.position.set(0, headYM, headZM);
+  // 先轉向駕駛（左側），再往下俯。
+  head.rotation.order = 'YXZ';
+  head.rotation.y = -yawRad;
+  head.rotation.x = tiltRad;
+  const housing = shadowMesh(new BoxGeometry(sizeM.x, sizeM.y, sizeM.z), shell);
+  housing.name = 'rearViewMirror:housing';
+  // 朝後的那一面由外到內：鍍鉻邊 → 黑色鏡框 → 鏡面，一層比一層小、一層比一層凸出一點。
+  const faceZM = sizeM.z / 2;
+  const chromeRim = new Mesh(new BoxGeometry(sizeM.x, sizeM.y, 0.004), rim);
+  chromeRim.name = 'rearViewMirror:rim';
+  chromeRim.position.z = faceZM;
+  const bezel = new Mesh(new BoxGeometry(sizeM.x - 2 * rimM, sizeM.y - 2 * rimM, 0.004), shell);
+  bezel.name = 'rearViewMirror:frame';
+  bezel.position.z = faceZM + 0.002;
+  const face = new Mesh(
+    new PlaneGeometry(sizeM.x - 2 * (rimM + bezelM), sizeM.y - 2 * (rimM + bezelM)),
+    glass,
+  );
   face.name = 'rearViewMirror:glass';
-  face.position.z = sizeM.z / 2 + 0.002;
-  head.add(housing, face);
+  face.position.z = faceZM + 0.0055;
+  head.add(housing, chromeRim, bezel, face);
 
-  // 支桿：從鏡殼背面斜上去接到前擋上緣的頂篷。
-  const stem = shadowMesh(new BoxGeometry(0.02, 0.07, 0.02), frame);
+  // 短支桿：從鏡殼背面上緣斜上去，接到前擋上緣（玻璃的烤漆邊框內側）的底座。
+  const mountZM = headerZM - mountAheadOfHeaderM;
+  const mountYM = bodyTopHeightM(mountZM, 0) - 0.02;
+  const stem = shadowMesh(
+    createBeamGeometry([0, headYM + sizeM.y / 2 - 0.012, headZM - 0.004], [0, mountYM, mountZM], stemM),
+    shell,
+  );
   stem.name = 'rearViewMirror:stem';
-  stem.position.set(0, roofM - 0.045, mountZM + 0.03);
-  stem.rotation.x = 0.5;
-  mirror.add(head, stem);
+  const mount = box(shell, [0.06, 0.012, 0.045], [0, mountYM + 0.004, mountZM]);
+  mount.name = 'rearViewMirror:mount';
+  mirror.add(head, stem, mount);
   return mirror;
 }
 
@@ -219,7 +246,13 @@ export function createCarInterior(mirrorGlass: Material): CarInterior {
     box(dash, [2 * INNER_HALF_WIDTH_M, COWL_M - FLOOR_M, 0.02], [0, (COWL_M + FLOOR_M) / 2, BODY_LAYOUT.windshieldBaseZM + 0.02]),
   );
 
-  root.add(createRearViewMirror(dash, mirrorGlass));
+  const mirrorShell = new MeshStandardMaterial({ color: VISUAL.trimColor, roughness: VISUAL.trimRoughness });
+  const mirrorRim = new MeshStandardMaterial({
+    color: VISUAL.chromeColor,
+    roughness: VISUAL.chromeRoughness,
+    metalness: 1,
+  });
+  root.add(createRearViewMirror(mirrorShell, mirrorRim, mirrorGlass));
 
   return { root, steeringWheel };
 }
