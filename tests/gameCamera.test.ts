@@ -490,6 +490,27 @@ describe('駕駛座視角的車身 setCarInteriorView', () => {
     }
   });
 
+  test('頂篷不壓住畫面：正前方往上 22° 以內都是擋風玻璃外的天空，頂篷前緣在畫面最上面的一小條', () => {
+    const { car, eye, camera } = cockpitCar();
+    setCarInteriorView(car, true);
+    const meshes = visibleMeshes(car);
+    for (const azimuthDeg of [-10, 0, 10, 20]) {
+      for (const elevationDeg of [14, 18, 22]) {
+        expect(firstHit(meshes, eye, lookDirection(azimuthDeg, elevationDeg))).toBeUndefined();
+      }
+    }
+    // 畫面上緣的仰角 = 半個視角 − 俯角；頂篷前緣要在離上緣不到 10° 的地方才開始。
+    const topEdgeDeg = camera.fov / 2 - radToDeg(GAME_CAMERA_CONFIG.cockpit.pitchDownRad);
+    let headerDeg = topEdgeDeg;
+    for (let elevationDeg = 0; elevationDeg <= topEdgeDeg; elevationDeg += 0.5) {
+      if (firstHit(meshes, eye, lookDirection(0, elevationDeg))?.object === car.headliner) {
+        headerDeg = elevationDeg;
+        break;
+      }
+    }
+    expect(topEdgeDeg - headerDeg).toBeLessThan(10);
+  });
+
   test('頭頂是淺色、有自發光的頂篷（不是一團黑），離眼睛不到 1 ft', () => {
     const { car, eye } = cockpitCar();
     setCarInteriorView(car, true);

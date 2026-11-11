@@ -230,7 +230,7 @@ export const GAME_CAMERA_CONFIG = {
     fovDeg: 72,
     nearM: ftToM(0.25),
     lateralM: ftToM(-1.3),
-    heightM: ftToM(3.9),
+    heightM: ftToM(3.8),
     aheadM: ftToM(-0.8),
     pitchDownRad: degToRad(3),
   },
