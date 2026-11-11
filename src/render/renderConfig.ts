@@ -437,6 +437,40 @@ export const SPOT_MARKING_CONFIG = {
   opacity: 0.94,
 } as const;
 
+/**
+ * 停車場的路緣石：圍住場地的一圈低矮水泥邊。純視覺，沒有碰撞。
+ * 範圍以車位自己的方向為準：左右對稱於車位中線，前緣在車位前緣之外，後緣在車位後方遠處（起點之後）。
+ */
+export const CURB_CONFIG = {
+  /** 場地半寬（車位中線到左右路緣內側）。 */
+  halfWidthM: ftToM(84),
+  /** 車位前緣到前方路緣內側的距離。 */
+  aheadOfSpotM: ftToM(4.5),
+  /** 車位中心到後方路緣內側的距離；起點在車位後方 60 ft，還要留迴轉的空間。 */
+  behindSpotM: ftToM(150),
+  /** 路緣石的斷面：寬與高（各 6 英吋）。 */
+  widthM: ftToM(0.5),
+  heightM: ftToM(0.5),
+  color: 0x9a968d,
+  roughness: 0.9,
+} as const;
+
+/**
+ * 車擋（輪擋）：車位盡頭的一條水泥塊。純視覺，沒有碰撞。
+ * 放在車位前緣標線的外側：停車判定的車位矩形裡沒有它，車停到最前面也不會插進去。
+ */
+export const WHEEL_STOP_CONFIG = {
+  /** 長（橫跨車位的方向）、底寬、頂寬、高。斷面是梯形。 */
+  lengthM: ftToM(6),
+  baseDepthM: ftToM(0.65),
+  topDepthM: ftToM(0.4),
+  heightM: ftToM(0.36),
+  /** 車位前緣（標線外緣）到車擋最近那一面的距離。 */
+  gapFromSpotM: ftToM(0.3),
+  color: 0xb5ad94,
+  roughness: 0.86,
+} as const;
+
 /** 車輛外觀。整體長寬高與軸距來自 VehicleConfig，這裡只放比例與顏色。 */
 export const CAR_VISUAL_CONFIG = {
   /** 車身底部離地高度。 */

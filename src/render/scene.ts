@@ -10,6 +10,7 @@ import {
 import { DEFAULT_SEED } from '../core/gameConfig';
 import type { ParkingSpot } from '../level/parkingJudge';
 import { createGround } from '../props/ground';
+import { createCurbs, createWheelStop } from '../props/lotEdges';
 import { createSpotMarkings } from '../props/spotMarkings';
 import type { VehiclePose } from '../vehicle/bicycleModel';
 import { createCarMesh, setCarInteriorView, updateCarMesh } from '../vehicle/carMesh';
@@ -133,6 +134,8 @@ export function createGameScene(
   scene.add(ground);
 
   scene.add(createSpotMarkings(spot));
+  // 路緣石與車擋只是擺設：沒有碰撞，也不進停車判定。
+  scene.add(createCurbs(spot), createWheelStop(spot));
 
   const car = createCarMesh();
   scene.add(car.root);
