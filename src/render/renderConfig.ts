@@ -1,6 +1,7 @@
-// 畫面的可調數值：鏡頭、燈光、陰影、霧、地面、車位標線、車輛外觀。
+// 畫面的可調數值：畫質級別、鏡頭、燈光、陰影、霧、地面、車位標線、車輛外觀。
 // 長度一律以英尺填寫，經 units.ts 換成公尺；顏色是 sRGB 十六進位。
 import { degToRad, ftToM, mphToMps } from '../core/units';
+import type { QualityLevel, QualitySettings } from './quality';
 
 /** 算圖器。 */
 export const RENDERER_CONFIG = {
@@ -8,6 +9,64 @@ export const RENDERER_CONFIG = {
   maxPixelRatio: 2,
   toneMappingExposure: 1.0,
 } as const;
+
+/**
+ * 各畫質級別的開關與數值（解析與自動選擇見 quality.ts）。
+ * - low：直接畫到畫面上，沒有任何全螢幕濾鏡；天空貼圖烘得小、陰影貼圖小、像素比上限 1。
+ * - medium：low 加上暈影，天空與陰影較細；仍然直接畫到畫面上，CPU 軟體算圖也跑得動。
+ * - high：走高動態範圍的後製鏈：環境光遮蔽、泛光、色差、暈影、抖色。
+ * - ultra：high 的全部再加強，另加 SMAA。對準高階顯示卡，只能由 `?quality=ultra` 開啟。
+ */
+export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = {
+  low: {
+    level: 'low',
+    maxPixelRatio: 1,
+    toneMapping: 'agx',
+    shadowMapSize: 1024,
+    msaaSamples: 4,
+    skyCubeSizePx: 256,
+    ambientOcclusion: null,
+    bloom: null,
+    lens: null,
+    smaa: false,
+  },
+  medium: {
+    level: 'medium',
+    maxPixelRatio: 1.5,
+    toneMapping: 'agx',
+    shadowMapSize: 2048,
+    msaaSamples: 4,
+    skyCubeSizePx: 512,
+    ambientOcclusion: null,
+    bloom: null,
+    lens: { vignette: 0.24, chromaticAberration: 0 },
+    smaa: false,
+  },
+  high: {
+    level: 'high',
+    maxPixelRatio: 2,
+    toneMapping: 'agx',
+    shadowMapSize: 4096,
+    msaaSamples: 4,
+    skyCubeSizePx: 1024,
+    ambientOcclusion: { radiusM: 0.6, samples: 12, denoiseSamples: 12, intensity: 0.85 },
+    bloom: { strength: 0.18, radius: 0.5, threshold: 1.8 },
+    lens: { vignette: 0.4, chromaticAberration: 0.0012 },
+    smaa: false,
+  },
+  ultra: {
+    level: 'ultra',
+    maxPixelRatio: 2,
+    toneMapping: 'agx',
+    shadowMapSize: 4096,
+    msaaSamples: 4,
+    skyCubeSizePx: 2048,
+    ambientOcclusion: { radiusM: 0.75, samples: 24, denoiseSamples: 16, intensity: 1 },
+    bloom: { strength: 0.24, radius: 0.6, threshold: 1.6 },
+    lens: { vignette: 0.4, chromaticAberration: 0.0012 },
+    smaa: true,
+  },
+};
 
 /**
  * 斜俯視跟隨鏡頭（`?cam=follow` 的定格與 `?bench` 用；一般遊戲的鏡頭見 GAME_CAMERA_CONFIG）。
