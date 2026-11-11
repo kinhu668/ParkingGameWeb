@@ -1,12 +1,11 @@
-// 畫面的可調數值：畫質級別、鏡頭、燈光、陰影、霧、地面、車位標線、車輛外觀。
+// 畫面的可調數值：畫質級別、鏡頭、燈光、陰影、霧、後製、地面、車位標線、車輛外觀。
 // 長度一律以英尺填寫，經 units.ts 換成公尺；顏色是 sRGB 十六進位。
 import { degToRad, ftToM, mphToMps } from '../core/units';
 import type { QualityLevel, QualitySettings } from './quality';
 
-/** 算圖器。 */
+/** 算圖器。像素比上限與色調映射曲線跟著畫質級別走（QUALITY_PRESETS）。 */
 export const RENDERER_CONFIG = {
-  /** 像素比上限；高 DPI 螢幕不必算超過 2 倍。 */
-  maxPixelRatio: 2,
+  /** 曝光倍率。天空、太陽、補光的強度都是以 1 為準調的。 */
   toneMappingExposure: 1.0,
 } as const;
 
@@ -16,6 +15,7 @@ export const RENDERER_CONFIG = {
  * - medium：low 加上暈影，天空與陰影較細；仍然直接畫到畫面上，CPU 軟體算圖也跑得動。
  * - high：走高動態範圍的後製鏈：環境光遮蔽、泛光、色差、暈影、抖色。
  * - ultra：high 的全部再加強，另加 SMAA。對準高階顯示卡，只能由 `?quality=ultra` 開啟。
+ * 黃昏的色調分級併在色調映射裡，四個級別都有。
  */
 export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = {
   low: {
@@ -67,6 +67,22 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = 
     smaa: true,
   },
 };
+
+/**
+ * 黃昏的色調分級，接在 AgX 色調映射之後（數值在顯示線性空間，也就是轉 sRGB 之前）。
+ * 併在色調映射的函式裡，所以直接畫到畫面上（low、medium）與走後製鏈（high、ultra）的顏色是同一套。
+ */
+export const TONE_LOOK_CONFIG = {
+  /** 暗部加上的冷色（線性 RGB）；越暗加越多。 */
+  shadowLift: { r: 0.0, g: 0.0025, b: 0.007 },
+  /** 亮部乘上的暖色（線性 RGB 倍率）。 */
+  highlightTint: { r: 1.0, g: 0.955, b: 0.88 },
+  /** 飽和度（1 = 不變）。AgX 的畫面偏灰，補回來。 */
+  saturation: 1.3,
+  /** 對比：以 contrastPivot 為支點的冪次（1 = 不變）。 */
+  contrast: 1.1,
+  contrastPivot: 0.18,
+} as const;
 
 /**
  * 斜俯視跟隨鏡頭（`?cam=follow` 的定格與 `?bench` 用；一般遊戲的鏡頭見 GAME_CAMERA_CONFIG）。
@@ -223,6 +239,17 @@ export const SUN_CONFIG = {
   shadowFarM: ftToM(320),
   shadowBias: -0.0004,
   shadowNormalBias: 0.03,
+} as const;
+
+/** 鏡頭效果與後製鏈裡不隨畫質級別改變的數值。 */
+export const POST_CONFIG = {
+  /** 暈影從離畫面中心多遠開始、到多遠壓到最暗（以畫面半高為 1；16:9 的角落大約是 2）。 */
+  vignetteInner: 0.85,
+  vignetteOuter: 2.1,
+  /** 環境光遮蔽的降噪半徑（像素）。 */
+  aoDenoiseRadiusPx: 8,
+  /** `?cam` 定格前，要等後製鏈的非同步資源（SMAA 查表貼圖）最多這麼久（毫秒）；逾時就照常畫。 */
+  readyTimeoutMs: 2000,
 } as const;
 
 /** 地面與柏油顆粒貼圖。 */

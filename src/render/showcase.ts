@@ -19,7 +19,7 @@ import { createSpotMarkings } from '../props/spotMarkings';
 import { createCarMesh } from '../vehicle/carMesh';
 import { createCamera } from './followCamera';
 import { SHOWCASE_CONFIG } from './renderConfig';
-import { createRenderer, fitRendererToCanvas } from './renderer';
+import type { RenderContext } from './renderContext';
 import { addLights } from './scene';
 
 /** 展示登錄表：id → 建立物件（擺在原點、車頭／車位前方朝 −Z）。用 Map，`toString` 之類的 id 才不會誤中。 */
@@ -78,9 +78,8 @@ function showUnknownNotice(): void {
   document.body.append(notice);
 }
 
-/** 啟動展示模式。畫出第一幀後在 `<body>` 設 `data-shot-ready="true"`。 */
-export function runShowcase(canvas: HTMLCanvasElement, id: string): void {
-  const renderer = createRenderer(canvas);
+/** 啟動展示模式。畫出完整的一幀後在 `<body>` 設 `data-shot-ready="true"`。 */
+export function runShowcase({ pipeline }: RenderContext, id: string): void {
   const scene = new Scene();
   scene.background = new Color(SHOWCASE_CONFIG.backgroundColor);
   addLights(scene, SHOWCASE_CONFIG.directionToKeyLight);
@@ -102,7 +101,7 @@ export function runShowcase(canvas: HTMLCanvasElement, id: string): void {
   const camera = createCamera();
 
   function frame(): void {
-    fitRendererToCanvas(renderer, camera);
+    pipeline.fit(camera);
 
     // 以垂直與水平視角中窄的那一邊算「包圍球塞滿畫面」的距離；視窗改變長寬比時跟著調整。
     const verticalHalfRad = degToRad(camera.fov) / 2;
@@ -118,10 +117,17 @@ export function runShowcase(canvas: HTMLCanvasElement, id: string): void {
     );
     camera.lookAt(subject.center);
 
-    renderer.render(scene, camera);
-    document.body.dataset.shotReady = 'true';
+    pipeline.render(scene, camera);
+    // 後製鏈的非同步資源（SMAA 的查表貼圖）載入後畫出來的幀才算數。
+    if (pipelineReady) {
+      document.body.dataset.shotReady = 'true';
+    }
     requestAnimationFrame(frame);
   }
 
+  let pipelineReady = false;
+  void pipeline.ready.then(() => {
+    pipelineReady = true;
+  });
   requestAnimationFrame(frame);
 }

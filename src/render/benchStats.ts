@@ -5,7 +5,7 @@ import { BENCH_CONFIG } from './renderConfig';
 export interface BenchSample {
   /** 這一幀與上一幀的間隔（秒）。 */
   readonly frameSeconds: number;
-  /** 這一幀的 draw calls（renderer.info.render.calls）。 */
+  /** 這一幀的 draw calls（FramePipeline.drawCalls()：場景 + 陰影貼圖 + 後製鏈的每個濾鏡）。 */
   readonly drawCalls: number;
 }
 

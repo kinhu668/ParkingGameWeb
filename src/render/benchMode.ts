@@ -1,5 +1,8 @@
 // `?bench`：以真實時間沿固定示範路線跑一遍，量幀時間與 draw calls，結束後把統計值
 // 寫到畫面上的 #bench-result（文字 + data-result 的 JSON）與 console。沒有 HUD、不接鍵盤。
+// 畫面與一般遊戲走同一條管線（含後製），所以 draw calls 是「整幀」的數字：場景、陰影貼圖，
+// 加上後製鏈每個全螢幕濾鏡各一次（環境光遮蔽還會把場景多畫一遍法線）。
+// 數字跟畫質級別有關，所以級別寫在 #bench-result 的 data-quality 上。
 import { advanceFixedLoop } from '../core/fixedLoop';
 import { FIXED_STEP_SECONDS } from '../core/gameConfig';
 import { t, type TranslationKey } from '../core/i18n';
@@ -10,7 +13,7 @@ import { interpolateVehiclePose, stepVehicle } from '../vehicle/bicycleModel';
 import { computeBenchStats, type BenchSample, type BenchStats } from './benchStats';
 import { createFollowCamera } from './followCamera';
 import { BENCH_CONFIG } from './renderConfig';
-import { createRenderer, fitRendererToCanvas } from './renderer';
+import type { RenderContext } from './renderContext';
 import { createGameScene } from './scene';
 
 /** 把統計值填進結果面板：每個數字一列「名稱 + 值」，完整數值放在 data-result。 */
@@ -35,8 +38,7 @@ function showResult(panel: HTMLElement, stats: BenchStats): void {
 }
 
 /** 啟動效能測試。 */
-export function runBench(canvas: HTMLCanvasElement): void {
-  const renderer = createRenderer(canvas);
+export function runBench({ renderer, quality, pipeline }: RenderContext): void {
   const gameScene = createGameScene(renderer.capabilities.getMaxAnisotropy(), PROTOTYPE_LAYOUT.spot);
   const start = PROTOTYPE_LAYOUT.startState;
   const followCamera = createFollowCamera(start.x, start.z);
@@ -44,6 +46,7 @@ export function runBench(canvas: HTMLCanvasElement): void {
   const panel = document.createElement('div');
   panel.id = 'bench-result';
   panel.className = 'hud-panel mode-panel';
+  panel.dataset.quality = quality.level;
   panel.textContent = t('bench.running');
   document.body.append(panel);
 
@@ -74,15 +77,14 @@ export function runBench(canvas: HTMLCanvasElement): void {
     const pose = interpolateVehiclePose(previousVehicle, vehicle, loop.alpha);
     gameScene.update(pose);
     followCamera.update(pose.x, pose.z, frameSeconds);
-    fitRendererToCanvas(renderer, followCamera.camera);
-    renderer.render(gameScene.scene, followCamera.camera);
+    pipeline.render(gameScene.scene, followCamera.camera);
 
     // 第一幀沒有「與上一幀的間隔」，不算；接著略過暖機的幀，之後每幀記一筆。
     if (!isFirstFrame) {
       if (warmupFramesLeft > 0) {
         warmupFramesLeft -= 1;
       } else {
-        samples.push({ frameSeconds, drawCalls: renderer.info.render.calls });
+        samples.push({ frameSeconds, drawCalls: pipeline.drawCalls() });
       }
     }
 

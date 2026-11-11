@@ -1,4 +1,4 @@
-// 進入點：讀網址參數，啟動一般遊戲／展示（?show）／固定鏡頭截圖（?cam）／效能測試（?bench）其中一種。
+// 進入點：讀網址參數，決定畫質（?quality 或自動），啟動一般遊戲／展示（?show）／固定鏡頭截圖（?cam）／效能測試（?bench）其中一種。
 import {
   nextGameCameraView,
   resolveInitialView,
@@ -23,7 +23,12 @@ import {
 import { runBench } from './render/benchMode';
 import { createPresetCamera } from './render/followCamera';
 import { createGameCamera } from './render/gameCamera';
-import { createRenderer, fitRendererToCanvas } from './render/renderer';
+import { resolveQuality } from './render/quality';
+import {
+  createRenderContext,
+  detectQualityHints,
+  type RenderContext,
+} from './render/renderContext';
 import { createGameScene } from './render/scene';
 import { runShowcase } from './render/showcase';
 import { createHud } from './ui/hud';
@@ -50,13 +55,12 @@ function browserStorage(): ViewStorage | undefined {
 }
 
 /** 一般遊戲：固定步長物理迴圈 + 算圖內插 + 鍵盤開車 + 停車判定 + 可切換的鏡頭（V）+ HUD。 */
-function runGame(canvas: HTMLCanvasElement): void {
+function runGame({ renderer, pipeline }: RenderContext): void {
   const hudRoot = document.querySelector<HTMLElement>('#hud');
   if (hudRoot === null) {
     throw new Error('找不到 #hud');
   }
 
-  const renderer = createRenderer(canvas);
   const gameScene = createGameScene(renderer.capabilities.getMaxAnisotropy(), PROTOTYPE_LAYOUT.spot);
   const input = attachKeyboardInput(window);
   const hud = createHud(hudRoot);
@@ -111,8 +115,7 @@ function runGame(canvas: HTMLCanvasElement): void {
     // 駕駛座視角要藏起車艙玻璃（車頂保留），其他模式恢復。
     gameScene.setInteriorView(gameCamera.view() === 'cockpit');
     gameCamera.update(pose, session.vehicle.speedMps, frameSeconds);
-    fitRendererToCanvas(renderer, gameCamera.camera);
-    renderer.render(gameScene.scene, gameCamera.camera);
+    pipeline.render(gameScene.scene, gameCamera.camera);
     hud.update(session.vehicle.speedMps, session.parked);
 
     requestAnimationFrame(frame);
@@ -125,24 +128,32 @@ function runGame(canvas: HTMLCanvasElement): void {
  * 固定鏡頭截圖：沿示範路線同步跑 round(t × 60) 步物理（不等真實時間），
  * 用指定鏡頭畫一幀後定格，並在 `<body>` 設 `data-shot-ready="true"`。沒有 HUD、不接鍵盤。
  */
-function runCameraShot(canvas: HTMLCanvasElement, preset: CameraPreset, timeSeconds: number): void {
+function runCameraShot(
+  { renderer, pipeline }: RenderContext,
+  preset: CameraPreset,
+  timeSeconds: number,
+): void {
   // 路線結束後車已停住，再跑也不會變；超過的時間夾在路線長度，免得很大的 t 把分頁卡死。
   const steps = Math.min(Math.round(timeSeconds * PHYSICS_HZ), DEMO_ROUTE_STEPS);
   const vehicle = demoVehicleAfterSteps(PROTOTYPE_LAYOUT.startState, steps);
 
-  const renderer = createRenderer(canvas);
   const gameScene = createGameScene(renderer.capabilities.getMaxAnisotropy(), PROTOTYPE_LAYOUT.spot);
   gameScene.update(vehicle);
   const camera = createPresetCamera(preset, vehicle.x, vehicle.z, PROTOTYPE_LAYOUT.spot);
 
   const draw = (): void => {
-    fitRendererToCanvas(renderer, camera);
-    renderer.render(gameScene.scene, camera);
+    pipeline.render(gameScene.scene, camera);
   };
+  // 第一次畫：著色器在這裡同步編譯完，畫布上已經是經過整條後製鏈的一幀。
   draw();
   // 畫面是定格的，但視窗大小變了要用同一個狀態重畫，否則舊的一幀會被拉伸。
   window.addEventListener('resize', draw);
-  document.body.dataset.shotReady = 'true';
+  // 後製鏈若有非同步載入的資源（SMAA 的查表貼圖），第一幀還沒有它的效果；
+  // 等它載入後重畫一次再標記定格完成，截圖才是完整的後製結果、也才能重現。
+  void pipeline.ready.then(() => {
+    draw();
+    document.body.dataset.shotReady = 'true';
+  });
 }
 
 const canvas = document.querySelector<HTMLCanvasElement>('#game-canvas');
@@ -158,18 +169,25 @@ setLocale(detectLocale(window.location.search, navigator.language));
 syncDocumentLanguage();
 onLocaleChange(syncDocumentLanguage);
 
+// 畫質：有效的 ?quality= 優先，否則依裝置自動選。只在這裡讀一次網址；每種模式都用同一份設定。
+// 決議結果寫在 <html data-quality>，方便除錯與 e2e 確認。
+const resolvedQuality = resolveQuality(window.location.search, detectQualityHints());
+document.documentElement.dataset.quality = resolvedQuality.settings.level;
+document.documentElement.dataset.qualitySource = resolvedQuality.source;
+const renderContext = createRenderContext(canvas, resolvedQuality.settings);
+
 const mode = parseUrlMode(window.location.search);
 switch (mode.kind) {
   case 'show':
-    runShowcase(canvas, mode.id);
+    runShowcase(renderContext, mode.id);
     break;
   case 'cam':
-    runCameraShot(canvas, mode.preset, mode.timeSeconds);
+    runCameraShot(renderContext, mode.preset, mode.timeSeconds);
     break;
   case 'bench':
-    runBench(canvas);
+    runBench(renderContext);
     break;
   case 'game':
-    runGame(canvas);
+    runGame(renderContext);
     break;
 }
