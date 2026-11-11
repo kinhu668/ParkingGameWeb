@@ -16,6 +16,7 @@ import { createLotLayout, spotLocalToWorld } from '../props/lotLayout';
 import { createLotProps } from '../props/lotProps';
 import { createSpotMarkings } from '../props/spotMarkings';
 import type { VehiclePose } from '../vehicle/bicycleModel';
+import { createCarHeadlights } from '../vehicle/carHeadlights';
 import {
   createCarMesh,
   setCarInteriorView,
@@ -223,6 +224,13 @@ export function createGameScene(
 
   const car = createCarMesh(quality.vehicleDetail);
   scene.add(car.root);
+  // 頭燈照地：掛在車底下，跟著車走、跟著車頭轉。只有遊戲場景的車有，展示台的沒有。
+  const headlights = createCarHeadlights(quality.headlights, usesHdrChain(quality));
+  car.root.add(headlights.root);
+
+  // 倒車輪胎痕、灰塵、落葉：純視覺的小效果，數量跟著畫質級別走。
+  const effects = createSceneEffects(quality, spot, start, DEFAULT_SEED);
+  scene.add(effects.root);
 
   return {
     scene,
@@ -245,6 +253,7 @@ export function createGameScene(
     },
     setLights(lights) {
       setCarLights(car, lights);
+      headlights.setReversing(lights.reversing);
     },
   };
 }
