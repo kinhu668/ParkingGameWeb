@@ -1,0 +1,8 @@
+node_modules/
+dist/
+
+# Playwright 報告與截圖輸出
+playwright-report/
+test-results/
+blob-report/
+e2e/output/
