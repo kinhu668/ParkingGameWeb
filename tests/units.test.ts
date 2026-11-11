@@ -3,6 +3,7 @@ import {
   degToRad,
   ftToM,
   mToFt,
+  msToS,
   mphPerSToMps2,
   mphToMps,
   mps2ToMphPerS,
@@ -86,5 +87,13 @@ describe('角度 度 ↔ 弧度', () => {
     for (const degrees of [0, 3, 8, 35, 90, 120, 270, 355, -8, -90]) {
       expect(radToDeg(degToRad(degrees))).toBeCloseTo(degrees, 12);
     }
+  });
+});
+
+describe('時間 ms → s', () => {
+  test('1000 ms = 1 s；一幀 60 fps ≈ 16.67 ms ≈ 1/60 s', () => {
+    expect(msToS(1000)).toBe(1);
+    expect(msToS(0)).toBe(0);
+    expect(msToS(1000 / 60)).toBeCloseTo(1 / 60, 12);
   });
 });

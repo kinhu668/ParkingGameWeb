@@ -10,6 +10,9 @@ const MPS_PER_MPH = 0.44704;
 /** 半圈 = 180° = π rad。 */
 const DEGREES_PER_HALF_TURN = 180;
 
+/** 1 s = 1000 ms。 */
+const MS_PER_SECOND = 1000;
+
 export function ftToM(feet: number): number {
   return feet * METERS_PER_FOOT;
 }
@@ -40,4 +43,8 @@ export function degToRad(degrees: number): number {
 
 export function radToDeg(radians: number): number {
   return (radians * DEGREES_PER_HALF_TURN) / Math.PI;
+}
+
+export function msToS(milliseconds: number): number {
+  return milliseconds / MS_PER_SECOND;
 }

@@ -3,6 +3,7 @@ import { FIXED_STEP_SECONDS, PHYSICS_HZ } from '../src/core/gameConfig';
 import { forward, headingDelta, right, type GroundVector } from '../src/core/heading';
 import { degToRad, ftToM, mToFt, mphToMps, mpsToMph, radToDeg } from '../src/core/units';
 import {
+  interpolateVehiclePose,
   stepVehicle,
   vehicleCorners,
   type DriveInput,
@@ -695,5 +696,48 @@ describe('vehicleCorners：車身四角', () => {
       state.z + (f.z * VEHICLE_CONFIG_SI.lengthM) / 2,
       DIGITS,
     );
+  });
+});
+
+describe('算圖內插 interpolateVehiclePose', () => {
+  const previous = { x: 1, z: -2, headingRad: degToRad(10), steerRad: degToRad(-4) };
+  const current = { x: 3, z: -6, headingRad: degToRad(20), steerRad: degToRad(4) };
+
+  test('alpha 0 是上一步、alpha 1 是這一步', () => {
+    const atStart = interpolateVehiclePose(previous, current, 0);
+    expect(atStart.x).toBe(previous.x);
+    expect(atStart.z).toBe(previous.z);
+    expect(atStart.headingRad).toBe(previous.headingRad);
+    expect(atStart.steerRad).toBe(previous.steerRad);
+
+    const atEnd = interpolateVehiclePose(previous, current, 1);
+    expect(atEnd.x).toBeCloseTo(current.x, DIGITS);
+    expect(atEnd.z).toBeCloseTo(current.z, DIGITS);
+    expect(atEnd.headingRad).toBeCloseTo(current.headingRad, DIGITS);
+    expect(atEnd.steerRad).toBeCloseTo(current.steerRad, DIGITS);
+  });
+
+  test('alpha 0.25：位置、heading、轉向角都走四分之一', () => {
+    const pose = interpolateVehiclePose(previous, current, 0.25);
+    expect(pose.x).toBeCloseTo(1.5, DIGITS);
+    expect(pose.z).toBeCloseTo(-3, DIGITS);
+    expect(radToDeg(pose.headingRad)).toBeCloseTo(12.5, DIGITS);
+    expect(radToDeg(pose.steerRad)).toBeCloseTo(-2, DIGITS);
+  });
+
+  test('heading 跨過 0°：358° → 2° 走 4° 的短弧，不是倒轉 356°', () => {
+    const from = { ...previous, headingRad: degToRad(358) };
+    const to = { ...current, headingRad: degToRad(2) };
+    expect(radToDeg(interpolateVehiclePose(from, to, 0.25).headingRad)).toBeCloseTo(359, DIGITS);
+    expect(radToDeg(interpolateVehiclePose(from, to, 0.75).headingRad)).toBeCloseTo(1, DIGITS);
+    // 反方向（2° → 358°）同樣走短弧。
+    expect(radToDeg(interpolateVehiclePose(to, from, 0.25).headingRad)).toBeCloseTo(1, DIGITS);
+  });
+
+  test('靜止的車（前後兩步相同）不論 alpha 多少，姿態逐位元不變', () => {
+    const still = { x: 12.3, z: -4.56, headingRad: degToRad(123.4), steerRad: 0 };
+    for (const alpha of [0, 0.1, 0.5, 0.999]) {
+      expect(interpolateVehiclePose(still, still, alpha)).toEqual(still);
+    }
   });
 });

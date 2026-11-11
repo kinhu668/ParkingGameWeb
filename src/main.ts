@@ -1,17 +1,58 @@
-// 輪次 1 的最小進入點：只把畫布清成單色，證明建置與 WebGL2 可用。
-// 之後的輪次會改由 Three.js 的 renderer 接手同一個畫布。
+// 進入點：固定步長物理迴圈 + 算圖內插 + 鍵盤開車。
+import { advanceFixedLoop } from './core/fixedLoop';
+import { FIXED_STEP_SECONDS } from './core/gameConfig';
+import { attachKeyboardInput } from './core/input';
+import { msToS } from './core/units';
+import { createFollowCamera } from './render/followCamera';
+import { createRenderer, fitRendererToCanvas } from './render/renderer';
+import { createGameScene } from './render/scene';
+import { interpolateVehiclePose, stepVehicle, type VehicleState } from './vehicle/bicycleModel';
 
-const CLEAR_COLOR = { r: 0.53, g: 0.62, b: 0.7, a: 1 } as const;
+/** 起始姿態：原點、車頭朝 −Z（heading 0）、靜止。 */
+const START_STATE: VehicleState = { x: 0, z: 0, headingRad: 0, speedMps: 0, steerRad: 0 };
 
 const canvas = document.querySelector<HTMLCanvasElement>('#game-canvas');
 if (canvas === null) {
   throw new Error('找不到 #game-canvas');
 }
 
-const gl = canvas.getContext('webgl2');
-if (gl === null) {
-  throw new Error('這個瀏覽器不支援 WebGL2');
+const renderer = createRenderer(canvas);
+const gameScene = createGameScene(renderer.capabilities.getMaxAnisotropy());
+const followCamera = createFollowCamera(START_STATE.x, START_STATE.z);
+const input = attachKeyboardInput(window);
+
+// 內插需要相鄰兩步的狀態：previous = 上一步、current = 最新一步。
+let previousState = START_STATE;
+let currentState = START_STATE;
+let accumulatorSeconds = 0;
+let lastFrameMs: number | undefined;
+
+function frame(nowMs: number): void {
+  // 第一幀沒有「上一幀」，經過時間算 0。
+  const frameSeconds = lastFrameMs === undefined ? 0 : Math.max(msToS(nowMs - lastFrameMs), 0);
+  lastFrameMs = nowMs;
+
+  if (input.consumeRestart()) {
+    previousState = START_STATE;
+    currentState = START_STATE;
+    accumulatorSeconds = 0;
+  }
+
+  const loop = advanceFixedLoop(accumulatorSeconds, frameSeconds);
+  accumulatorSeconds = loop.accumulatorSeconds;
+  const driveInput = input.driveInput();
+  for (let step = 0; step < loop.steps; step += 1) {
+    previousState = currentState;
+    currentState = stepVehicle(currentState, driveInput, FIXED_STEP_SECONDS);
+  }
+
+  const pose = interpolateVehiclePose(previousState, currentState, loop.alpha);
+  gameScene.update(pose);
+  followCamera.update(pose.x, pose.z, frameSeconds);
+  fitRendererToCanvas(renderer, followCamera.camera);
+  renderer.render(gameScene.scene, followCamera.camera);
+
+  requestAnimationFrame(frame);
 }
 
-gl.clearColor(CLEAR_COLOR.r, CLEAR_COLOR.g, CLEAR_COLOR.b, CLEAR_COLOR.a);
-gl.clear(gl.COLOR_BUFFER_BIT);
+requestAnimationFrame(frame);

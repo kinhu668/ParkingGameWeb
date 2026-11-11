@@ -1,0 +1,176 @@
+// 第 1 階段的簡單車輛模型：下車身 + 斜面車艙 + 車頂 + 四個輪子 + 頭燈／尾燈色塊。
+// 建模約定：車頭朝本地 −Z、右側是本地 +X、輪胎著地點在 y = 0、原點在車身中心的地面投影。
+import {
+  BoxGeometry,
+  CylinderGeometry,
+  Group,
+  Mesh,
+  MeshStandardMaterial,
+  type BufferGeometry,
+  type Material,
+} from 'three';
+import { headingToRotationY } from '../core/heading';
+import { CAR_VISUAL_CONFIG as VISUAL } from '../render/renderConfig';
+import type { VehiclePose } from './bicycleModel';
+import { VEHICLE_CONFIG_SI } from './vehicleConfig';
+
+export interface CarMesh {
+  /** 整台車；位置與 rotation.y 由 updateCarMesh 設定。 */
+  readonly root: Group;
+  /** 兩個前輪的轉向樞軸（左、右）。 */
+  readonly frontWheelPivots: readonly [Group, Group];
+}
+
+const HALF_LENGTH_M = VEHICLE_CONFIG_SI.lengthM / 2;
+const HALF_WIDTH_M = VEHICLE_CONFIG_SI.widthM / 2;
+const HALF_WHEELBASE_M = VEHICLE_CONFIG_SI.wheelbaseM / 2;
+
+function shadowMesh(geometry: BufferGeometry, material: Material): Mesh {
+  const mesh = new Mesh(geometry, material);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
+/**
+ * 車艙玻璃：方塊的頂面往內收，做出前擋、後擋的斜度與側窗內傾。
+ * 方塊每個面有自己的頂點，移動後重算法線仍是每面一個平面法線。
+ */
+function createCabinGeometry(widthM: number, heightM: number, lengthM: number): BufferGeometry {
+  const geometry = new BoxGeometry(widthM, heightM, lengthM);
+  const positions = geometry.getAttribute('position');
+  for (let index = 0; index < positions.count; index += 1) {
+    if (positions.getY(index) <= 0) {
+      continue;
+    }
+    const x = positions.getX(index);
+    const z = positions.getZ(index);
+    positions.setX(index, x - Math.sign(x) * VISUAL.cabinTopSideInsetM);
+    // z < 0 是車頭側（前擋），往後收；z > 0 是車尾側（後擋），往前收。
+    positions.setZ(index, z < 0 ? z + VISUAL.windshieldRakeM : z - VISUAL.rearWindowRakeM);
+  }
+  positions.needsUpdate = true;
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+export function createCarMesh(): CarMesh {
+  const paint = new MeshStandardMaterial({
+    color: VISUAL.bodyColor,
+    roughness: VISUAL.bodyRoughness,
+    metalness: VISUAL.bodyMetalness,
+  });
+  const glass = new MeshStandardMaterial({
+    color: VISUAL.glassColor,
+    roughness: VISUAL.glassRoughness,
+  });
+  const tire = new MeshStandardMaterial({
+    color: VISUAL.tireColor,
+    roughness: VISUAL.tireRoughness,
+  });
+  const hub = new MeshStandardMaterial({ color: VISUAL.hubColor, roughness: VISUAL.hubRoughness });
+  const headlight = new MeshStandardMaterial({
+    color: VISUAL.headlightColor,
+    emissive: VISUAL.headlightColor,
+    emissiveIntensity: VISUAL.headlightEmissiveIntensity,
+  });
+  const taillight = new MeshStandardMaterial({
+    color: VISUAL.taillightColor,
+    emissive: VISUAL.taillightColor,
+    emissiveIntensity: VISUAL.taillightEmissiveIntensity,
+  });
+
+  const root = new Group();
+
+  // 下車身。燈塊凸出車身前後端面 trimProud，所以車身兩端各縮這麼多，整體長度仍等於車長。
+  const bodyWidthM = VEHICLE_CONFIG_SI.widthM - 2 * VISUAL.bodySideInsetM;
+  const bodyLengthM = VEHICLE_CONFIG_SI.lengthM - 2 * VISUAL.trimProudM;
+  const bodyTopM = VISUAL.groundClearanceM + VISUAL.lowerBodyHeightM;
+  const body = shadowMesh(
+    new BoxGeometry(bodyWidthM, VISUAL.lowerBodyHeightM, bodyLengthM),
+    paint,
+  );
+  body.position.y = VISUAL.groundClearanceM + VISUAL.lowerBodyHeightM / 2;
+  root.add(body);
+
+  // 車艙：引擎蓋比行李廂長，所以車艙中心偏向車尾（+Z）。
+  const cabinWidthM = bodyWidthM - 2 * VISUAL.cabinSideInsetM;
+  const cabinLengthM = VEHICLE_CONFIG_SI.lengthM - VISUAL.hoodLengthM - VISUAL.trunkLengthM;
+  const cabinCenterZM = (VISUAL.hoodLengthM - VISUAL.trunkLengthM) / 2;
+  const glassHeightM = VEHICLE_CONFIG_SI.heightM - bodyTopM - VISUAL.roofThicknessM;
+  const cabin = shadowMesh(createCabinGeometry(cabinWidthM, glassHeightM, cabinLengthM), glass);
+  cabin.position.set(0, bodyTopM + glassHeightM / 2, cabinCenterZM);
+  root.add(cabin);
+
+  // 車頂：蓋在玻璃收窄後的頂面上，頂端剛好是車高。
+  const roof = shadowMesh(
+    new BoxGeometry(
+      cabinWidthM - 2 * VISUAL.cabinTopSideInsetM,
+      VISUAL.roofThicknessM,
+      cabinLengthM - VISUAL.windshieldRakeM - VISUAL.rearWindowRakeM,
+    ),
+    paint,
+  );
+  roof.position.set(
+    0,
+    VEHICLE_CONFIG_SI.heightM - VISUAL.roofThicknessM / 2,
+    cabinCenterZM + (VISUAL.windshieldRakeM - VISUAL.rearWindowRakeM) / 2,
+  );
+  root.add(roof);
+
+  // 燈塊：包住車身上緣的兩個角，略凸出端面與頂面，從正後上方的鏡頭也看得到。
+  const lightGeometry = new BoxGeometry(
+    VISUAL.lightWidthM,
+    VISUAL.lightHeightM,
+    VISUAL.lightDepthM,
+  );
+  const lightXM = bodyWidthM / 2 - VISUAL.lightWidthM / 2 + VISUAL.trimProudM;
+  const lightYM = bodyTopM - VISUAL.lightHeightM / 2 + VISUAL.trimProudM;
+  const lightZM = HALF_LENGTH_M - VISUAL.lightDepthM / 2;
+  for (const side of [-1, 1]) {
+    const front = shadowMesh(lightGeometry, headlight);
+    front.position.set(side * lightXM, lightYM, -lightZM);
+    const rear = shadowMesh(lightGeometry, taillight);
+    rear.position.set(side * lightXM, lightYM, lightZM);
+    root.add(front, rear);
+  }
+
+  // 輪子：圓柱預設軸向是 Y，繞 Z 轉 90° 讓輪軸沿 X。輪框蓋比輪胎側面凸出 trimProud，最外緣剛好是車寬。
+  const tireGeometry = new CylinderGeometry(
+    VISUAL.wheelRadiusM,
+    VISUAL.wheelRadiusM,
+    VISUAL.wheelWidthM,
+    VISUAL.wheelSegments,
+  ).rotateZ(Math.PI / 2);
+  const hubGeometry = new CylinderGeometry(
+    VISUAL.hubRadiusM,
+    VISUAL.hubRadiusM,
+    VISUAL.wheelWidthM + 2 * VISUAL.trimProudM,
+    VISUAL.wheelSegments,
+  ).rotateZ(Math.PI / 2);
+  const wheelXM = HALF_WIDTH_M - VISUAL.trimProudM - VISUAL.wheelWidthM / 2;
+  const createWheel = (side: number, zM: number): Group => {
+    const pivot = new Group();
+    pivot.position.set(side * wheelXM, VISUAL.wheelRadiusM, zM);
+    pivot.add(shadowMesh(tireGeometry, tire), shadowMesh(hubGeometry, hub));
+    root.add(pivot);
+    return pivot;
+  };
+  // 前軸在車身中心前方（−Z）半個軸距，後軸在後方（+Z）。
+  const frontLeft = createWheel(-1, -HALF_WHEELBASE_M);
+  const frontRight = createWheel(1, -HALF_WHEELBASE_M);
+  createWheel(-1, HALF_WHEELBASE_M);
+  createWheel(1, HALF_WHEELBASE_M);
+
+  return { root, frontWheelPivots: [frontLeft, frontRight] };
+}
+
+/** 把模型擺到指定姿態：車身位置與朝向、前輪轉向角。 */
+export function updateCarMesh(car: CarMesh, pose: VehiclePose): void {
+  car.root.position.set(pose.x, 0, pose.z);
+  car.root.rotation.y = headingToRotationY(pose.headingRad);
+  const steerRotationY = headingToRotationY(pose.steerRad);
+  for (const pivot of car.frontWheelPivots) {
+    pivot.rotation.y = steerRotationY;
+  }
+}

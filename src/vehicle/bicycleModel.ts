@@ -1,6 +1,12 @@
 // 單車模型（bicycle model）：車的狀態、單步更新、車身四角。
 // 內部一律公尺、秒、弧度；數值全部來自 VEHICLE_CONFIG_SI。不 import three、不碰 DOM。
-import { forward, normalizeHeading, right, type GroundVector } from '../core/heading';
+import {
+  forward,
+  headingDelta,
+  normalizeHeading,
+  right,
+  type GroundVector,
+} from '../core/heading';
 import { VEHICLE_CONFIG_SI } from './vehicleConfig';
 
 /** 車輛狀態。 */
@@ -16,6 +22,9 @@ export interface VehicleState {
   /** 前輪轉向角（rad），向右為正，範圍 ±最大轉向角。 */
   readonly steerRad: number;
 }
+
+/** 算圖用的姿態：位置、車頭方向、前輪轉向角。VehicleState 本身就符合這個形狀。 */
+export type VehiclePose = Pick<VehicleState, 'x' | 'z' | 'headingRad' | 'steerRad'>;
 
 /** 駕駛輸入。 */
 export interface DriveInput {
@@ -133,4 +142,23 @@ export function vehicleCorners(state: VehicleState): VehicleCorners {
     corner(HALF_WIDTH_M, -HALF_LENGTH_M),
     corner(-HALF_WIDTH_M, -HALF_LENGTH_M),
   ];
+}
+
+/**
+ * 算圖內插：上一步與這一步之間 alpha（0 = 上一步、1 = 這一步）處的姿態。
+ * 位置與轉向角線性內插；heading 走最短弧，跨過 0°／360° 也不會反轉一整圈。
+ */
+export function interpolateVehiclePose(
+  previous: VehiclePose,
+  current: VehiclePose,
+  alpha: number,
+): VehiclePose {
+  return {
+    x: previous.x + (current.x - previous.x) * alpha,
+    z: previous.z + (current.z - previous.z) * alpha,
+    headingRad: normalizeHeading(
+      previous.headingRad + headingDelta(previous.headingRad, current.headingRad) * alpha,
+    ),
+    steerRad: previous.steerRad + (current.steerRad - previous.steerRad) * alpha,
+  };
 }
