@@ -50,6 +50,18 @@ export interface LensSettings {
   readonly chromaticAberration: number;
 }
 
+/** 地面（柏油）的畫質開關。 */
+export interface GroundQualitySettings {
+  /** 噪聲貼圖的邊長（像素）。 */
+  readonly textureSizePx: number;
+  /** 各向異性過濾的上限（實際值 = min(顯示卡支援的上限, 這個值)）；軟體算圖時越高越慢。 */
+  readonly maxAnisotropy: number;
+  /** 法線：裂縫與顆粒在斜光下的立體感。每個像素要多取樣幾次噪聲。 */
+  readonly normals: boolean;
+  /** 潮濕反光與小片積水。 */
+  readonly wetness: boolean;
+}
+
 /** 一個畫質級別的全部設定。算圖器、場景燈光、天空、後製鏈都只讀這個物件，不各自讀網址。 */
 export interface QualitySettings {
   readonly level: QualityLevel;
@@ -70,6 +82,8 @@ export interface QualitySettings {
   readonly lens: LensSettings | null;
   /** SMAA 抗鋸齒（疊在多重取樣之上）。 */
   readonly smaa: boolean;
+  /** 地面（柏油）的細節。 */
+  readonly ground: GroundQualitySettings;
 }
 
 /** 自動選擇畫質用的裝置線索。瀏覽器不一定提供每一項，沒有就不填。 */

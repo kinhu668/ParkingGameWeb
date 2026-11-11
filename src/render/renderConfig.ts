@@ -1,4 +1,4 @@
-// 畫面的可調數值：畫質級別、鏡頭、天空、燈光、陰影、霧、後製、地面、車位標線、車輛外觀。
+// 畫面的可調數值：畫質級別、鏡頭、天空、燈光、陰影、霧、後製、地面、車位標線、路緣石與車擋、車輛外觀。
 // 長度一律以英尺填寫，經 units.ts 換成公尺；顏色是 sRGB 十六進位。
 import { degToRad, ftToM, mphToMps } from '../core/units';
 import type { QualityLevel, QualitySettings } from './quality';
@@ -16,6 +16,7 @@ export const RENDERER_CONFIG = {
  * - high：走高動態範圍的後製鏈：環境光遮蔽、泛光、色差、暈影、抖色。
  * - ultra：high 的全部再加強，另加 SMAA。對準高階顯示卡，只能由 `?quality=ultra` 開啟。
  * 黃昏的色調分級併在色調映射裡，四個級別都有。
+ * 地面（ground）：low 的噪聲貼圖小、沒有潮濕反光；medium 加上潮濕反光；high、ultra 再加上法線（裂縫與顆粒的立體感）。
  */
 export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = {
   low: {
@@ -29,6 +30,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = 
     bloom: null,
     lens: null,
     smaa: false,
+    ground: { textureSizePx: 512, maxAnisotropy: 2, normals: false, wetness: false },
   },
   medium: {
     level: 'medium',
@@ -41,6 +43,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = 
     bloom: null,
     lens: { vignette: 0.24, chromaticAberration: 0 },
     smaa: false,
+    ground: { textureSizePx: 1024, maxAnisotropy: 4, normals: false, wetness: true },
   },
   high: {
     level: 'high',
@@ -53,6 +56,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = 
     bloom: { strength: 0.18, radius: 0.5, threshold: 1.8 },
     lens: { vignette: 0.4, chromaticAberration: 0.0012 },
     smaa: false,
+    ground: { textureSizePx: 1024, maxAnisotropy: 8, normals: true, wetness: true },
   },
   ultra: {
     level: 'ultra',
@@ -65,6 +69,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = 
     bloom: { strength: 0.24, radius: 0.6, threshold: 1.6 },
     lens: { vignette: 0.4, chromaticAberration: 0.0012 },
     smaa: true,
+    ground: { textureSizePx: 2048, maxAnisotropy: 16, normals: true, wetness: true },
   },
 };
 
@@ -301,30 +306,102 @@ export const POST_CONFIG = {
   readyTimeoutMs: 2000,
 } as const;
 
-/** 地面與柏油顆粒貼圖。 */
+/**
+ * 地面：一大片平面，柏油的細節在著色器裡用世界座標（xz）算，不會隨地面網格平移，也沒有可見的重複周期。
+ * 噪聲來源是一張固定種子的四色版貼圖（R 顆粒、G 大片深淺、B 裂縫、A 斑塊），
+ * 以幾個互不成整數比的周期與角度疊起來：每一層自己會重複，疊在一起就看不出周期。
+ * 貼圖解析度、法線、潮濕反光跟著畫質級別走（QUALITY_PRESETS 的 ground）。
+ */
 export const GROUND_CONFIG = {
-  /** 地面正方形邊長；要大於兩倍霧的遠端，邊緣才藏得住。 */
+  /** 地面正方形邊長；要大於兩倍霧的遠端，邊緣才藏得住。地面跟著車走，車開不到邊緣。 */
   sizeM: ftToM(2400),
-  /** 一張貼圖鋪滿的邊長。 */
-  tileM: ftToM(60),
-  textureSizePx: 1024,
-  roughness: 0.94,
-  /** 柏油底色（sRGB 位元組）。 */
-  baseColor: { r: 96, g: 97, b: 101 },
-  /** 每個像素的細顆粒明暗幅度（± 位元組）。 */
-  grainAmplitude: 15,
-  /** 大片深淺不均的幅度（± 位元組）與一張貼圖內的格數。 */
-  patchAmplitude: 7,
-  patchCells: 11,
-  /** 中等大小斑駁的幅度（± 位元組）與格數。 */
-  mottleAmplitude: 6,
+  roughness: 0.93,
+  /** 柏油底色。 */
+  baseColor: 0x5d5e62,
+
+  /**
+   * 各層噪聲在世界座標上的周期與旋轉角度。周期彼此不成整數比、角度都不同，
+   * 所以疊起來的圖樣在看得到的範圍（霧的遠端 700 ft）內不會重複。
+   */
+  layers: {
+    /** 細顆粒（R）：貼近看得到的碎石與孔隙。 */
+    fineGrain: { periodM: ftToM(13.7), angleDeg: 0 },
+    /** 粗顆粒（R）：中距離看到的斑駁。 */
+    coarseGrain: { periodM: ftToM(47.3), angleDeg: 27.3 },
+    /** 大片深淺 A、B（G）：鋪面新舊不均。 */
+    macroA: { periodM: ftToM(347), angleDeg: 61.7 },
+    macroB: { periodM: ftToM(113), angleDeg: -38.9 },
+    /** 裂縫（B）。 */
+    cracks: { periodM: ftToM(43.9), angleDeg: 14.2 },
+    /** 油漬與污斑（A）。 */
+    stains: { periodM: ftToM(61.3), angleDeg: -53.3 },
+    /** 潮濕與積水的分布（A）。 */
+    wetness: { periodM: ftToM(187), angleDeg: 43.1 },
+  },
+
+  /** 顆粒造成的明暗幅度（線性亮度的比例）：細顆粒、粗顆粒。 */
+  fineGrainContrast: 0.5,
+  coarseGrainContrast: 0.62,
+  /** 大片深淺的明暗幅度：A、B。 */
+  macroAContrast: 0.26,
+  macroBContrast: 0.2,
+  /** 老舊、積塵的區塊乘上的顏色（偏暖偏淺）。 */
+  dustTint: { r: 1.08, g: 1.04, b: 0.97 },
+  /** 裂縫：出現的範圍（大片噪聲超過 start 才開始有、到 end 全有）、壓暗的比例、被大片噪聲扭曲的量（貼圖座標）。 */
+  crackMaskStart: 0.5,
+  crackMaskEnd: 0.66,
+  crackDarken: 0.78,
+  crackWarp: 0.035,
+  /** 油漬：斑塊噪聲超過 start 才開始有、到 end 最深；乘上的顏色；油漬處的粗糙度（比乾柏油亮）。 */
+  stainStart: 0.68,
+  stainEnd: 0.9,
+  stainTint: { r: 0.45, g: 0.43, b: 0.42 },
+  stainRoughness: 0.7,
+  /** 潮濕：分布噪聲超過 start 開始濕、到 end 全濕；濕的地方顏色變深、粗糙度降低。 */
+  wetStart: 0.64,
+  wetEnd: 0.84,
+  wetDarken: 0.28,
+  wetRoughness: 0.62,
+  /** 小片積水：分布噪聲超過這兩個值之間形成水面邊緣；水面的粗糙度（不是鏡子）。 */
+  puddleStart: 0.87,
+  puddleEnd: 0.91,
+  puddleRoughness: 0.2,
+  /** 法線用的高度（公尺）：細顆粒、粗顆粒的起伏，與裂縫的深度。 */
+  fineGrainHeightM: 0.0011,
+  coarseGrainHeightM: 0.004,
+  crackDepthM: 0.006,
+  /** 法線從這個距離開始淡出、到這個距離完全平坦（遠處的起伏小於一個像素，只會閃爍）。 */
+  normalFadeStartM: ftToM(60),
+  normalFadeEndM: ftToM(220),
+} as const;
+
+/** 地面噪聲貼圖（CPU 產生，固定種子）各色版的參數。格數是「一張貼圖內」的格數，貼圖上下左右可無縫拼接。 */
+export const GROUND_NOISE_CONFIG = {
+  /** R 顆粒：每個像素的亂數幅度、中等斑駁的幅度與格數（以 0.5 為中心，0–1）。 */
+  grainAmplitude: 0.24,
+  mottleAmplitude: 0.2,
   mottleCells: 96,
-  /** 淺色碎石：出現機率與提亮量（位元組）。 */
+  /** 淺色碎石與深色孔隙：出現機率與亮度偏移。 */
   stoneChance: 0.02,
-  stoneBrighten: 46,
-  /** 深色孔隙：出現機率與壓暗量（位元組）。 */
+  stoneBrighten: 0.42,
   pitChance: 0.015,
-  pitDarken: 34,
+  pitDarken: 0.36,
+  /** G 大片深淺：三個倍頻的格數與權重。 */
+  patchCells: [4, 9, 19],
+  patchWeights: [0.5, 0.3, 0.2],
+  /** B 裂縫：Voronoi 格數、格點抖動（0–1）、裂縫半寬（佔貼圖邊長的比例）、座標扭曲量與扭曲噪聲格數。 */
+  crackCells: 6,
+  crackJitter: 0.85,
+  crackHalfWidth: 0.0016,
+  crackWarp: 0.02,
+  crackWarpCells: 13,
+  /** 裂縫不是整張網：斷續噪聲（格數）低於 start 的段落整段消失，到 end 才完整。 */
+  crackBreakCells: 7,
+  crackBreakStart: 0.5,
+  crackBreakEnd: 0.68,
+  /** A 斑塊：三個倍頻的格數與權重。 */
+  blotchCells: [5, 13, 31],
+  blotchWeights: [0.55, 0.3, 0.15],
 } as const;
 
 /** 車位標線。 */

@@ -301,6 +301,37 @@ describe('各級別的開關矩陣', () => {
   });
 });
 
+describe('地面（柏油）的畫質矩陣', () => {
+  test('low：沒有法線、沒有潮濕反光；medium：加上潮濕反光；high、ultra：兩者都開', () => {
+    expect(QUALITY_PRESETS.low.ground).toMatchObject({ normals: false, wetness: false });
+    expect(QUALITY_PRESETS.medium.ground).toMatchObject({ normals: false, wetness: true });
+    expect(QUALITY_PRESETS.high.ground).toMatchObject({ normals: true, wetness: true });
+    expect(QUALITY_PRESETS.ultra.ground).toMatchObject({ normals: true, wetness: true });
+  });
+
+  test('軟體算圖自動選到的級別不做法線（每個像素要多取樣幾次噪聲）', () => {
+    const auto = resolveQuality('', { rendererName: SWIFTSHADER });
+    expect(auto.settings.ground.normals).toBe(false);
+  });
+
+  test('噪聲貼圖邊長是 2 的次方；邊長與各向異性由低到高不遞減', () => {
+    const grounds = QUALITY_LEVELS.map((level) => QUALITY_PRESETS[level].ground);
+    for (const ground of grounds) {
+      expect(Number.isInteger(Math.log2(ground.textureSizePx))).toBe(true);
+      expect(ground.maxAnisotropy).toBeGreaterThanOrEqual(1);
+    }
+    for (let index = 1; index < grounds.length; index += 1) {
+      const lower = grounds[index - 1];
+      const higher = grounds[index];
+      if (lower === undefined || higher === undefined) {
+        throw new Error('級別不存在');
+      }
+      expect(higher.textureSizePx).toBeGreaterThanOrEqual(lower.textureSizePx);
+      expect(higher.maxAnisotropy).toBeGreaterThanOrEqual(lower.maxAnisotropy);
+    }
+  });
+});
+
 describe('effectivePixelRatio：像素比上限由畫質級別控制', () => {
   test('裝置像素比低於上限就用裝置的', () => {
     expect(effectivePixelRatio(QUALITY_PRESETS.high, 1)).toBe(1);

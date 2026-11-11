@@ -1,115 +1,141 @@
-// 地面：一大片平面，貼固定種子生成的柏油顆粒貼圖。
+// 地面：一大片平面。柏油的顆粒、裂縫、油漬、潮濕反光在著色器裡用世界座標算（groundShader.ts），
+// 噪聲來源是固定種子的貼圖（groundNoise.ts）。地面跟著車平移，紋理釘在世界上不動。
 import {
+  Color,
   DataTexture,
   LinearFilter,
   LinearMipmapLinearFilter,
   Mesh,
   MeshStandardMaterial,
+  NoColorSpace,
   PlaneGeometry,
   RGBAFormat,
   RepeatWrapping,
-  SRGBColorSpace,
   UnsignedByteType,
+  Vector2,
+  Vector3,
+  Vector4,
 } from 'three';
-import { createRng, type Rng } from '../core/rng';
+import type { GroundQualitySettings } from '../render/quality';
 import { GROUND_CONFIG } from '../render/renderConfig';
+import { generateAsphaltPixels } from './groundNoise';
+import { groundLayerTransforms, groundShaderDefines, patchGroundShader } from './groundShader';
 
-const CHANNELS_PER_PIXEL = 4;
-const BYTE_MAX = 255;
-
-/**
- * 可無縫拼接的 value noise：cells × cells 個格點亂數，格點之間用 smoothstep 內插，邊緣繞回另一側。
- * 回傳的取樣函式吃 [0, 1) 的 u、v，回傳 [0, 1)。
- */
-function createTileableNoise(rng: Rng, cells: number): (u: number, v: number) => number {
-  const lattice = Float32Array.from({ length: cells * cells }, () => rng());
-  const at = (column: number, row: number): number =>
-    lattice[(row % cells) * cells + (column % cells)] ?? 0;
-  const smooth = (t: number): number => t * t * (3 - 2 * t);
-
-  return (u, v) => {
-    const x = u * cells;
-    const y = v * cells;
-    const column = Math.floor(x);
-    const row = Math.floor(y);
-    const tx = smooth(x - column);
-    const ty = smooth(y - row);
-    const top = at(column, row) + (at(column + 1, row) - at(column, row)) * tx;
-    const bottom = at(column, row + 1) + (at(column + 1, row + 1) - at(column, row + 1)) * tx;
-    return top + (bottom - top) * ty;
-  };
-}
-
-/**
- * 產生柏油貼圖的 RGBA 位元組（sRGB），邊長 GROUND_CONFIG.textureSizePx，上下左右可無縫拼接。
- * 純函式：同一個種子每次產生完全相同的位元組。
- */
-export function generateAsphaltPixels(seed: number): Uint8Array<ArrayBuffer> {
-  const size = GROUND_CONFIG.textureSizePx;
-  const rng = createRng(seed);
-  const patchNoise = createTileableNoise(rng, GROUND_CONFIG.patchCells);
-  const mottleNoise = createTileableNoise(rng, GROUND_CONFIG.mottleCells);
-  // 亂數 [0, 1) → [−1, 1)。
-  const signed = (value: number): number => value * 2 - 1;
-
-  const pixels = new Uint8Array(size * size * CHANNELS_PER_PIXEL);
-  for (let row = 0; row < size; row += 1) {
-    for (let column = 0; column < size; column += 1) {
-      const u = column / size;
-      const v = row / size;
-      let shade =
-        signed(rng()) * GROUND_CONFIG.grainAmplitude +
-        signed(patchNoise(u, v)) * GROUND_CONFIG.patchAmplitude +
-        signed(mottleNoise(u, v)) * GROUND_CONFIG.mottleAmplitude;
-
-      const speckle = rng();
-      if (speckle < GROUND_CONFIG.stoneChance) {
-        shade += GROUND_CONFIG.stoneBrighten;
-      } else if (speckle < GROUND_CONFIG.stoneChance + GROUND_CONFIG.pitChance) {
-        shade -= GROUND_CONFIG.pitDarken;
-      }
-
-      // Uint8Array 寫入會取 256 的餘數而不是夾住，所以先夾在 0–255。
-      const channel = (base: number): number =>
-        Math.min(Math.max(Math.round(base + shade), 0), BYTE_MAX);
-      const offset = (row * size + column) * CHANNELS_PER_PIXEL;
-      pixels[offset] = channel(GROUND_CONFIG.baseColor.r);
-      pixels[offset + 1] = channel(GROUND_CONFIG.baseColor.g);
-      pixels[offset + 2] = channel(GROUND_CONFIG.baseColor.b);
-      pixels[offset + 3] = BYTE_MAX;
-    }
-  }
-  return pixels;
-}
-
-/**
- * 建立地面網格（y = 0 的水平面，只收陰影不投影）。
- * @param seed 柏油貼圖的亂數種子
- * @param anisotropy 貼圖的各向異性過濾等級；斜看地面時遠處才不會糊成一片
- */
-export function createGround(seed: number, anisotropy: number): Mesh {
-  const size = GROUND_CONFIG.textureSizePx;
+/** 噪聲貼圖：線性數值（不是顏色），四個方向都可重複，開 mipmap（遠處自動平均成素色，不會閃爍）。 */
+function createNoiseTexture(seed: number, sizePx: number, anisotropy: number): DataTexture {
   const texture = new DataTexture(
-    generateAsphaltPixels(seed),
-    size,
-    size,
+    generateAsphaltPixels(seed, sizePx),
+    sizePx,
+    sizePx,
     RGBAFormat,
     UnsignedByteType,
   );
-  texture.colorSpace = SRGBColorSpace;
+  texture.colorSpace = NoColorSpace;
   texture.wrapS = RepeatWrapping;
   texture.wrapT = RepeatWrapping;
-  const repeats = GROUND_CONFIG.sizeM / GROUND_CONFIG.tileM;
-  texture.repeat.set(repeats, repeats);
   texture.magFilter = LinearFilter;
   texture.minFilter = LinearMipmapLinearFilter;
   texture.generateMipmaps = true;
   texture.anisotropy = anisotropy;
   texture.needsUpdate = true;
+  return texture;
+}
 
+/**
+ * 柏油材質：MeshStandardMaterial 加上世界座標的程序化細節，仍然吃環境貼圖、陰影與霧。
+ * @param seed 噪聲貼圖與各層位移的亂數種子
+ * @param quality 這個畫質級別的地面開關
+ * @param maxAnisotropy 顯示卡支援的各向異性過濾上限
+ */
+export function createGroundMaterial(
+  seed: number,
+  quality: GroundQualitySettings,
+  maxAnisotropy: number,
+): MeshStandardMaterial {
+  const config = GROUND_CONFIG;
+  const anisotropy = Math.max(1, Math.min(maxAnisotropy, quality.maxAnisotropy));
+  const noise = createNoiseTexture(seed, quality.textureSizePx, anisotropy);
+  const layers = groundLayerTransforms(seed).map(
+    (layer) =>
+      new Vector4(layer.cosOverPeriod, layer.sinOverPeriod, layer.offsetU, layer.offsetV),
+  );
+  const defines = groundShaderDefines(quality);
+  // 有限差分的步長：細顆粒層的一個貼圖像素。
+  const normalEpsM = config.layers.fineGrain.periodM / quality.textureSizePx;
+
+  const material = new MeshStandardMaterial({
+    color: new Color(config.baseColor),
+    roughness: config.roughness,
+    metalness: 0,
+  });
+  material.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, {
+      uGroundNoise: { value: noise },
+      uGroundLayers: { value: layers },
+      uGroundContrast: {
+        value: new Vector4(
+          config.fineGrainContrast,
+          config.coarseGrainContrast,
+          config.macroAContrast,
+          config.macroBContrast,
+        ),
+      },
+      uGroundDustTint: {
+        value: new Vector3(config.dustTint.r, config.dustTint.g, config.dustTint.b),
+      },
+      uGroundCrack: {
+        value: new Vector4(
+          config.crackMaskStart,
+          config.crackMaskEnd,
+          config.crackDarken,
+          config.crackWarp,
+        ),
+      },
+      uGroundStain: {
+        value: new Vector4(config.stainStart, config.stainEnd, config.stainRoughness, 0),
+      },
+      uGroundStainTint: {
+        value: new Vector3(config.stainTint.r, config.stainTint.g, config.stainTint.b),
+      },
+      uGroundWet: {
+        value: new Vector4(config.wetStart, config.wetEnd, config.wetDarken, config.wetRoughness),
+      },
+      uGroundPuddle: {
+        value: new Vector4(config.puddleStart, config.puddleEnd, config.puddleRoughness, 0),
+      },
+      uGroundHeights: {
+        value: new Vector4(
+          config.fineGrainHeightM,
+          config.coarseGrainHeightM,
+          config.crackDepthM,
+          normalEpsM,
+        ),
+      },
+      uGroundNormalFade: {
+        value: new Vector2(config.normalFadeStartM, config.normalFadeEndM),
+      },
+    });
+    patchGroundShader(shader, defines);
+  };
+  // 開關不同就是不同的著色器程式；快取鍵要分開。
+  material.customProgramCacheKey = () => `ground:${defines.join(',')}`;
+  return material;
+}
+
+/**
+ * 建立地面網格（y = 0 的水平面，只收陰影不投影）。
+ * @param seed 柏油的亂數種子
+ * @param quality 這個畫質級別的地面開關
+ * @param maxAnisotropy 顯示卡支援的各向異性過濾上限；斜看地面時遠處才不會糊成一片
+ */
+export function createGround(
+  seed: number,
+  quality: GroundQualitySettings,
+  maxAnisotropy: number,
+): Mesh {
   const ground = new Mesh(
     new PlaneGeometry(GROUND_CONFIG.sizeM, GROUND_CONFIG.sizeM),
-    new MeshStandardMaterial({ map: texture, roughness: GROUND_CONFIG.roughness, metalness: 0 }),
+    createGroundMaterial(seed, quality, maxAnisotropy),
   );
   // PlaneGeometry 預設立在 XY 平面、面朝 +Z；繞 X 轉 −90° 讓它躺平、面朝 +Y。
   ground.rotation.x = -Math.PI / 2;

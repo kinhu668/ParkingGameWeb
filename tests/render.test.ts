@@ -1,49 +1,18 @@
-// 算圖層裡可以不開瀏覽器就驗證的部分：柏油貼圖的可重現性、鏡頭平滑、車輛模型的朝向約定、車位標線的範圍。
+// 算圖層裡可以不開瀏覽器就驗證的部分：鏡頭平滑、車輛模型的朝向約定、車位標線的範圍。
+// 地面（柏油）的測試在 ground.test.ts。
 import { Box3, Mesh, Object3D, Vector3 } from 'three';
 import { describe, expect, test } from 'vitest';
-import { DEFAULT_SEED } from '../src/core/gameConfig';
 import { forward } from '../src/core/heading';
 import { degToRad, ftToM } from '../src/core/units';
 import { parkingSpotFromFt } from '../src/level/parkingJudge';
-import { generateAsphaltPixels } from '../src/props/ground';
 import { createSpotMarkings } from '../src/props/spotMarkings';
 import { createFollowCamera, createPresetCamera, smoothingFactor } from '../src/render/followCamera';
-import {
-  CAMERA_CONFIG,
-  FIXED_CAMERA_CONFIG,
-  GROUND_CONFIG,
-  SPOT_MARKING_CONFIG,
-} from '../src/render/renderConfig';
+import { CAMERA_CONFIG, FIXED_CAMERA_CONFIG, SPOT_MARKING_CONFIG } from '../src/render/renderConfig';
 import { SHOWCASE_IDS, createShowcaseObject } from '../src/render/showcase';
 import { createCarMesh, updateCarMesh } from '../src/vehicle/carMesh';
 import { VEHICLE_CONFIG_SI } from '../src/vehicle/vehicleConfig';
 
 const DIGITS = 9;
-
-describe('柏油貼圖 generateAsphaltPixels', () => {
-  test('同種子位元組完全相同，不同種子不同', () => {
-    const first = generateAsphaltPixels(DEFAULT_SEED);
-    expect(generateAsphaltPixels(DEFAULT_SEED)).toEqual(first);
-    expect(generateAsphaltPixels(DEFAULT_SEED + 1)).not.toEqual(first);
-  });
-
-  test('大小是 邊長² × 4，全部不透明，而且不是純死色', () => {
-    const pixels = generateAsphaltPixels(DEFAULT_SEED);
-    const pixelCount = GROUND_CONFIG.textureSizePx ** 2;
-    expect(pixels.length).toBe(pixelCount * 4);
-
-    const redValues = new Set<number>();
-    let transparentPixels = 0;
-    for (let index = 0; index < pixelCount; index += 1) {
-      if (pixels[index * 4 + 3] !== 255) {
-        transparentPixels += 1;
-      }
-      redValues.add(pixels[index * 4] ?? 0);
-    }
-    expect(transparentPixels).toBe(0);
-    expect(redValues.size).toBeGreaterThan(30);
-  });
-});
 
 describe('鏡頭平滑 smoothingFactor', () => {
   test('dt = 0 不動；dt 很大時趨近 1', () => {

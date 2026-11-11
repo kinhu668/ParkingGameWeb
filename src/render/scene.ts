@@ -1,4 +1,4 @@
-// 組裝場景：黃昏的天空與環境光、霧、半球補光、太陽與陰影、地面、車位標線、車。
+// 組裝場景：黃昏的天空與環境光、霧、半球補光、太陽與陰影、地面、車位標線、路緣石與車擋、車。
 import {
   DirectionalLight,
   Fog,
@@ -16,7 +16,6 @@ import { createCarMesh, setCarInteriorView, updateCarMesh } from '../vehicle/car
 import type { QualitySettings } from './quality';
 import {
   FOG_CONFIG,
-  GROUND_CONFIG,
   HEMISPHERE_LIGHT_CONFIG,
   SKY_CONFIG,
   SUN_CONFIG,
@@ -126,7 +125,11 @@ export function createGameScene(
   // 太陽的方向與天空裡的太陽位置是同一個向量。
   const lights = addLights(scene, SUN_DIRECTION, quality);
 
-  const ground = createGround(DEFAULT_SEED, renderer.capabilities.getMaxAnisotropy());
+  const ground = createGround(
+    DEFAULT_SEED,
+    quality.ground,
+    renderer.capabilities.getMaxAnisotropy(),
+  );
   scene.add(ground);
 
   scene.add(createSpotMarkings(spot));
@@ -141,10 +144,10 @@ export function createGameScene(
 
       lights.aimAt(pose.x, pose.z);
 
-      // 地面跟著車走，但每次只移動整數張貼圖的距離，所以柏油紋路在世界座標裡不動，
-      // 車怎麼開都開不到地面邊緣。
-      ground.position.x = Math.round(pose.x / GROUND_CONFIG.tileM) * GROUND_CONFIG.tileM;
-      ground.position.z = Math.round(pose.z / GROUND_CONFIG.tileM) * GROUND_CONFIG.tileM;
+      // 地面跟著車走，車怎麼開都開不到邊緣。柏油的紋路是著色器用世界座標算的，
+      // 網格平移時紋路留在原地，不會跟著滑動或跳格。
+      ground.position.x = pose.x;
+      ground.position.z = pose.z;
     },
     setInteriorView(enabled) {
       setCarInteriorView(car, enabled);
