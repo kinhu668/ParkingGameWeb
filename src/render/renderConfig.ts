@@ -20,6 +20,55 @@ export const CAMERA_CONFIG = {
   followTimeConstantS: 0.25,
 } as const;
 
+/** `?cam=` 的固定鏡頭預設。`follow` 沿用 CAMERA_CONFIG，這裡是另外兩個。 */
+export const FIXED_CAMERA_CONFIG = {
+  /** `top`：車位正上方的高度；夠高才看得到示範路線左右繞出去的那一段。 */
+  topHeightM: ftToM(150),
+  /** `spot_low`：鏡頭相對車位中心的位置，以車位自己的方向為準。橫向負值 = 車位左側。 */
+  spotLowLateralM: ftToM(-17),
+  /** 沿車位 heading 往前的距離（鏡頭在車位前方，回頭看車頭）。 */
+  spotLowAheadM: ftToM(15),
+  spotLowHeightM: ftToM(4.5),
+  /** 鏡頭看向車位中心上方這個高度（大約是車身腰線）。 */
+  spotLowLookAtHeightM: ftToM(2),
+} as const;
+
+/** `?show=` 展示台：深色背景、圓形地台、固定主光與 3/4 視角。 */
+export const SHOWCASE_CONFIG = {
+  backgroundColor: 0x1b1e23,
+  /** 地台比車身與白色標線都暗，物件才跳得出來。 */
+  floorColor: 0x3a3e45,
+  floorRoughness: 0.9,
+  floorRadiusM: ftToM(30),
+  floorSegments: 96,
+  /**
+   * 從物件指向主光的方向：正前方偏右的上空。從鏡頭看過去車頂最亮、車頭次之、
+   * 側面最暗但仍受光，三個面分得開；影子落在車後，不擋住物件。
+   */
+  directionToKeyLight: { x: 0.45, y: 1, z: -0.75 },
+  /** 鏡頭方位：從物件正前方（本地 −Z）往右繞的角度。 */
+  cameraAzimuthDeg: 38,
+  /** 鏡頭仰角：從水平面往上的角度。 */
+  cameraElevationDeg: 24,
+  /**
+   * 鏡頭距離 = 「包圍球剛好塞滿畫面」的距離 × 這個倍數。包圍球由包圍盒的對角線算出，
+   * 對長條形的物件偏大，所以拉近一點讓物件佔滿畫面中央。
+   */
+  fitScale: 0.9,
+} as const;
+
+/** `?bench` 效能測試。跑多久由示範路線的長度決定。 */
+export const BENCH_CONFIG = {
+  /** 開頭略過的幀數（編譯著色器、上傳貼圖的那幾幀不算）。 */
+  warmupFrames: 30,
+  /** 時間到了但量到的幀數還不到這個數（幀率極低）就繼續跑，確保算得出統計。 */
+  minMeasuredFrames: 10,
+  /** 「1% low」取最慢的這個比例的幀。 */
+  lowFraction: 0.01,
+  /** FPS 與平均 draw calls 顯示到小數第幾位。 */
+  decimals: 1,
+} as const;
+
 /** 天空底色與霧（霧色 = 天空色，地面遠處會融進背景）。 */
 export const SKY_CONFIG = {
   color: 0xb7cfe6,

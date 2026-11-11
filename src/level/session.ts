@@ -1,6 +1,7 @@
 // 一局遊戲：車輛狀態 + 停車判定進度 + 已停妥旗標 + 重來。不 import three、不碰 DOM。
 // Session 是不可變的值；每一步回傳新的 Session。
 import { FIXED_STEP_SECONDS } from '../core/gameConfig';
+import { mToFt, mpsToMph, radToDeg } from '../core/units';
 import { stepVehicle, type DriveInput, type VehicleState } from '../vehicle/bicycleModel';
 import { isHoldComplete, nextHeldSteps, type ParkingSpot } from './parkingJudge';
 
@@ -45,4 +46,28 @@ export function stepSession(session: Session, input: DriveInput): Session {
     return { layout: session.layout, vehicle: { ...vehicle, speedMps: 0 }, heldSteps, parked: true };
   }
   return { layout: session.layout, vehicle, heldSteps, parked: false };
+}
+
+/** 給 e2e 讀的狀態快照，對外一律美制單位與度。 */
+export interface SessionSnapshot {
+  /** 車身中心的世界座標（ft）。 */
+  readonly xFt: number;
+  readonly zFt: number;
+  /** 車頭方向（度），0 朝 −Z、順時針為正，範圍 [0, 360)。 */
+  readonly headingDeg: number;
+  /** 車速（mph），前進為正、倒車為負。 */
+  readonly speedMph: number;
+  /** 是否已停妥（成功）。 */
+  readonly parked: boolean;
+}
+
+/** 把一局的現況換成對外單位的快照。每次回傳新物件，改它不會影響遊戲。 */
+export function sessionSnapshot(session: Session): SessionSnapshot {
+  return {
+    xFt: mToFt(session.vehicle.x),
+    zFt: mToFt(session.vehicle.z),
+    headingDeg: radToDeg(session.vehicle.headingRad),
+    speedMph: mpsToMph(session.vehicle.speedMps),
+    parked: session.parked,
+  };
 }

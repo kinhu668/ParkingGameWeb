@@ -1,28 +1,125 @@
-// 進入點：固定步長物理迴圈 + 算圖內插 + 鍵盤開車 + 停車判定 + HUD。
+// 進入點：讀網址參數，啟動一般遊戲／展示（?show）／固定鏡頭截圖（?cam）／效能測試（?bench）其中一種。
 import { advanceFixedLoop } from './core/fixedLoop';
+import { PHYSICS_HZ } from './core/gameConfig';
 import { detectLocale, getLocale, onLocaleChange, setLocale } from './core/i18n';
 import { attachKeyboardInput } from './core/input';
 import { msToS } from './core/units';
+import { parseUrlMode, type CameraPreset } from './core/urlParams';
+import { DEMO_ROUTE_STEPS, demoVehicleAfterSteps } from './level/demoRoute';
 import { PROTOTYPE_LAYOUT } from './level/prototypeLayout';
-import { restartSession, startSession, stepSession } from './level/session';
-import { createFollowCamera } from './render/followCamera';
+import {
+  restartSession,
+  sessionSnapshot,
+  startSession,
+  stepSession,
+  type SessionSnapshot,
+} from './level/session';
+import { runBench } from './render/benchMode';
+import { createFollowCamera, createPresetCamera } from './render/followCamera';
 import { createRenderer, fitRendererToCanvas } from './render/renderer';
 import { createGameScene } from './render/scene';
+import { runShowcase } from './render/showcase';
 import { createHud } from './ui/hud';
 import './ui/style.css';
 import { interpolateVehiclePose } from './vehicle/bicycleModel';
+
+declare global {
+  interface Window {
+    /**
+     * e2e 用的唯讀狀態，只在一般遊戲模式存在。只能讀、不能改遊戲；
+     * 要操作車子一律送真實鍵盤事件。
+     */
+    __parkingGame?: { readonly snapshot: () => SessionSnapshot };
+  }
+}
+
+/** 一般遊戲：固定步長物理迴圈 + 算圖內插 + 鍵盤開車 + 停車判定 + HUD。 */
+function runGame(canvas: HTMLCanvasElement): void {
+  const hudRoot = document.querySelector<HTMLElement>('#hud');
+  if (hudRoot === null) {
+    throw new Error('找不到 #hud');
+  }
+
+  const renderer = createRenderer(canvas);
+  const gameScene = createGameScene(renderer.capabilities.getMaxAnisotropy(), PROTOTYPE_LAYOUT.spot);
+  const followCamera = createFollowCamera(
+    PROTOTYPE_LAYOUT.startState.x,
+    PROTOTYPE_LAYOUT.startState.z,
+  );
+  const input = attachKeyboardInput(window);
+  const hud = createHud(hudRoot);
+
+  // 內插需要相鄰兩步的車輛狀態：previousVehicle = 上一步、session.vehicle = 最新一步。
+  let session = startSession(PROTOTYPE_LAYOUT);
+  let previousVehicle = session.vehicle;
+  let accumulatorSeconds = 0;
+  let lastFrameMs: number | undefined;
+
+  window.__parkingGame = Object.freeze({ snapshot: () => sessionSnapshot(session) });
+
+  function frame(nowMs: number): void {
+    // 第一幀沒有「上一幀」，經過時間算 0。
+    const frameSeconds = lastFrameMs === undefined ? 0 : Math.max(msToS(nowMs - lastFrameMs), 0);
+    lastFrameMs = nowMs;
+
+    // R 重來：車回起點、判定歸零、成功畫面消失（hud.update 會收到 parked = false）。
+    if (input.consumeRestart()) {
+      session = restartSession(session);
+      previousVehicle = session.vehicle;
+      accumulatorSeconds = 0;
+    }
+
+    const loop = advanceFixedLoop(accumulatorSeconds, frameSeconds);
+    accumulatorSeconds = loop.accumulatorSeconds;
+    const driveInput = input.driveInput();
+    for (let step = 0; step < loop.steps; step += 1) {
+      previousVehicle = session.vehicle;
+      session = stepSession(session, driveInput);
+    }
+
+    const pose = interpolateVehiclePose(previousVehicle, session.vehicle, loop.alpha);
+    gameScene.update(pose);
+    followCamera.update(pose.x, pose.z, frameSeconds);
+    fitRendererToCanvas(renderer, followCamera.camera);
+    renderer.render(gameScene.scene, followCamera.camera);
+    hud.update(session.vehicle.speedMps, session.parked);
+
+    requestAnimationFrame(frame);
+  }
+
+  requestAnimationFrame(frame);
+}
+
+/**
+ * 固定鏡頭截圖：沿示範路線同步跑 round(t × 60) 步物理（不等真實時間），
+ * 用指定鏡頭畫一幀後定格，並在 `<body>` 設 `data-shot-ready="true"`。沒有 HUD、不接鍵盤。
+ */
+function runCameraShot(canvas: HTMLCanvasElement, preset: CameraPreset, timeSeconds: number): void {
+  // 路線結束後車已停住，再跑也不會變；超過的時間夾在路線長度，免得很大的 t 把分頁卡死。
+  const steps = Math.min(Math.round(timeSeconds * PHYSICS_HZ), DEMO_ROUTE_STEPS);
+  const vehicle = demoVehicleAfterSteps(PROTOTYPE_LAYOUT.startState, steps);
+
+  const renderer = createRenderer(canvas);
+  const gameScene = createGameScene(renderer.capabilities.getMaxAnisotropy(), PROTOTYPE_LAYOUT.spot);
+  gameScene.update(vehicle);
+  const camera = createPresetCamera(preset, vehicle.x, vehicle.z, PROTOTYPE_LAYOUT.spot);
+
+  const draw = (): void => {
+    fitRendererToCanvas(renderer, camera);
+    renderer.render(gameScene.scene, camera);
+  };
+  draw();
+  // 畫面是定格的，但視窗大小變了要用同一個狀態重畫，否則舊的一幀會被拉伸。
+  window.addEventListener('resize', draw);
+  document.body.dataset.shotReady = 'true';
+}
 
 const canvas = document.querySelector<HTMLCanvasElement>('#game-canvas');
 if (canvas === null) {
   throw new Error('找不到 #game-canvas');
 }
 
-const hudRoot = document.querySelector<HTMLElement>('#hud');
-if (hudRoot === null) {
-  throw new Error('找不到 #hud');
-}
-
-// 語言：?lang= 優先，否則跟隨瀏覽器；<html lang> 隨語言切換同步。
+// 語言：?lang= 優先，否則跟隨瀏覽器；<html lang> 隨語言切換同步。每種模式都適用。
 function syncDocumentLanguage(): void {
   document.documentElement.lang = getLocale();
 }
@@ -30,49 +127,18 @@ setLocale(detectLocale(window.location.search, navigator.language));
 syncDocumentLanguage();
 onLocaleChange(syncDocumentLanguage);
 
-const renderer = createRenderer(canvas);
-const gameScene = createGameScene(renderer.capabilities.getMaxAnisotropy(), PROTOTYPE_LAYOUT.spot);
-const followCamera = createFollowCamera(
-  PROTOTYPE_LAYOUT.startState.x,
-  PROTOTYPE_LAYOUT.startState.z,
-);
-const input = attachKeyboardInput(window);
-const hud = createHud(hudRoot);
-
-// 內插需要相鄰兩步的車輛狀態：previousVehicle = 上一步、session.vehicle = 最新一步。
-let session = startSession(PROTOTYPE_LAYOUT);
-let previousVehicle = session.vehicle;
-let accumulatorSeconds = 0;
-let lastFrameMs: number | undefined;
-
-function frame(nowMs: number): void {
-  // 第一幀沒有「上一幀」，經過時間算 0。
-  const frameSeconds = lastFrameMs === undefined ? 0 : Math.max(msToS(nowMs - lastFrameMs), 0);
-  lastFrameMs = nowMs;
-
-  // R 重來：車回起點、判定歸零、成功畫面消失（hud.update 會收到 parked = false）。
-  if (input.consumeRestart()) {
-    session = restartSession(session);
-    previousVehicle = session.vehicle;
-    accumulatorSeconds = 0;
-  }
-
-  const loop = advanceFixedLoop(accumulatorSeconds, frameSeconds);
-  accumulatorSeconds = loop.accumulatorSeconds;
-  const driveInput = input.driveInput();
-  for (let step = 0; step < loop.steps; step += 1) {
-    previousVehicle = session.vehicle;
-    session = stepSession(session, driveInput);
-  }
-
-  const pose = interpolateVehiclePose(previousVehicle, session.vehicle, loop.alpha);
-  gameScene.update(pose);
-  followCamera.update(pose.x, pose.z, frameSeconds);
-  fitRendererToCanvas(renderer, followCamera.camera);
-  renderer.render(gameScene.scene, followCamera.camera);
-  hud.update(session.vehicle.speedMps, session.parked);
-
-  requestAnimationFrame(frame);
+const mode = parseUrlMode(window.location.search);
+switch (mode.kind) {
+  case 'show':
+    runShowcase(canvas, mode.id);
+    break;
+  case 'cam':
+    runCameraShot(canvas, mode.preset, mode.timeSeconds);
+    break;
+  case 'bench':
+    runBench(canvas);
+    break;
+  case 'game':
+    runGame(canvas);
+    break;
 }
-
-requestAnimationFrame(frame);

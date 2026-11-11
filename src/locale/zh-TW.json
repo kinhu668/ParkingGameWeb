@@ -15,5 +15,6 @@
   "bench.running": "效能測試中…",
   "bench.avgFps": "平均 FPS",
   "bench.low1": "最低 1% FPS",
-  "bench.drawCalls": "繪製呼叫數"
+  "bench.drawCalls": "繪製呼叫數（平均）",
+  "bench.drawCallsMax": "繪製呼叫數（最大）"
 }

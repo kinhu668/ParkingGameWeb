@@ -15,5 +15,6 @@
   "bench.running": "Benchmark running…",
   "bench.avgFps": "Average FPS",
   "bench.low1": "1% low FPS",
-  "bench.drawCalls": "Draw calls"
+  "bench.drawCalls": "Draw calls (avg)",
+  "bench.drawCallsMax": "Draw calls (max)"
 }

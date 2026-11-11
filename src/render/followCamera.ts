@@ -1,7 +1,10 @@
 // 斜俯視跟隨鏡頭：鏡頭位置 = 平滑後的目標點 + 固定的世界座標偏移，看向目標點。
-// 偏移固定在世界座標，所以鏡頭不隨車身旋轉。
+// 偏移固定在世界座標，所以鏡頭不隨車身旋轉。另有 `?cam=` 用的固定鏡頭預設。
 import { PerspectiveCamera } from 'three';
-import { CAMERA_CONFIG } from './renderConfig';
+import { forward, right } from '../core/heading';
+import type { CameraPreset } from '../core/urlParams';
+import type { ParkingSpot } from '../level/parkingJudge';
+import { CAMERA_CONFIG, FIXED_CAMERA_CONFIG } from './renderConfig';
 
 /**
  * 指數逼近的係數：1 − exp(−dt / 時間常數)。
@@ -17,15 +20,14 @@ export interface FollowCamera {
   update(targetX: number, targetZ: number, dtSeconds: number): void;
 }
 
+/** 全專案共用的鏡頭規格。長寬比先給 1，實際值由 fitRendererToCanvas 依畫布大小設定。 */
+export function createCamera(): PerspectiveCamera {
+  return new PerspectiveCamera(CAMERA_CONFIG.fovDeg, 1, CAMERA_CONFIG.nearM, CAMERA_CONFIG.farM);
+}
+
 /** 建立鏡頭，一開始就對準 (startX, startZ)，不從別處滑過來。 */
 export function createFollowCamera(startX: number, startZ: number): FollowCamera {
-  // 長寬比先給 1，實際值由 fitRendererToCanvas 依畫布大小設定。
-  const camera = new PerspectiveCamera(
-    CAMERA_CONFIG.fovDeg,
-    1,
-    CAMERA_CONFIG.nearM,
-    CAMERA_CONFIG.farM,
-  );
+  const camera = createCamera();
   let smoothedX = startX;
   let smoothedZ = startZ;
 
@@ -48,4 +50,46 @@ export function createFollowCamera(startX: number, startZ: number): FollowCamera
       place();
     },
   };
+}
+
+/**
+ * `?cam=` 的固定鏡頭：擺好就不動。
+ * - `follow`：跟隨鏡頭對準車 (vehicleX, vehicleZ) 的定格。
+ * - `top`：車位正上方往下看，畫面上方是北（−Z），與跟隨鏡頭同向。
+ * - `spot_low`：車位左前方的低角度，看向車位中心。
+ */
+export function createPresetCamera(
+  preset: CameraPreset,
+  vehicleX: number,
+  vehicleZ: number,
+  spot: ParkingSpot,
+): PerspectiveCamera {
+  switch (preset) {
+    case 'follow':
+      return createFollowCamera(vehicleX, vehicleZ).camera;
+    case 'top': {
+      const camera = createCamera();
+      camera.position.set(spot.x, FIXED_CAMERA_CONFIG.topHeightM, spot.z);
+      // 視線垂直向下時與預設的「上」（+Y）平行，lookAt 算不出畫面朝向；改用北方當畫面上方。
+      camera.up.set(0, 0, -1);
+      camera.lookAt(spot.x, 0, spot.z);
+      return camera;
+    }
+    case 'spot_low': {
+      const camera = createCamera();
+      const lateral = right(spot.headingRad);
+      const ahead = forward(spot.headingRad);
+      camera.position.set(
+        spot.x +
+          lateral.x * FIXED_CAMERA_CONFIG.spotLowLateralM +
+          ahead.x * FIXED_CAMERA_CONFIG.spotLowAheadM,
+        FIXED_CAMERA_CONFIG.spotLowHeightM,
+        spot.z +
+          lateral.z * FIXED_CAMERA_CONFIG.spotLowLateralM +
+          ahead.z * FIXED_CAMERA_CONFIG.spotLowAheadM,
+      );
+      camera.lookAt(spot.x, FIXED_CAMERA_CONFIG.spotLowLookAtHeightM, spot.z);
+      return camera;
+    }
+  }
 }

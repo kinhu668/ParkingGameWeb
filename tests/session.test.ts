@@ -6,6 +6,7 @@ import { REQUIRED_HOLD_STEPS } from '../src/level/parkingJudge';
 import { PROTOTYPE_LAYOUT, PROTOTYPE_LAYOUT_FT } from '../src/level/prototypeLayout';
 import {
   restartSession,
+  sessionSnapshot,
   startSession,
   stepSession,
   type Session,
@@ -203,5 +204,54 @@ describe('重來', () => {
     const wandered = repeat(startSession(PROTOTYPE_LAYOUT), { ...FULL_THROTTLE, steer: 1 }, 90);
     expect(wandered.vehicle).not.toEqual(PROTOTYPE_LAYOUT.startState);
     expect(restartSession(wandered).vehicle).toEqual(PROTOTYPE_LAYOUT.startState);
+  });
+});
+
+describe('sessionSnapshot（e2e 用的唯讀狀態）', () => {
+  test('起點：位置 ft、heading 度、車速 mph、未停妥', () => {
+    expect(sessionSnapshot(startSession(PROTOTYPE_LAYOUT))).toEqual({
+      xFt: PROTOTYPE_LAYOUT_FT.start.xFt,
+      zFt: PROTOTYPE_LAYOUT_FT.start.zFt,
+      headingDeg: PROTOTYPE_LAYOUT_FT.start.headingDeg,
+      speedMph: 0,
+      parked: false,
+    });
+  });
+
+  test('全油門 1 秒：車速 6 mph、往 −Z 走了約 4.4 ft', () => {
+    const snapshot = sessionSnapshot(repeat(startSession(PROTOTYPE_LAYOUT), FULL_THROTTLE, 60));
+    expect(snapshot.speedMph).toBeCloseTo(6, 9);
+    // 半隱式積分：位移 = Σ v_k·dt（k = 1..60）= 6 mph/s × dt² × 60·61/2，比連續時間的 4.4 ft 多半步。
+    expect(snapshot.zFt).toBeCloseTo(-(6 * 5280) / 3600 / 3600 * ((60 * 61) / 2), 9);
+    expect(snapshot.xFt).toBeCloseTo(0, 9);
+    expect(snapshot.headingDeg).toBe(0);
+    expect(snapshot.parked).toBe(false);
+  });
+
+  test('倒車時車速為負；右轉後 heading 以度表示', () => {
+    const reversing = sessionSnapshot(repeat(startSession(PROTOTYPE_LAYOUT), FULL_REVERSE, 30));
+    expect(reversing.speedMph).toBeCloseTo(-3, 9);
+
+    const turning = repeat(startSession(PROTOTYPE_LAYOUT), { ...FULL_THROTTLE, steer: 1 }, 90);
+    const snapshot = sessionSnapshot(turning);
+    expect(snapshot.headingDeg).toBeGreaterThan(0);
+    expect(snapshot.headingDeg).toBeLessThan(180);
+    expect(snapshot.headingDeg).toBeCloseTo((turning.vehicle.headingRad * 180) / Math.PI, 9);
+  });
+
+  test('停妥後 parked = true、車速 0、位置在車位中心附近', () => {
+    const parked = repeat(driveIntoPrototypeSpot(), IDLE, REQUIRED_HOLD_STEPS);
+    const snapshot = sessionSnapshot(parked);
+    expect(snapshot.parked).toBe(true);
+    expect(snapshot.speedMph).toBe(0);
+    expect(Math.abs(snapshot.zFt - PROTOTYPE_LAYOUT_FT.spot.centerZFt)).toBeLessThan(1.5);
+  });
+
+  test('改快照不會影響遊戲狀態', () => {
+    const session = startSession(PROTOTYPE_LAYOUT);
+    const snapshot: { xFt: number } = sessionSnapshot(session);
+    snapshot.xFt = 999;
+    expect(sessionSnapshot(session).xFt).toBe(PROTOTYPE_LAYOUT_FT.start.xFt);
+    expect(session.vehicle).toEqual(PROTOTYPE_LAYOUT.startState);
   });
 });

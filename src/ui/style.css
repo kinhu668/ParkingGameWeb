@@ -176,3 +176,41 @@ body {
   color: var(--ui-text-dim);
   font-size: 18px;
 }
+
+/* ?show 的未知物件提示與 ?bench 的結果面板：左上角，樣式沿用 HUD 面板。這兩種模式沒有 HUD。 */
+.mode-panel {
+  position: fixed;
+  top: max(var(--ui-gap), env(safe-area-inset-top));
+  left: max(var(--ui-gap), env(safe-area-inset-left));
+  padding: 12px 18px 14px;
+  color: var(--ui-text);
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.mode-list {
+  margin: 8px 0 0;
+  padding-left: 1.2em;
+}
+
+.mode-list code {
+  font-size: 14px;
+}
+
+.bench-rows {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 6px 18px;
+  margin: 0;
+}
+
+.bench-rows dt {
+  color: var(--ui-text-dim);
+}
+
+.bench-rows dd {
+  margin: 0;
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}

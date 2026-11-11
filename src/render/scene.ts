@@ -19,6 +19,12 @@ export interface GameScene {
   update(pose: VehiclePose): void;
 }
 
+/** 場景的燈光：半球補光 + 會投影的太陽。 */
+export interface SceneLights {
+  /** 讓太陽照向 (x, z)：光線方向不變，陰影貼圖的範圍跟著移到這一點附近。 */
+  aimAt(x: number, z: number): void;
+}
+
 function createSun(): DirectionalLight {
   const sun = new DirectionalLight(SUN_CONFIG.color, SUN_CONFIG.intensity);
   sun.castShadow = true;
@@ -35,14 +41,13 @@ function createSun(): DirectionalLight {
 }
 
 /**
- * @param maxAnisotropy 這張顯示卡支援的最大各向異性過濾等級（renderer.capabilities.getMaxAnisotropy()）
- * @param spot 要畫標線的車位
+ * 把半球補光與太陽加進 scene，一開始照向原點。遊戲場景與展示台共用，物件在兩邊的受光才一致。
+ * @param directionToSun 從被照的點指向太陽的方向（不必是單位長）
  */
-export function createGameScene(maxAnisotropy: number, spot: ParkingSpot): GameScene {
-  const scene = new Scene();
-  scene.background = new Color(SKY_CONFIG.color);
-  scene.fog = new Fog(SKY_CONFIG.color, SKY_CONFIG.fogNearM, SKY_CONFIG.fogFarM);
-
+export function addLights(
+  scene: Scene,
+  directionToSun: { readonly x: number; readonly y: number; readonly z: number },
+): SceneLights {
   scene.add(
     new HemisphereLight(
       HEMISPHERE_LIGHT_CONFIG.skyColor,
@@ -51,14 +56,31 @@ export function createGameScene(maxAnisotropy: number, spot: ParkingSpot): GameS
     ),
   );
 
-  // 太陽照向 sun.target；兩者一起跟著車平移，光線方向不變，陰影貼圖的解析度都用在車附近。
+  // 太陽照向 sun.target；兩者一起平移，光線方向不變，陰影貼圖的解析度都用在目標點附近。
   const sun = createSun();
-  const sunOffset = new Vector3(
-    SUN_CONFIG.directionToSun.x,
-    SUN_CONFIG.directionToSun.y,
-    SUN_CONFIG.directionToSun.z,
-  ).setLength(SUN_CONFIG.distanceM);
+  const sunOffset = new Vector3(directionToSun.x, directionToSun.y, directionToSun.z).setLength(
+    SUN_CONFIG.distanceM,
+  );
   scene.add(sun, sun.target);
+
+  const aimAt = (x: number, z: number): void => {
+    sun.target.position.set(x, 0, z);
+    sun.position.copy(sun.target.position).add(sunOffset);
+  };
+  aimAt(0, 0);
+  return { aimAt };
+}
+
+/**
+ * @param maxAnisotropy 這張顯示卡支援的最大各向異性過濾等級（renderer.capabilities.getMaxAnisotropy()）
+ * @param spot 要畫標線的車位
+ */
+export function createGameScene(maxAnisotropy: number, spot: ParkingSpot): GameScene {
+  const scene = new Scene();
+  scene.background = new Color(SKY_CONFIG.color);
+  scene.fog = new Fog(SKY_CONFIG.color, SKY_CONFIG.fogNearM, SKY_CONFIG.fogFarM);
+
+  const lights = addLights(scene, SUN_CONFIG.directionToSun);
 
   const ground = createGround(DEFAULT_SEED, maxAnisotropy);
   scene.add(ground);
@@ -73,8 +95,7 @@ export function createGameScene(maxAnisotropy: number, spot: ParkingSpot): GameS
     update(pose) {
       updateCarMesh(car, pose);
 
-      sun.target.position.set(pose.x, 0, pose.z);
-      sun.position.copy(sun.target.position).add(sunOffset);
+      lights.aimAt(pose.x, pose.z);
 
       // 地面跟著車走，但每次只移動整數張貼圖的距離，所以柏油紋路在世界座標裡不動，
       // 車怎麼開都開不到地面邊緣。

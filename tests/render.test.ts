@@ -1,5 +1,5 @@
 // 算圖層裡可以不開瀏覽器就驗證的部分：柏油貼圖的可重現性、鏡頭平滑、車輛模型的朝向約定、車位標線的範圍。
-import { Box3, Mesh, Vector3 } from 'three';
+import { Box3, Mesh, Object3D, Vector3 } from 'three';
 import { describe, expect, test } from 'vitest';
 import { DEFAULT_SEED } from '../src/core/gameConfig';
 import { forward } from '../src/core/heading';
@@ -7,8 +7,14 @@ import { degToRad, ftToM } from '../src/core/units';
 import { parkingSpotFromFt } from '../src/level/parkingJudge';
 import { generateAsphaltPixels } from '../src/props/ground';
 import { createSpotMarkings } from '../src/props/spotMarkings';
-import { createFollowCamera, smoothingFactor } from '../src/render/followCamera';
-import { CAMERA_CONFIG, GROUND_CONFIG, SPOT_MARKING_CONFIG } from '../src/render/renderConfig';
+import { createFollowCamera, createPresetCamera, smoothingFactor } from '../src/render/followCamera';
+import {
+  CAMERA_CONFIG,
+  FIXED_CAMERA_CONFIG,
+  GROUND_CONFIG,
+  SPOT_MARKING_CONFIG,
+} from '../src/render/renderConfig';
+import { SHOWCASE_IDS, createShowcaseObject } from '../src/render/showcase';
 import { createCarMesh, updateCarMesh } from '../src/vehicle/carMesh';
 import { VEHICLE_CONFIG_SI } from '../src/vehicle/vehicleConfig';
 
@@ -209,4 +215,104 @@ describe('車位標線 spotMarkings', () => {
       expect(insideHole).toBe(false);
     }
   });
+});
+
+describe('固定鏡頭 createPresetCamera（?cam=）', () => {
+  const spot = parkingSpotFromFt({
+    centerXFt: 20,
+    centerZFt: -60,
+    widthFt: 9,
+    lengthFt: 18,
+    headingDeg: 0,
+  });
+
+  /** 鏡頭的視線方向（世界座標，單位長）。 */
+  function viewDirection(camera: ReturnType<typeof createPresetCamera>): Vector3 {
+    return camera.getWorldDirection(new Vector3());
+  }
+
+  test('follow：與跟隨鏡頭對準車時的位置、朝向相同，與車位無關', () => {
+    const preset = createPresetCamera('follow', 10, -20, spot);
+    const follow = createFollowCamera(10, -20).camera;
+    expect(preset.position.distanceTo(follow.position)).toBeCloseTo(0, DIGITS);
+    expect(preset.quaternion.angleTo(follow.quaternion)).toBeCloseTo(0, DIGITS);
+  });
+
+  test('top：在車位正上方垂直往下看，畫面上方是北（−Z），與車在哪裡無關', () => {
+    const camera = createPresetCamera('top', 10, -20, spot);
+    expect(camera.position.x).toBeCloseTo(spot.x, DIGITS);
+    expect(camera.position.y).toBeCloseTo(FIXED_CAMERA_CONFIG.topHeightM, DIGITS);
+    expect(camera.position.z).toBeCloseTo(spot.z, DIGITS);
+    const direction = viewDirection(camera);
+    expect(direction.x).toBeCloseTo(0, DIGITS);
+    expect(direction.y).toBeCloseTo(-1, DIGITS);
+    expect(direction.z).toBeCloseTo(0, DIGITS);
+    // 鏡頭本地的 +Y 是畫面上方。
+    const screenUp = new Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+    expect(screenUp.x).toBeCloseTo(0, DIGITS);
+    expect(screenUp.z).toBeCloseTo(-1, DIGITS);
+
+    const elsewhere = createPresetCamera('top', -99, 99, spot);
+    expect(elsewhere.position.distanceTo(camera.position)).toBeCloseTo(0, DIGITS);
+  });
+
+  test('spot_low：低於車頂、在車位外側，視線朝向車位中心', () => {
+    const camera = createPresetCamera('spot_low', 10, -20, spot);
+    expect(camera.position.y).toBeLessThan(VEHICLE_CONFIG_SI.heightM);
+    expect(camera.position.y).toBeGreaterThan(0);
+    expect(Math.abs(camera.position.x - spot.x)).toBeGreaterThan(spot.widthM / 2);
+
+    const toSpot = new Vector3(
+      spot.x,
+      FIXED_CAMERA_CONFIG.spotLowLookAtHeightM,
+      spot.z,
+    ).sub(camera.position);
+    expect(viewDirection(camera).angleTo(toSpot)).toBeCloseTo(0, DIGITS);
+  });
+
+  test('spot_low：鏡頭位置跟著車位的方向轉', () => {
+    const turned = parkingSpotFromFt({
+      centerXFt: 20,
+      centerZFt: -60,
+      widthFt: 9,
+      lengthFt: 18,
+      headingDeg: 90,
+    });
+    const camera = createPresetCamera('spot_low', 0, 0, turned);
+    // heading 90°：前方是 +X、右方是 +Z。
+    expect(camera.position.x - turned.x).toBeCloseTo(FIXED_CAMERA_CONFIG.spotLowAheadM, DIGITS);
+    expect(camera.position.z - turned.z).toBeCloseTo(FIXED_CAMERA_CONFIG.spotLowLateralM, DIGITS);
+  });
+});
+
+describe('展示登錄表 showcase（?show=）', () => {
+  test('本階段登錄了 car_sedan 與 parking_spot', () => {
+    expect(SHOWCASE_IDS).toContain('car_sedan');
+    expect(SHOWCASE_IDS).toContain('parking_spot');
+  });
+
+  test.each(SHOWCASE_IDS)('%s：建得出物件，擺在原點附近而且有大小', (id) => {
+    const object = createShowcaseObject(id);
+    expect(object).toBeInstanceOf(Object3D);
+    if (object === undefined) {
+      return;
+    }
+    const box = new Box3().setFromObject(object);
+    const center = box.getCenter(new Vector3());
+    const size = box.getSize(new Vector3());
+    expect(Math.abs(center.x)).toBeLessThan(ftToM(1));
+    expect(Math.abs(center.z)).toBeLessThan(ftToM(1));
+    expect(Math.max(size.x, size.z)).toBeGreaterThan(ftToM(5));
+  });
+
+  test('每次建立的是新的物件', () => {
+    expect(createShowcaseObject('car_sedan')).not.toBe(createShowcaseObject('car_sedan'));
+  });
+
+  test.each(['', 'nope', 'CAR_SEDAN', 'toString', 'constructor', '__proto__'])(
+    '未知 id %j → undefined',
+    (id) => {
+      expect(createShowcaseObject(id)).toBeUndefined();
+    },
+  );
 });
