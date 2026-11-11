@@ -56,9 +56,12 @@ test('?bench 跑完後輸出統計數字', async ({ page }) => {
   await page.goto('/?bench');
   const result = page.locator('#bench-result');
   await expect(result).toBeVisible();
+  // 數字跟畫質級別有關，所以級別寫在結果面板上；無頭軟體算圖自動選到 medium。
+  await expect(result).toHaveAttribute('data-quality', 'medium');
   await expect(result).toHaveAttribute('data-result', /avgFps/, { timeout: BENCH_DEADLINE_MS });
 
   // 無頭軟體算圖的數字不代表真實效能；這裡只驗證「真的有輸出，而且是合理的數字」。
+  // draw calls 是整幀的數字（場景 + 陰影貼圖 + 暈影那一層），不只是場景裡的物件數。
   const stats: unknown = JSON.parse((await result.getAttribute('data-result')) ?? 'null');
   expect(stats).toEqual(expect.any(Object));
   const fields = stats as Readonly<Record<string, unknown>>;
