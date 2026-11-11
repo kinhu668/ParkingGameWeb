@@ -18,6 +18,8 @@ export const RENDERER_CONFIG = {
  * 黃昏的色調分級併在色調映射裡，四個級別都有。
  * 車模（vehicleDetail）：low、medium 用較少的細分，high、ultra 用較多。
  * 地面（ground）：low 的噪聲貼圖小、沒有潮濕反光；medium 加上潮濕反光；high、ultra 再加上法線（裂縫與顆粒的立體感）。
+ * 擺設（props）：級別越高，背景車、路燈、樹、建築越多；只有 high、ultra 有幾盞真的會照亮場景的路燈，
+ * 其餘的燈（與 low、medium 的全部）只有自發光燈殼、光錐與地上的光暈。
  */
 export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = {
   low: {
@@ -33,6 +35,20 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = 
     smaa: false,
     ground: { textureSizePx: 512, maxAnisotropy: 2, normals: false, wetness: false },
     vehicleDetail: 'low',
+    props: {
+      parkedCars: 5,
+      lampHeads: 4,
+      realLights: 0,
+      lightCones: false,
+      pillars: 4,
+      buildings: 5,
+      trees: 5,
+      bushes: 6,
+      fencePostSpacingM: ftToM(20),
+      detailFraction: 0.3,
+      detailShadows: false,
+      meshDetail: 'low',
+    },
   },
   medium: {
     level: 'medium',
@@ -47,6 +63,20 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = 
     smaa: false,
     ground: { textureSizePx: 1024, maxAnisotropy: 4, normals: false, wetness: true },
     vehicleDetail: 'low',
+    props: {
+      parkedCars: 10,
+      lampHeads: 8,
+      realLights: 0,
+      lightCones: true,
+      pillars: 8,
+      buildings: 9,
+      trees: 10,
+      bushes: 14,
+      fencePostSpacingM: ftToM(12),
+      detailFraction: 0.6,
+      detailShadows: false,
+      meshDetail: 'low',
+    },
   },
   high: {
     level: 'high',
@@ -61,6 +91,20 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = 
     smaa: false,
     ground: { textureSizePx: 1024, maxAnisotropy: 8, normals: true, wetness: true },
     vehicleDetail: 'high',
+    props: {
+      parkedCars: 22,
+      lampHeads: 15,
+      realLights: 3,
+      lightCones: true,
+      pillars: 8,
+      buildings: 14,
+      trees: 20,
+      bushes: 28,
+      fencePostSpacingM: ftToM(8),
+      detailFraction: 1,
+      detailShadows: true,
+      meshDetail: 'high',
+    },
   },
   ultra: {
     level: 'ultra',
@@ -75,6 +119,20 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = 
     smaa: true,
     ground: { textureSizePx: 2048, maxAnisotropy: 16, normals: true, wetness: true },
     vehicleDetail: 'high',
+    props: {
+      parkedCars: 30,
+      lampHeads: 19,
+      realLights: 5,
+      lightCones: true,
+      pillars: 8,
+      buildings: 18,
+      trees: 28,
+      bushes: 40,
+      fencePostSpacingM: ftToM(8),
+      detailFraction: 1,
+      detailShadows: true,
+      meshDetail: 'high',
+    },
   },
 };
 
@@ -292,12 +350,22 @@ export const SUN_CONFIG = {
   elevationDeg: 9,
   /** 光源離目標點的距離。 */
   distanceM: ftToM(160),
-  /** 陰影相機是正方形，這是半邊長；範圍跟著車走，所以只要蓋住車附近。 */
+  /**
+   * 陰影相機的半邊長（正方形）。展示台用這個；一般遊戲的陰影範圍是蓋住整塊場地的固定範圍
+   * （shadowArea.ts），車開出場地才跟著車移動。
+   */
   shadowHalfExtentM: ftToM(45),
   shadowNearM: ftToM(20),
   shadowFarM: ftToM(320),
   shadowBias: -0.0004,
   shadowNormalBias: 0.03,
+  /** 陰影貼圖一個像素比這個值乘出來的還大時，法線偏移跟著放大（範圍大、貼圖小的級別才不會有條紋）。 */
+  shadowNormalBiasTexels: 1.2,
+  /** 場地的固定陰影範圍：路緣內緣往外多留這麼寬（圍欄、路緣外的路燈與樹），以及會投影的東西最高多高。 */
+  lotShadowMarginM: ftToM(18),
+  lotShadowMaxHeightM: ftToM(27),
+  /** 陰影相機的近、遠平面在算出來的範圍之外各多留這麼多。 */
+  lotShadowDepthMarginM: ftToM(10),
 } as const;
 
 /** 鏡頭效果與後製鏈裡不隨畫質級別改變的數值。 */
@@ -599,4 +667,113 @@ export const CAR_DETAIL_CONFIG = {
     endScales: [0.985, 0.95, 0.89, 0.8, 0.66, 0.48, 0.26, 0],
     wheelSegments: 40,
   },
+} as const;
+
+/**
+ * 場景擺設：路緣圍成的場地裡與場地外的純視覺物件（沒有碰撞、不進停車判定）。
+ * 位置都以車位自己的方向為準（車位本地座標：+X 右、−Z 車位前方）；數量跟著畫質級別走（QUALITY_PRESETS 的 props）。
+ * 假車位與目標車位同寬同長，沿前方路緣一列（A 列，目標車位在其中）、場地中段背靠背兩列（B 列）、後方路緣一列（C 列）；
+ * 車位中線兩側留一條直通的通道，起點就在通道上。
+ */
+export const LOT_PROPS_CONFIG = {
+  /** 禁區：起點到車位的通路，中線左右各這麼寬以內不放任何擺設（車寬 6 ft 的一半 + 6 ft）。 */
+  corridorHalfWidthM: ftToM(9),
+  /** 通路禁區往起點後方、車位前緣之外各延伸多遠。 */
+  corridorBehindStartM: ftToM(14),
+  corridorPastSpotM: ftToM(2),
+  /** 目標車位矩形四周再留這麼寬。 */
+  spotMarginM: ftToM(1.5),
+  /** `?cam=spot_low` 的鏡頭前方（視線左右各 cameraClearHalfAngleRad 以內）這個半徑內不放擺設，免得擋住鏡頭。 */
+  cameraClearRadiusM: ftToM(12),
+  cameraClearHalfAngleRad: degToRad(50),
+
+  /** 中央通道的半寬，以車位寬為單位：最靠近通道的假車位從這裡開始。 */
+  aisleHalfWidthStalls: 1.5,
+  /** B 列（背靠背兩列）的中線在車位中心後方多遠。 */
+  islandBehindSpotM: ftToM(73),
+
+  /** 背景車：左右、前後的隨機偏移，與停歪的角度上限。 */
+  carJitterLateralM: ftToM(0.45),
+  carJitterLengthwiseM: ftToM(0.7),
+  carJitterHeadingRad: degToRad(2.5),
+  /** 車頭朝外（倒車入庫）的比例。 */
+  carReversedChance: 0.22,
+  /** 背景車的車色（不含玩家車的藍）。 */
+  carColors: [0xd9dadc, 0xa9adb3, 0x1c1d20, 0x4a4d52, 0x8e1a1c, 0x2f4a3a, 0xb9a98a, 0x6a2a22, 0xe8e4da],
+  carRoughness: 0.36,
+  carMetalness: 0.45,
+
+  /** 路燈：桿高、桿半徑、燈臂長、燈殼大小（寬、厚、長）。 */
+  lampHeightM: ftToM(22),
+  lampPoleRadiusM: ftToM(0.3),
+  lampArmLengthM: ftToM(6),
+  lampHeadSizeM: { x: ftToM(1.5), y: ftToM(0.45), z: ftToM(3) },
+  lampColor: 0x2c2f33,
+  /** 路緣外的路燈離路緣內側多遠。 */
+  lampOutsideCurbM: ftToM(2.5),
+  /** 燈殼底下的發光面：暖黃，亮度高過泛光門檻。 */
+  lampGlowColor: 0xffd49a,
+  lampGlowIntensity: 3.2,
+  /** 光錐：頂端與地面的半徑、頂端的亮度（加色混合，往地面淡到 0）。 */
+  lampConeTopRadiusM: ftToM(0.8),
+  lampConeBottomRadiusM: ftToM(13),
+  lampConeColor: 0xffc98a,
+  /**
+   * 光錐與光暈是加色混合。走後製鏈的級別加在色調映射之前（場景亮度），直接畫到畫面上的級別加在色調映射之後
+   * （顯示亮度，同樣的數值看起來亮得多），所以兩邊各有自己的亮度。
+   */
+  lampConeBrightness: { hdr: 0.11, direct: 0.04 },
+  /** 地上的光暈（沒有真光源的燈才畫）：半徑與中心的亮度。 */
+  lampPoolRadiusM: ftToM(14),
+  lampPoolBrightness: { hdr: 0.32, direct: 0.085 },
+  /** 真光源（SpotLight）：強度（燭光）、照射距離、半角、邊緣柔化。 */
+  lampLightIntensity: 150,
+  lampLightDistanceM: ftToM(75),
+  lampLightAngleRad: degToRad(58),
+  lampLightPenumbra: 0.85,
+
+  /** 混凝土柱與柱頂的橫梁。 */
+  pillarSizeM: { x: ftToM(1.6), y: ftToM(11), z: ftToM(1.6) },
+  beamThicknessM: ftToM(1.1),
+  concreteColor: 0x8f8b84,
+  concreteRoughness: 0.92,
+
+  /** 圍欄：離路緣內側的距離、立柱與橫桿的尺寸、橫桿的高度。 */
+  fenceOutsideCurbM: ftToM(4),
+  fencePostSizeM: { x: ftToM(0.3), y: ftToM(3.9), z: ftToM(0.3) },
+  fenceRailThicknessM: ftToM(0.16),
+  fenceRailHeightsM: [ftToM(1.7), ftToM(3.4)],
+  fenceColor: 0x4b4f55,
+
+  /** 背景建築：樓層高、窗的寬高與間距、亮著的窗的比例與顏色。 */
+  buildingFloorHeightM: ftToM(11),
+  buildingWindowSizeM: { x: ftToM(6.5), y: ftToM(4.6) },
+  buildingWindowSpacingM: ftToM(11),
+  buildingWindowLitChance: 0.36,
+  buildingWindowLitColor: { r: 1.25, g: 0.9, b: 0.5 },
+  buildingWindowDarkColor: { r: 0.045, g: 0.055, b: 0.075 },
+  buildingColors: [0x6f6a66, 0x7d766c, 0x5b6068, 0x8a8178, 0x676e74, 0x756a62],
+  buildingRoughness: 0.95,
+  /** 太陽方位左右這個角度內不放會擋住太陽的建築（建築不投影，擋住太陽場地卻還亮著會穿幫）。 */
+  buildingSunGapDeg: 15,
+
+  /** 樹與灌木。 */
+  trunkColor: 0x4a3a2c,
+  foliageColors: [0x3d5a2e, 0x4a6a33, 0x34502c, 0x566f38],
+  foliageRoughness: 0.95,
+
+  /** 假車位的標線（沒有磨損著色器，顏色比目標車位的漆暗一點）。 */
+  stallLineColor: 0xbdbbb0,
+  stallLineHeightM: ftToM(0.02),
+
+  /** 垃圾桶、交通錐、標誌、排水孔蓋的顏色。 */
+  binColor: 0x2f4f3f,
+  binLidColor: 0x25282c,
+  trafficConeColor: 0xe2571c,
+  trafficConeStripeColor: 0xe9e6dc,
+  trafficConeBaseColor: 0x1b1c1e,
+  signPoleColor: 0x8b9096,
+  signPlateColor: 0x1d4fa8,
+  signMarkColor: 0xe9e9e4,
+  drainColor: 0x26282b,
 } as const;

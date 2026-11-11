@@ -7,6 +7,7 @@ import {
   Mesh,
   MeshStandardMaterial,
   Shape,
+  type BufferGeometry,
 } from 'three';
 import { headingToRotationY } from '../core/heading';
 import type { ParkingSpot } from '../level/parkingJudge';
@@ -42,7 +43,7 @@ export function wheelStopFootprint(spot: ParkingSpot): LocalRect {
 }
 
 /** 擺到車位的位置與朝向的空群組；子物件用車位本地座標。 */
-function createSpotFrame(spot: ParkingSpot): Group {
+export function createSpotFrame(spot: ParkingSpot): Group {
   const frame = new Group();
   frame.position.set(spot.x, 0, spot.z);
   frame.rotation.y = headingToRotationY(spot.headingRad);
@@ -83,14 +84,9 @@ export function createCurbs(spot: ParkingSpot): Group {
   return frame;
 }
 
-/**
- * 車擋：車位前緣標線外側的一條梯形斷面水泥塊，橫跨車位中線。
- * 純視覺；放在判定用的車位矩形之外，車停到最前面也不會插進去。
- */
-export function createWheelStop(spot: ParkingSpot): Group {
+/** 車擋的幾何：梯形斷面的水泥塊，長邊沿本地 X，底面在 y = 0、中心在原點。假車位的車擋也用這個。 */
+export function createWheelStopGeometry(): BufferGeometry {
   const { lengthM, baseDepthM, topDepthM, heightM } = WHEEL_STOP_CONFIG;
-  const footprint = wheelStopFootprint(spot);
-
   // 梯形斷面畫在 XY 平面（X = 前後方向、Y = 高），沿 Z 擠出長度，再轉成橫跨車位。
   const profile = new Shape();
   profile.moveTo(-baseDepthM / 2, 0);
@@ -98,18 +94,27 @@ export function createWheelStop(spot: ParkingSpot): Group {
   profile.lineTo(topDepthM / 2, heightM);
   profile.lineTo(-topDepthM / 2, heightM);
   profile.closePath();
-  const geometry = new ExtrudeGeometry(profile, { depth: lengthM, bevelEnabled: false })
+  return new ExtrudeGeometry(profile, { depth: lengthM, bevelEnabled: false })
     .translate(0, 0, -lengthM / 2)
     .rotateY(Math.PI / 2);
+}
 
-  const block = new Mesh(
-    geometry,
-    new MeshStandardMaterial({
-      color: WHEEL_STOP_CONFIG.color,
-      roughness: WHEEL_STOP_CONFIG.roughness,
-      metalness: 0,
-    }),
-  );
+/** 車擋的材質。 */
+export function createWheelStopMaterial(): MeshStandardMaterial {
+  return new MeshStandardMaterial({
+    color: WHEEL_STOP_CONFIG.color,
+    roughness: WHEEL_STOP_CONFIG.roughness,
+    metalness: 0,
+  });
+}
+
+/**
+ * 車擋：車位前緣標線外側的一條梯形斷面水泥塊，橫跨車位中線。
+ * 純視覺；放在判定用的車位矩形之外，車停到最前面也不會插進去。
+ */
+export function createWheelStop(spot: ParkingSpot): Group {
+  const footprint = wheelStopFootprint(spot);
+  const block = new Mesh(createWheelStopGeometry(), createWheelStopMaterial());
   block.position.set(0, 0, (footprint.minZ + footprint.maxZ) / 2);
   block.castShadow = true;
   block.receiveShadow = true;

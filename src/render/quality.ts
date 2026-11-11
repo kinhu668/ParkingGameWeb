@@ -62,6 +62,35 @@ export interface GroundQualitySettings {
   readonly wetness: boolean;
 }
 
+/**
+ * 場景擺設（路燈、柱子、背景建築、圍欄、樹、背景車、小細節）的密度。全部是純視覺、用 InstancedMesh 畫；
+ * 數量都是「最多幾個」：候選位置依重要性排好，級別越高取得越多，所以低級別的擺設是高級別的子集。
+ */
+export interface PropsQualitySettings {
+  /** 停在假車位裡的背景車。 */
+  readonly parkedCars: number;
+  /** 路燈的燈頭數（島上的雙臂路燈算兩個）。 */
+  readonly lampHeads: number;
+  /** 其中真的會照亮場景的燈（SpotLight，不投影）；其餘只有自發光燈殼、光錐與地上的光暈。 */
+  readonly realLights: number;
+  /** 半透明的光錐（體積光感）。 */
+  readonly lightCones: boolean;
+  /** 混凝土柱。 */
+  readonly pillars: number;
+  /** 場地外的背景建築。 */
+  readonly buildings: number;
+  readonly trees: number;
+  readonly bushes: number;
+  /** 圍欄立柱的間距（公尺）；越小立柱與橫桿越多。 */
+  readonly fencePostSpacingM: number;
+  /** 小細節（假車位的車擋、垃圾桶、交通錐、標誌、排水孔蓋）各取候選的這個比例（0–1）。 */
+  readonly detailFraction: number;
+  /** 小細節與圍欄要不要投影。 */
+  readonly detailShadows: boolean;
+  /** 擺設的細分：low 的背景車輪圈只是一片圓盤、樹冠面數少（軟體算圖跑得動），high 的背景車有輪輻、樹冠較圓。 */
+  readonly meshDetail: VehicleDetail;
+}
+
 /** 車模的細分程度：low 面數少，high 輪拱與輪胎較圓。 */
 export type VehicleDetail = 'low' | 'high';
 
@@ -89,6 +118,8 @@ export interface QualitySettings {
   readonly ground: GroundQualitySettings;
   /** 車模的細分程度（CAR_DETAIL_CONFIG）。 */
   readonly vehicleDetail: VehicleDetail;
+  /** 場景擺設的密度。 */
+  readonly props: PropsQualitySettings;
 }
 
 /** 自動選擇畫質用的裝置線索。瀏覽器不一定提供每一項，沒有就不填。 */
