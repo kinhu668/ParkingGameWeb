@@ -91,6 +91,30 @@ export interface PropsQualitySettings {
   readonly meshDetail: VehicleDetail;
 }
 
+/** 玩家車頭燈照地的做法。頭燈一律不投影（每多一張陰影貼圖，場景就多畫一遍）。 */
+export interface HeadlightQualitySettings {
+  /** 地上的光斑：車頭前方一片加色混合的貼地面片（倒車時車尾另有一小片）。不花光源的計算。 */
+  readonly groundPool: boolean;
+  /** 真的會照亮場景的頭燈（SpotLight）盞數：0 = 沒有、1 = 車頭中央一盞、2 = 左右各一盞。 */
+  readonly spotLights: number;
+}
+
+/** 倒車輪胎痕（純視覺）：留在地上的段數上限與壽命。 */
+export interface TireMarkQualitySettings {
+  /** 最多同時留著幾段（左右後輪合計）；滿了就蓋掉最舊的。0 = 不畫。 */
+  readonly maxSegments: number;
+  /** 一段痕從留下到完全淡掉的時間（秒）。 */
+  readonly lifetimeS: number;
+}
+
+/** 空氣感的粒子（純視覺）：車輪揚起的灰塵與場地上的落葉。數量都是上限，0 = 不畫。 */
+export interface ParticleQualitySettings {
+  /** 同時存在的灰塵粒子上限。 */
+  readonly dust: number;
+  /** 場地上的落葉片數。 */
+  readonly leaves: number;
+}
+
 /** 車模的細分程度：low 面數少，high 輪拱與輪胎較圓。 */
 export type VehicleDetail = 'low' | 'high';
 
@@ -120,6 +144,12 @@ export interface QualitySettings {
   readonly vehicleDetail: VehicleDetail;
   /** 場景擺設的密度。 */
   readonly props: PropsQualitySettings;
+  /** 倒車輪胎痕的段數與壽命。 */
+  readonly tireMarks: TireMarkQualitySettings;
+  /** 灰塵與落葉的數量。 */
+  readonly particles: ParticleQualitySettings;
+  /** 玩家車頭燈照地的做法。 */
+  readonly headlights: HeadlightQualitySettings;
 }
 
 /** 自動選擇畫質用的裝置線索。瀏覽器不一定提供每一項，沒有就不填。 */

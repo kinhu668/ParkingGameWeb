@@ -18,12 +18,17 @@ export const RENDERER_CONFIG = {
  * 黃昏的色調分級併在色調映射裡，四個級別都有。
  * 車模（vehicleDetail）：low、medium 用較少的細分，high、ultra 用較多。
  * 地面（ground）：low 的噪聲貼圖小、沒有潮濕反光；medium 加上潮濕反光；high、ultra 再加上法線（裂縫與顆粒的立體感）。
+ * 頭燈（headlights）：low 只有發光的燈殼；medium 在車頭前方的地上加一片光斑；high、ultra 再加不投影的真光源。
+ * 輪胎痕（tireMarks）與粒子（particles）：low 只有少量輪胎痕、沒有粒子；級別越高，痕留得越久、灰塵與落葉越多。
  * 擺設（props）：級別越高，背景車、路燈、樹、建築越多；只有 high、ultra 有幾盞真的會照亮場景的路燈，
  * 其餘的燈（與 low、medium 的全部）只有自發光燈殼、光錐與地上的光暈。
  */
 export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = {
   low: {
     level: 'low',
+    tireMarks: { maxSegments: 60, lifetimeS: 6 },
+    particles: { dust: 0, leaves: 0 },
+    headlights: { groundPool: false, spotLights: 0 },
     maxPixelRatio: 1,
     toneMapping: 'agx',
     shadowMapSize: 1024,
@@ -52,6 +57,9 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = 
   },
   medium: {
     level: 'medium',
+    tireMarks: { maxSegments: 160, lifetimeS: 10 },
+    particles: { dust: 24, leaves: 36 },
+    headlights: { groundPool: true, spotLights: 0 },
     maxPixelRatio: 1.5,
     toneMapping: 'agx',
     shadowMapSize: 2048,
@@ -80,6 +88,9 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = 
   },
   high: {
     level: 'high',
+    tireMarks: { maxSegments: 360, lifetimeS: 16 },
+    particles: { dust: 64, leaves: 100 },
+    headlights: { groundPool: true, spotLights: 1 },
     maxPixelRatio: 2,
     toneMapping: 'agx',
     shadowMapSize: 4096,
@@ -108,6 +119,9 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = 
   },
   ultra: {
     level: 'ultra',
+    tireMarks: { maxSegments: 600, lifetimeS: 24 },
+    particles: { dust: 96, leaves: 160 },
+    headlights: { groundPool: true, spotLights: 2 },
     maxPixelRatio: 2,
     toneMapping: 'agx',
     shadowMapSize: 4096,
@@ -784,4 +798,166 @@ export const LOT_PROPS_CONFIG = {
   signPlateColor: 0x1d4fa8,
   signMarkColor: 0xe9e9e4,
   drainColor: 0x26282b,
+} as const;
+
+/**
+ * 玩家車頭燈照地（carHeadlights.ts）：地上的光斑（加色混合的貼地面片）與不投影的真光源。
+ * 用哪幾樣跟著畫質級別走（QUALITY_PRESETS 的 headlights）。位置都是車的本地座標：車頭朝 −Z、右側 +X。
+ */
+export const HEADLIGHT_CONFIG = {
+  /** 兩盞頭燈離車身中線多遠（左右各一盞真光源時用；光斑的兩瓣見 frontPool）。 */
+  lampOffsetM: ftToM(2.0),
+  /** 暖白。 */
+  color: 0xffe2b0,
+
+  /** 光斑離地高度：比車位標線與輪胎痕高一點，不會共面閃爍。 */
+  poolLiftM: ftToM(0.07),
+  /** 車頭前方的光斑：兩盞燈各一瓣，離車越遠越寬、越淡。 */
+  frontPool: {
+    lengthM: ftToM(40),
+    halfWidthM: ftToM(11),
+    /** 兩瓣的中線離車身中線多遠。 */
+    lobeOffsetM: ftToM(2.0),
+    /** 每一瓣的寬度（高斯的 σ）：車頭處與最遠處。 */
+    nearSpreadM: ftToM(1.1),
+    farSpreadM: ftToM(6),
+    /** 從車頭往前這麼遠才亮到最亮（燈在保險桿上，正下方照不到）。 */
+    riseM: ftToM(3.5),
+    /** 往遠處變淡的冪次；越大遠處越快變暗。 */
+    falloffExponent: 1.4,
+  },
+  /**
+   * 光斑最亮處的亮度（加色混合）。走後製鏈的級別加在色調映射之前（場景亮度），直接畫到畫面上的級別加在
+   * 色調映射之後（顯示亮度，同樣的數值看起來亮得多），所以兩邊各有自己的亮度。
+   */
+  poolBrightness: { hdr: 0.55, direct: 0.17 },
+  /** 有真光源時光斑只是補一點形狀，亮度乘上這個比例。 */
+  poolWithLightScale: 0.5,
+
+  /** 倒車燈在車尾後方地上的一小片冷白光：只有一瓣，比頭燈淡很多。 */
+  reversePool: {
+    lengthM: ftToM(11),
+    halfWidthM: ftToM(5.5),
+    lobeOffsetM: 0,
+    nearSpreadM: ftToM(1.8),
+    farSpreadM: ftToM(3.2),
+    riseM: ftToM(2),
+    falloffExponent: 1.5,
+  },
+  reverseColor: 0xe9efff,
+  reverseBrightness: { hdr: 0.16, direct: 0.05 },
+
+  /**
+   * 真光源（SpotLight，不投影）：全部加起來的強度（燭光；兩盞時各一半）、照射距離、半角、邊緣柔化、
+   * 隨距離衰減的冪次（低於物理的 2：車燈的配光本來就把光往遠處送，近處才不會有一團過亮的熱點）。
+   */
+  lightIntensity: 70,
+  lightDistanceM: ftToM(80),
+  lightAngleRad: degToRad(20),
+  lightPenumbra: 0.9,
+  lightDecay: 1,
+  /** 光源比燈殼高（低角度掠射只照得亮車頭前面一小塊），並在車頭前緣之前這麼遠，光錐裡沒有自己的車身。 */
+  lightHeightM: ftToM(3.4),
+  lightAheadOfNoseM: ftToM(0.3),
+  /** 光軸瞄準車頭前方這麼遠的地面。 */
+  lightAimAheadM: ftToM(40),
+} as const;
+
+/**
+ * 倒車輪胎痕（effects/tireMarks.ts）：只在倒車時，沿左右後輪的軌跡留下一段一段貼地的深色痕。
+ * 純視覺，沒有碰撞；段數上限與壽命跟著畫質級別走（QUALITY_PRESETS 的 tireMarks）。
+ */
+export const TIRE_MARK_CONFIG = {
+  /** 痕寬：略小於胎寬（0.75 ft）。 */
+  widthM: ftToM(0.55),
+  /** 後輪每走這麼遠留下一段。 */
+  segmentLengthM: ftToM(0.9),
+  /** 離地高度：比地面高一點、比假車位與目標車位的標線（0.02、0.03 ft）低，痕穿過標線時被標線蓋住。 */
+  liftM: ftToM(0.012),
+  /** 橡膠的深灰，以及剛留下時的不透明度（克制：比標線的對比低得多）。 */
+  color: 0x0c0c0d,
+  opacity: 0.4,
+  /** 壽命過了這個比例之後開始淡出，到壽命結束完全消失。 */
+  fadeStartFraction: 0.5,
+  /** 一次更新裡沿車頭方向倒退超過這麼遠才算在倒車（濾掉浮點誤差）。 */
+  minReverseStepM: 1e-5,
+  /** 一次更新的位移超過這麼遠當作瞬移（按 R 重來），不留痕。 */
+  teleportStepM: ftToM(6.5),
+} as const;
+
+/**
+ * 灰塵與落葉（effects/dust.ts、effects/leaves.ts）。純視覺，數量跟著畫質級別走（QUALITY_PRESETS 的 particles）。
+ * 落葉避開起點到車位的通路、目標車位與 `?cam=spot_low` 的鏡頭前方（與場地擺設同一份禁區）。
+ */
+export const PARTICLE_CONFIG = {
+  /** 弱風吹去的方向（heading 約定：0 = 北，順時針為正）。 */
+  windHeadingDeg: 118,
+
+  leaf: {
+    /** 葉片長度的範圍。 */
+    minSizeM: ftToM(0.6),
+    maxSizeM: ftToM(0.95),
+    /** 黃昏下的枯葉色。 */
+    colors: [0xb5651d, 0xc9922e, 0x8a4b23, 0x9c8a3a, 0xa3441e],
+    roughness: 0.85,
+    /** 一片葉子從落下到被吹走的一輪有多久（秒）。 */
+    minCycleS: 32,
+    maxCycleS: 58,
+    /** 一輪裡：開頭這個比例在落下，結尾這個比例被風捲走；中間分成幾次「停著 → 被吹一小段」。 */
+    fallFraction: 0.1,
+    blowFraction: 0.08,
+    minHops: 2,
+    maxHops: 4,
+    /** 每一小段裡停在地上的比例。 */
+    restFraction: 0.72,
+    /** 從多高落下、飄落時左右擺動的幅度。 */
+    fallHeightM: ftToM(7),
+    swayM: ftToM(0.6),
+    /** 被吹一小段：順風走多遠、離地多高。 */
+    minHopLengthM: ftToM(3),
+    maxHopLengthM: ftToM(7),
+    hopHeightM: ftToM(0.7),
+    /** 最後被風捲走：順風走多遠、升到多高（同時縮小到消失）。 */
+    blowLengthM: ftToM(9),
+    blowHeightM: ftToM(4),
+    /** 停在地上時離地多高（不與地面共面）、葉面傾斜多少。 */
+    restLiftM: ftToM(0.05),
+    restTiltRad: degToRad(7),
+    /** 離路緣內側至少這麼遠。 */
+    curbMarginM: ftToM(2),
+  },
+
+  dust: {
+    /** 受黃昏光的塵土色，以及一顆粒子最濃時的不透明度（很淡，疊幾顆才看得出來）。 */
+    color: 0xa89b8a,
+    opacity: 0.2,
+    /** 粒子的直徑：剛揚起與消失前。 */
+    startSizeM: ftToM(1.1),
+    endSizeM: ftToM(3.4),
+    /** 壽命（秒）的範圍。 */
+    minLifetimeS: 0.9,
+    maxLifetimeS: 1.7,
+    /** 車速低於這個值不揚塵。 */
+    minSpeedMps: mphToMps(0.6),
+    /** 每走 1 公尺揚起的粒子數 = 粒子上限 × 這個比例（上限小的級別揚得少，粒子不會還沒淡掉就被蓋掉）。 */
+    emitPerMeterPerCapacity: 0.07,
+    /** 起步（車速低於 launchSpeedMps）時多揚幾倍；方向盤打到底時再多幾倍。 */
+    launchBoost: 2.2,
+    launchSpeedMps: mphToMps(5),
+    steerBoost: 1.2,
+    /** 揚起的位置：後輪著地點附近，離地這麼高以內、前後左右這麼遠以內。 */
+    spawnHeightM: ftToM(0.5),
+    spawnSpreadM: ftToM(0.7),
+    /** 初速：往上、往外側、往車行進的反方向（最後一項是車速的比例，有上限）。 */
+    riseSpeedMps: 0.45,
+    outwardSpeedMps: 0.6,
+    trailSpeedFraction: 0.18,
+    maxTrailSpeedMps: 0.9,
+    /** 速度每秒剩下的比例（空氣阻力）。 */
+    dragPerSecond: 0.25,
+    /** 貼圖（程式裡畫的柔邊圓點）的邊長。 */
+    spriteSizePx: 32,
+    /** 一次更新的位移超過這麼遠當作瞬移，不揚塵。 */
+    teleportStepM: ftToM(6.5),
+  },
 } as const;
