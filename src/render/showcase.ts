@@ -18,13 +18,14 @@ import { PROTOTYPE_LAYOUT_FT } from '../level/prototypeLayout';
 import { createSpotMarkings } from '../props/spotMarkings';
 import { createCarMesh } from '../vehicle/carMesh';
 import { createCamera } from './followCamera';
+import type { VehicleDetail } from './quality';
 import { SHOWCASE_CONFIG } from './renderConfig';
 import type { RenderContext } from './renderContext';
 import { addLights, addSkyEnvironment } from './scene';
 
 /** 展示登錄表：id → 建立物件（擺在原點、車頭／車位前方朝 −Z）。用 Map，`toString` 之類的 id 才不會誤中。 */
-const SHOWCASE_OBJECTS: ReadonlyMap<string, () => Object3D> = new Map([
-  ['car_sedan', (): Object3D => createCarMesh().root],
+const SHOWCASE_OBJECTS: ReadonlyMap<string, (detail: VehicleDetail) => Object3D> = new Map([
+  ['car_sedan', (detail: VehicleDetail): Object3D => createCarMesh(detail).root],
   [
     'parking_spot',
     (): Object3D =>
@@ -37,9 +38,12 @@ const SHOWCASE_OBJECTS: ReadonlyMap<string, () => Object3D> = new Map([
 /** 可用的展示 id（依登錄順序）。 */
 export const SHOWCASE_IDS: readonly string[] = [...SHOWCASE_OBJECTS.keys()];
 
-/** 建立 id 對應的展示物件；沒有登錄就回傳 undefined。 */
-export function createShowcaseObject(id: string): Object3D | undefined {
-  return SHOWCASE_OBJECTS.get(id)?.();
+/** 建立 id 對應的展示物件（detail：車模的細分程度）；沒有登錄就回傳 undefined。 */
+export function createShowcaseObject(
+  id: string,
+  detail: VehicleDetail = 'high',
+): Object3D | undefined {
+  return SHOWCASE_OBJECTS.get(id)?.(detail);
 }
 
 /** 圓形地台：承接陰影，也讓平貼地面的物件（車位標線）有底色可襯。 */
@@ -92,7 +96,7 @@ export function runShowcase({ renderer, quality, pipeline }: RenderContext, id: 
   const floor = createFloor();
   scene.add(floor);
 
-  const object = createShowcaseObject(id);
+  const object = createShowcaseObject(id, quality.vehicleDetail);
   if (object === undefined) {
     showUnknownNotice();
   } else {

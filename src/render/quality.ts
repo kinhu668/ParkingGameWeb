@@ -62,6 +62,9 @@ export interface GroundQualitySettings {
   readonly wetness: boolean;
 }
 
+/** 車模的細分程度：low 面數少，high 輪拱與輪胎較圓。 */
+export type VehicleDetail = 'low' | 'high';
+
 /** 一個畫質級別的全部設定。算圖器、場景燈光、天空、後製鏈都只讀這個物件，不各自讀網址。 */
 export interface QualitySettings {
   readonly level: QualityLevel;
@@ -84,6 +87,8 @@ export interface QualitySettings {
   readonly smaa: boolean;
   /** 地面（柏油）的細節。 */
   readonly ground: GroundQualitySettings;
+  /** 車模的細分程度（CAR_DETAIL_CONFIG）。 */
+  readonly vehicleDetail: VehicleDetail;
 }
 
 /** 自動選擇畫質用的裝置線索。瀏覽器不一定提供每一項，沒有就不填。 */

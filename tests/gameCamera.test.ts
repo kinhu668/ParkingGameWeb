@@ -1,6 +1,14 @@
 // 一般遊戲的鏡頭（V 鍵切換的五個模式）裡不開瀏覽器就能驗證的部分：
 // 跟車鏡頭在車後方、轉彎落後、倒車不翻面；引擎蓋與駕駛座的視點位置；俯視的朝向；換模式後的鏡片與 up。
-import { Box3, Mesh, MeshStandardMaterial, Vector3, type PerspectiveCamera } from 'three';
+import {
+  Box3,
+  Mesh,
+  MeshStandardMaterial,
+  Raycaster,
+  Vector3,
+  type Intersection,
+  type PerspectiveCamera,
+} from 'three';
 import { describe, expect, test } from 'vitest';
 import { GAME_CAMERA_VIEWS, type GameCameraView } from '../src/core/cameraView';
 import { FIXED_STEP_SECONDS } from '../src/core/gameConfig';
@@ -14,7 +22,13 @@ import {
   type VehiclePose,
   type VehicleState,
 } from '../src/vehicle/bicycleModel';
-import { createCarMesh, setCarInteriorView, updateCarMesh } from '../src/vehicle/carMesh';
+import { BODY_LAYOUT } from '../src/vehicle/carBody';
+import {
+  createCarMesh,
+  setCarInteriorView,
+  updateCarMesh,
+  type CarMesh,
+} from '../src/vehicle/carMesh';
 import { VEHICLE_CONFIG_SI } from '../src/vehicle/vehicleConfig';
 
 const DIGITS = 9;
@@ -44,6 +58,31 @@ function offsetFromCar(
   const ahead = forward(pose.headingRad);
   const side = right(pose.headingRad);
   return { aheadM: dx * ahead.x + dz * ahead.z, rightM: dx * side.x + dz * side.z };
+}
+
+/** 車上所有的網格（世界矩陣已更新）。 */
+function allMeshes(car: CarMesh): Mesh[] {
+  const meshes: Mesh[] = [];
+  car.root.updateMatrixWorld(true);
+  car.root.traverse((object) => {
+    if (object instanceof Mesh) {
+      meshes.push(object);
+    }
+  });
+  return meshes;
+}
+
+/** 目前看得到的網格。 */
+function visibleMeshes(car: CarMesh): Mesh[] {
+  return allMeshes(car).filter((mesh) => mesh.visible);
+}
+
+/**
+ * 從 origin 沿 direction 看出去第一個打到的面；什麼都沒打到是 undefined。
+ * Raycaster 與算圖一樣只算正面，所以從車裡看不到的車殼背面不算。
+ */
+function firstHit(meshes: Mesh[], origin: Vector3, direction: Vector3): Intersection | undefined {
+  return new Raycaster(origin, direction.clone().normalize()).intersectObjects(meshes, false)[0];
 }
 
 function viewDirection(camera: PerspectiveCamera): Vector3 {
@@ -316,18 +355,18 @@ describe('引擎蓋鏡頭 hood', () => {
     expect(mToFt(camera.near)).toBeLessThanOrEqual(0.5);
   });
 
-  test('沒有埋進車殼：視點不在任何一塊車身網格的外框裡', () => {
-    // 朝北：網格的外框與車身的軸對齊，不會因為旋轉而變大。
+  test('沒有埋進車殼：往上、沿視線都打不到車身，正下方就是烤漆的引擎蓋', () => {
     const pose = poseAt(5, 5, 0);
     const car = createCarMesh();
     updateCarMesh(car, pose);
-    car.root.updateMatrixWorld(true);
     const { camera } = createGameCamera('hood', pose);
-    car.root.traverse((object) => {
-      if (object instanceof Mesh) {
-        expect(new Box3().setFromObject(object).containsPoint(camera.position)).toBe(false);
-      }
-    });
+    const meshes = visibleMeshes(car);
+    expect(firstHit(meshes, camera.position, new Vector3(0, 1, 0))).toBeUndefined();
+    expect(firstHit(meshes, camera.position, viewDirection(camera))).toBeUndefined();
+    const below = firstHit(meshes, camera.position, new Vector3(0, -1, 0));
+    expect(below?.object).toBe(car.body);
+    expect(below?.distance).toBeGreaterThan(camera.near);
+    expect(below?.distance).toBeLessThan(ftToM(1.5));
   });
 });
 
@@ -343,13 +382,9 @@ describe('駕駛座鏡頭 cockpit', () => {
     expect(camera.position.y).toBeLessThan(VEHICLE_CONFIG_SI.heightM);
     expect(camera.position.y).toBeGreaterThan(HOOD_TOP_M);
 
-    // 前擋在眼睛高度處的位置：從下緣往後斜上去。
-    const glassHeightM = VEHICLE_CONFIG_SI.heightM - HOOD_TOP_M - CAR_VISUAL_CONFIG.roofThicknessM;
-    const windshieldAheadM =
-      HALF_LENGTH_M -
-      CAR_VISUAL_CONFIG.hoodLengthM -
-      ((camera.position.y - HOOD_TOP_M) / glassHeightM) * CAR_VISUAL_CONFIG.windshieldRakeM;
-    expect(offset.aheadM).toBeLessThan(windshieldAheadM - ftToM(1));
+    // 整片前擋（連最靠後的上緣）都在眼睛前方 1 ft 以上；眼睛在車頂（頂篷）的範圍內。
+    expect(offset.aheadM).toBeLessThan(-BODY_LAYOUT.windshieldTopZM - ftToM(1));
+    expect(offset.aheadM).toBeGreaterThan(-BODY_LAYOUT.rearWindowTopZM);
   });
 
   test('沿車頭向前（略俯），車轉向時跟著轉、仍在車的左側', () => {
@@ -391,107 +426,138 @@ describe('駕駛座鏡頭 cockpit', () => {
 });
 
 describe('駕駛座視角的車身 setCarInteriorView', () => {
-  /** 網格在世界座標的外框。 */
-  function boundsOf(mesh: Mesh): Box3 {
-    return new Box3().setFromObject(mesh);
+  const pose = poseAt(0, 0, 0);
+
+  /** 車朝北時，從正前方往右 azimuthDeg、往上 elevationDeg 的方向。 */
+  function lookDirection(azimuthDeg: number, elevationDeg: number): Vector3 {
+    const azimuthRad = degToRad(azimuthDeg);
+    const elevationRad = degToRad(elevationDeg);
+    return new Vector3(
+      Math.sin(azimuthRad) * Math.cos(elevationRad),
+      Math.sin(elevationRad),
+      -Math.cos(azimuthRad) * Math.cos(elevationRad),
+    );
   }
 
-  function meshesOf(car: ReturnType<typeof createCarMesh>): Mesh[] {
-    const meshes: Mesh[] = [];
-    car.root.updateMatrixWorld(true);
-    car.root.traverse((object) => {
-      if (object instanceof Mesh) {
-        meshes.push(object);
-      }
-    });
-    return meshes;
-  }
-
-  test('開啟時只藏車艙玻璃、車頂仍可見，關閉後全部恢復', () => {
+  function cockpitCar(): { car: CarMesh; eye: Vector3; camera: PerspectiveCamera } {
     const car = createCarMesh();
-    const meshes = meshesOf(car);
+    updateCarMesh(car, pose);
+    const { camera } = createGameCamera('cockpit', pose);
+    return { car, eye: camera.position, camera };
+  }
+
+  test('開啟時只藏玻璃，車殼、頂篷、內裝都留著；關閉後全部恢復', () => {
+    const { car } = cockpitCar();
+    const meshes = allMeshes(car);
     expect(meshes.every((mesh) => mesh.visible)).toBe(true);
 
     setCarInteriorView(car, true);
-    expect(car.cabinGlass.visible).toBe(false);
-    expect(car.roof.visible).toBe(true);
-    const hidden = meshes.filter((mesh) => !mesh.visible);
-    expect(hidden).toEqual([car.cabinGlass]);
+    expect(meshes.filter((mesh) => !mesh.visible)).toEqual([car.glass]);
+    expect(car.body.visible).toBe(true);
+    expect(car.headliner.visible).toBe(true);
 
     setCarInteriorView(car, false);
-    expect(car.cabinGlass.visible).toBe(true);
-    expect(car.roof.visible).toBe(true);
     expect(meshes.every((mesh) => mesh.visible)).toBe(true);
   });
 
-  test('駕駛座視點在不透明的車艙玻璃方塊裡（所以要藏）；藏起來之後不在任何看得到的網格外框裡', () => {
-    const pose = poseAt(0, 0, 0);
-    const car = createCarMesh();
-    updateCarMesh(car, pose);
-    const meshes = meshesOf(car);
-    const eye = createGameCamera('cockpit', pose).camera.position;
-    expect(boundsOf(car.cabinGlass).containsPoint(eye)).toBe(true);
+  test('外觀模式隔著半透明的前擋；駕駛座視角沿視線與正前方都看得出去', () => {
+    const { car, eye, camera } = cockpitCar();
+    const ahead = firstHit(visibleMeshes(car), eye, viewDirection(camera));
+    expect(ahead?.object).toBe(car.glass);
 
     setCarInteriorView(car, true);
-    for (const mesh of meshes.filter((candidate) => candidate.visible)) {
-      expect(boundsOf(mesh).containsPoint(eye)).toBe(false);
+    const meshes = visibleMeshes(car);
+    expect(firstHit(meshes, eye, viewDirection(camera))).toBeUndefined();
+    // 正前方左右各 15°、水平到往上 10° 都沒有東西擋。
+    for (const azimuthDeg of [-15, -8, 0, 8, 15]) {
+      for (const elevationDeg of [0, 5, 10]) {
+        expect(firstHit(meshes, eye, lookDirection(azimuthDeg, elevationDeg))).toBeUndefined();
+      }
     }
   });
 
-  test('有儀表板：在下車身頂面上、整個包在車艙玻璃裡（車外看不到），在駕駛座視點的前下方', () => {
-    const pose = poseAt(0, 0, 0);
-    const car = createCarMesh();
-    updateCarMesh(car, pose);
-    const dashboards = meshesOf(car).filter(
-      (mesh) =>
-        mesh.material instanceof MeshStandardMaterial &&
-        mesh.material.color.getHex() === CAR_VISUAL_CONFIG.dashboardColor,
-    );
-    expect(dashboards.length).toBe(1);
-    const dashboard = boundsOf(dashboards[0] as Mesh);
-    const cabin = boundsOf(car.cabinGlass);
-    expect(dashboard.min.y).toBeCloseTo(HOOD_TOP_M, 6);
-    expect(cabin.containsBox(dashboard)).toBe(true);
-
-    const eye = createGameCamera('cockpit', pose).camera.position;
-    expect(dashboard.max.y).toBeLessThan(eye.y);
-    // 車朝北：前方是 −Z。
-    expect(dashboard.min.z).toBeLessThan(eye.z);
-    expect(dashboard.min.x).toBeLessThan(eye.x);
-    expect(dashboard.max.x).toBeGreaterThan(eye.x);
+  test('視點四周沒有貼臉的網格：各個方向最近的東西都比近平面遠', () => {
+    const { car, eye, camera } = cockpitCar();
+    setCarInteriorView(car, true);
+    const meshes = visibleMeshes(car);
+    for (let azimuthDeg = -180; azimuthDeg < 180; azimuthDeg += 30) {
+      for (const elevationDeg of [-60, -30, 0, 30, 60]) {
+        const hit = firstHit(meshes, eye, lookDirection(azimuthDeg, elevationDeg));
+        if (hit !== undefined) {
+          expect(hit.distance).toBeGreaterThan(2 * camera.near);
+        }
+      }
+    }
   });
 
-  test('有左右兩根 A 柱：從下車身頂面斜上到車頂前緣，藏起玻璃後仍看得到、頂端接到看得到的車頂', () => {
-    const car = createCarMesh();
-    const meshes = meshesOf(car);
-    const cabin = boundsOf(car.cabinGlass);
-    const roof = boundsOf(car.roof);
+  test('頭頂是淺色、有自發光的頂篷（不是一團黑），離眼睛不到 1 ft', () => {
+    const { car, eye } = cockpitCar();
     setCarInteriorView(car, true);
-    const pillars = meshes.filter((mesh) => {
-      const bounds = boundsOf(mesh);
-      // 又細又高：從下車身頂面附近一路到車頂底面附近，寬度遠小於車艙。
-      return (
-        mesh.visible &&
-        mesh !== car.roof &&
-        bounds.min.y < HOOD_TOP_M + ftToM(0.2) &&
-        bounds.max.y > roof.min.y - ftToM(0.2) &&
-        bounds.max.x - bounds.min.x < ftToM(1)
-      );
-    });
-    expect(pillars.length).toBe(2);
-    // 車頂留著：A 柱頂端碰得到車頂底面，不懸空。
-    expect(car.roof.visible).toBe(true);
-    for (const pillar of pillars) {
-      expect(boundsOf(pillar).intersectsBox(roof)).toBe(true);
+    const above = firstHit(visibleMeshes(car), eye, new Vector3(0, 1, 0));
+    expect(above?.object).toBe(car.headliner);
+    expect(above?.distance).toBeLessThan(ftToM(1));
+    const material = car.headliner.material as MeshStandardMaterial;
+    expect(material.color.getHSL({ h: 0, s: 0, l: 0 }).l).toBeGreaterThan(0.25);
+    expect(material.emissiveIntensity).toBeGreaterThan(0);
+    expect(material.emissive.getHex()).not.toBe(0);
+  });
+
+  test('前下方是儀表板，再往前越過它看得到引擎蓋；方向盤上緣低於儀表板上緣的視線', () => {
+    const { car, eye } = cockpitCar();
+    setCarInteriorView(car, true);
+    const meshes = visibleMeshes(car);
+    const isDashboard = (hit: Intersection | undefined): boolean =>
+      hit !== undefined &&
+      hit.object instanceof Mesh &&
+      hit.object.material instanceof MeshStandardMaterial &&
+      hit.object.material.color.getHex() === CAR_VISUAL_CONFIG.dashboardColor;
+
+    // 駕駛正前方：俯角 30° 打到儀表板（或它上面的儀表罩、方向盤），俯角 12° 越過它打到引擎蓋。
+    const driverAzimuthDeg = 0;
+    expect(isDashboard(firstHit(meshes, eye, lookDirection(driverAzimuthDeg, -30)))).toBe(true);
+    expect(firstHit(meshes, eye, lookDirection(driverAzimuthDeg, -12))?.object).toBe(car.body);
+    // 副駕那一側（沒有儀表罩與方向盤）也一樣：先是儀表板，再往上是引擎蓋。
+    expect(isDashboard(firstHit(meshes, eye, lookDirection(35, -24)))).toBe(true);
+    expect(firstHit(meshes, eye, lookDirection(20, -12))?.object).toBe(car.body);
+
+    // 方向盤整個在視點下方，而且最高點低於水平視線 15° 以上。
+    car.root.updateMatrixWorld(true);
+    const wheel = new Box3().setFromObject(car.steeringWheel);
+    const wheelTop = new Vector3(eye.x, wheel.max.y, wheel.min.z);
+    const dropRad = Math.atan2(eye.y - wheelTop.y, eye.z - wheelTop.z);
+    expect(radToDeg(dropRad)).toBeGreaterThan(15);
+    expect(wheel.max.y).toBeLessThan(eye.y);
+  });
+
+  test('左右各一根 A 柱：水平掃過前方，只在兩側各擋一小段（不到 10°），正前方完全沒有', () => {
+    const { car, eye } = cockpitCar();
+    setCarInteriorView(car, true);
+    const meshes = visibleMeshes(car);
+    /** 水平視線上被頂篷／柱內飾擋住的方位角（度）。 */
+    const blocked: number[] = [];
+    for (let azimuthDeg = -75; azimuthDeg <= 75; azimuthDeg += 0.5) {
+      if (firstHit(meshes, eye, lookDirection(azimuthDeg, 0))?.object === car.headliner) {
+        blocked.push(azimuthDeg);
+      }
     }
-    const centers = pillars.map((pillar) => boundsOf(pillar).getCenter(new Vector3()));
-    const [first, second] = centers.sort((a, b) => a.x - b.x);
-    expect(first?.x).toBeLessThan(0);
-    expect(second?.x).toBeCloseTo(-(first?.x ?? 0), 6);
-    for (const center of centers) {
-      // 在車艙前段（前擋那一側）。
-      expect(center.z).toBeLessThan(cabin.getCenter(new Vector3()).z);
-      expect(center.z).toBeGreaterThan(cabin.min.z - ftToM(0.2));
+    // 連續被擋的方位角合併成一段一段。
+    const runs: { from: number; to: number }[] = [];
+    for (const azimuthDeg of blocked) {
+      const last = runs.at(-1);
+      if (last !== undefined && azimuthDeg - last.to <= 0.5) {
+        last.to = azimuthDeg;
+      } else {
+        runs.push({ from: azimuthDeg, to: azimuthDeg });
+      }
+    }
+    expect(runs.length).toBe(2);
+    const [leftPillar, rightPillar] = runs;
+    // 左駕：左 A 柱比較近、在正前方左邊不遠；右 A 柱在右邊比較遠的地方。
+    expect(leftPillar?.to).toBeLessThan(-10);
+    expect(rightPillar?.from).toBeGreaterThan(30);
+    for (const run of runs) {
+      expect(run.to - run.from).toBeLessThan(10);
+      expect(run.to - run.from).toBeGreaterThan(1);
     }
   });
 });

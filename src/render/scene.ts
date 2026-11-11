@@ -27,7 +27,7 @@ export interface GameScene {
   readonly scene: Scene;
   /** 每個畫面幀呼叫：把車擺到算圖姿態，並讓陰影範圍與地面跟著車走。 */
   update(pose: VehiclePose): void;
-  /** 駕駛座視角開關：開啟時藏起會擋住視線的車艙玻璃（車頂保留）。 */
+  /** 駕駛座視角開關：開啟時藏起玻璃（車殼、頂篷、內裝保留）。 */
   setInteriorView(enabled: boolean): void;
 }
 
@@ -137,7 +137,7 @@ export function createGameScene(
   // 路緣石與車擋只是擺設：沒有碰撞，也不進停車判定。
   scene.add(createCurbs(spot), createWheelStop(spot));
 
-  const car = createCarMesh();
+  const car = createCarMesh(quality.vehicleDetail);
   scene.add(car.root);
 
   return {

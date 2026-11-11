@@ -16,6 +16,7 @@ export const RENDERER_CONFIG = {
  * - high：走高動態範圍的後製鏈：環境光遮蔽、泛光、色差、暈影、抖色。
  * - ultra：high 的全部再加強，另加 SMAA。對準高階顯示卡，只能由 `?quality=ultra` 開啟。
  * 黃昏的色調分級併在色調映射裡，四個級別都有。
+ * 車模（vehicleDetail）：low、medium 用較少的細分，high、ultra 用較多。
  * 地面（ground）：low 的噪聲貼圖小、沒有潮濕反光；medium 加上潮濕反光；high、ultra 再加上法線（裂縫與顆粒的立體感）。
  */
 export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = {
@@ -31,6 +32,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = 
     lens: null,
     smaa: false,
     ground: { textureSizePx: 512, maxAnisotropy: 2, normals: false, wetness: false },
+    vehicleDetail: 'low',
   },
   medium: {
     level: 'medium',
@@ -44,6 +46,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = 
     lens: { vignette: 0.24, chromaticAberration: 0 },
     smaa: false,
     ground: { textureSizePx: 1024, maxAnisotropy: 4, normals: false, wetness: true },
+    vehicleDetail: 'low',
   },
   high: {
     level: 'high',
@@ -57,6 +60,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = 
     lens: { vignette: 0.4, chromaticAberration: 0.0012 },
     smaa: false,
     ground: { textureSizePx: 1024, maxAnisotropy: 8, normals: true, wetness: true },
+    vehicleDetail: 'high',
   },
   ultra: {
     level: 'ultra',
@@ -70,6 +74,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = 
     lens: { vignette: 0.4, chromaticAberration: 0.0012 },
     smaa: true,
     ground: { textureSizePx: 2048, maxAnisotropy: 16, normals: true, wetness: true },
+    vehicleDetail: 'high',
   },
 };
 
@@ -471,56 +476,127 @@ export const WHEEL_STOP_CONFIG = {
   roughness: 0.86,
 } as const;
 
-/** 車輛外觀。整體長寬高與軸距來自 VehicleConfig，這裡只放比例與顏色。 */
+/**
+ * 車輛外觀。整體長寬高與軸距來自 VehicleConfig（碰撞與停車判定用的矩形不變），這裡只放比例、細分與顏色。
+ * 車殼是沿車長放樣的一張曲面（carBody.ts）；後視鏡最外緣剛好是車寬，所以鈑金每側比車寬內縮 mirrorOverhangM。
+ */
 export const CAR_VISUAL_CONFIG = {
   /** 車身底部離地高度。 */
   groundClearanceM: ftToM(0.65),
-  /** 下車身（引擎蓋高度以下）的高度。 */
+  /** 前擋下緣處的腰線（引擎蓋後緣）比車底高多少。 */
   lowerBodyHeightM: ftToM(2.0),
-  /** 車身側面比車寬（輪框蓋最外緣）每側內縮的量。 */
-  bodySideInsetM: ftToM(0.15),
+  /** 後視鏡凸出鈑金的量；鈑金半寬 = 車寬/2 − 這個值。 */
+  mirrorOverhangM: ftToM(0.25),
+  /** 車頭、車尾比車身中段收窄的比例（俯視的梭形）。 */
+  planTaper: 0.07,
   /** 引擎蓋與後行李廂長度；兩者不等長，從上方看得出車頭車尾。 */
   hoodLengthM: ftToM(4.6),
   trunkLengthM: ftToM(2.3),
-  /** 車艙底部比下車身每側內縮。 */
-  cabinSideInsetM: ftToM(0.25),
-  /** 車艙頂部比底部每側再內縮。 */
-  cabinTopSideInsetM: ftToM(0.4),
+  /** 引擎蓋往車頭下降的量、行李廂比引擎蓋後緣高的量、行李廂往車尾下降的量。 */
+  noseDropM: ftToM(0.34),
+  deckRiseM: ftToM(0.2),
+  tailDropM: ftToM(0.12),
   /** 前擋與後擋玻璃頂端往車艙中心收的距離（斜度）。 */
   windshieldRakeM: ftToM(2.0),
-  rearWindowRakeM: ftToM(1.4),
-  roofThicknessM: ftToM(0.18),
+  rearWindowRakeM: ftToM(2.3),
+  /** 車頂與引擎蓋中線比兩側高出的弧度。 */
+  crownM: ftToM(0.09),
+  /** 車艙底部比鈑金側面每側內縮（肩線）。 */
+  shoulderInsetM: ftToM(0.25),
+  /** 車艙頂部比底部每側再內縮（側窗內傾）。 */
+  tumblehomeM: ftToM(0.38),
+  /** 車頂邊梁的圓角半徑；A 柱、C 柱就是這一圈，寬度也由它決定。 */
+  roofRailM: ftToM(0.15),
+  /** B 柱前後寬度的一半，以及它在車頂前緣後方多遠。 */
+  pillarHalfWidthM: ftToM(0.14),
+  bPillarBehindHeaderM: ftToM(1.9),
+  /** 車頭、車尾收圓的深度，以及收圓的超橢圓指數（越大越方）。 */
+  noseDepthM: ftToM(0.85),
+  tailDepthM: ftToM(0.7),
+  endExponent: 4.2,
+
   wheelRadiusM: ftToM(1.1),
   wheelWidthM: ftToM(0.75),
-  hubRadiusM: ftToM(0.62),
-  wheelSegments: 28,
-  /** 頭燈／尾燈色塊的寬、高、深。 */
-  lightWidthM: ftToM(1.35),
-  lightHeightM: ftToM(0.5),
-  lightDepthM: ftToM(0.3),
-  /** 燈塊與輪框蓋凸出所在表面的量，避免共面閃爍。 */
-  trimProudM: ftToM(0.06),
-  /** 儀表板：下車身頂面上、前擋後方的一條箱子，整個藏在車艙玻璃裡，只有駕駛座視角看得到。 */
-  dashboardHeightM: ftToM(0.35),
-  dashboardLengthM: ftToM(1.85),
-  /** 儀表板比車艙底部每側內縮，也離前擋下緣這麼遠（玻璃往內斜，要退到斜面後方）。 */
-  dashboardInsetM: ftToM(0.45),
-  /** A 柱（沿前擋兩側斜邊的細柱）的粗細。 */
-  pillarThicknessM: ftToM(0.18),
+  rimRadiusM: ftToM(0.72),
+  /** 輪拱比輪胎大多少，以及輪胎側面比鈑金內縮多少。 */
+  archGapM: ftToM(0.2),
+  wheelTuckM: ftToM(0.06),
+  /** 胎紋：溝深與胎肩花塊的凹凸。 */
+  treadDepthM: ftToM(0.035),
+  rimSpokes: 5,
+
+  /** 儀表板：頂面比腰線高多少、前後深度、離前擋下緣多遠。 */
+  dashboardHeightM: ftToM(0.1),
+  dashboardLengthM: ftToM(1.5),
+  dashboardInsetM: ftToM(0.08),
+  /** 方向盤：半徑、往前傾的角度、轉向角放大成方向盤轉角的倍率。 */
+  steeringWheelRadiusM: ftToM(0.58),
+  steeringWheelTiltRad: degToRad(24),
+  steeringRatio: 8,
 
   bodyColor: 0x1f63b3,
-  bodyRoughness: 0.38,
-  bodyMetalness: 0.25,
-  glassColor: 0x18222d,
-  glassRoughness: 0.12,
-  dashboardColor: 0x23272d,
+  bodyRoughness: 0.32,
+  bodyMetalness: 0.4,
+  clearcoat: 1,
+  /**
+   * 車上最光滑的表面（清漆、玻璃、鏡面）的粗糙度。不能再低：太陽在太光滑的表面上的高光會超過
+   * 後製鏈半浮點緩衝區的上限，變成無限大，經過泛光後整個畫面變黑（引擎蓋視角最容易遇到）。
+   */
+  minGlossRoughness: 0.12,
+  glassColor: 0x0d1820,
+  glassOpacity: 0.48,
+  /** 黑色飾條、底盤、輪拱內襯。 */
+  trimColor: 0x15171a,
+  trimRoughness: 0.7,
+  /** 頂篷與柱內飾：淺色，再加一點自發光，背光時也不會一團黑。 */
+  headlinerColor: 0x9a9388,
+  headlinerEmissiveIntensity: 0.16,
+  /** 門板與地板。 */
+  cabinTrimColor: 0x3a3d42,
+  cabinTrimEmissiveIntensity: 0.08,
+  dashboardColor: 0x30353c,
   dashboardRoughness: 0.85,
+  dashAccentColor: 0x8d949c,
+  seatColor: 0x4a4038,
+  /** 錶框與中控螢幕的光：螢幕比錶框暗。 */
+  gaugeColor: 0x9fd4f2,
+  gaugeEmissiveIntensity: 0.55,
+  screenColor: 0x2b4d68,
+  screenEmissiveIntensity: 0.5,
   tireColor: 0x17181a,
-  tireRoughness: 0.9,
-  hubColor: 0xb4bac1,
-  hubRoughness: 0.4,
+  tireRoughness: 0.92,
+  rimColor: 0xc4c9cf,
+  rimRoughness: 0.28,
+  rimMetalness: 0.9,
+  mirrorGlassColor: 0xdfe6ee,
   headlightColor: 0xfff3d0,
-  headlightEmissiveIntensity: 3,
+  headlightEmissiveIntensity: 2.3,
   taillightColor: 0xe01218,
+  /** 尾燈平常的亮度，以及踩煞車時的亮度。 */
   taillightEmissiveIntensity: 0.9,
+  brakeLightEmissiveIntensity: 4,
+  /** 倒車燈：沒亮時的燈殼顏色、亮起來的顏色與亮度。 */
+  reverseLightOffColor: 0x8d939c,
+  reverseLightColor: 0xf4f6ff,
+  reverseLightEmissiveIntensity: 3,
+} as const;
+
+/**
+ * 車模的細分（QUALITY_PRESETS 的 vehicleDetail）。
+ * stationStepM：車殼沿車長的取樣間距；archSegments：每個輪拱的段數；
+ * endScales：車頭、車尾收圓時各圈的縮放比例（由外到內，最後一定是 0）；wheelSegments：輪胎一圈的段數（偶數）。
+ */
+export const CAR_DETAIL_CONFIG = {
+  low: {
+    stationStepM: 0.34,
+    archSegments: 6,
+    endScales: [0.95, 0.84, 0.62, 0.32, 0],
+    wheelSegments: 20,
+  },
+  high: {
+    stationStepM: 0.16,
+    archSegments: 12,
+    endScales: [0.985, 0.95, 0.89, 0.8, 0.66, 0.48, 0.26, 0],
+    wheelSegments: 40,
+  },
 } as const;

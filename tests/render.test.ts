@@ -1,15 +1,29 @@
 // 算圖層裡可以不開瀏覽器就驗證的部分：鏡頭平滑、車輛模型的朝向約定、車位標線的範圍。
 // 地面（柏油）的測試在 ground.test.ts。
-import { Box3, Mesh, MeshStandardMaterial, Object3D, ShaderLib, Vector3 } from 'three';
+import {
+  Box3,
+  Mesh,
+  MeshPhysicalMaterial,
+  MeshStandardMaterial,
+  Object3D,
+  ShaderLib,
+  Vector3,
+} from 'three';
 import { describe, expect, test } from 'vitest';
 import { forward } from '../src/core/heading';
-import { degToRad, ftToM } from '../src/core/units';
+import { degToRad, ftToM, mToFt } from '../src/core/units';
 import { parkingSpotFromFt } from '../src/level/parkingJudge';
 import { createSpotMarkings, patchPaintShader } from '../src/props/spotMarkings';
 import { createFollowCamera, createPresetCamera, smoothingFactor } from '../src/render/followCamera';
-import { CAMERA_CONFIG, FIXED_CAMERA_CONFIG, SPOT_MARKING_CONFIG } from '../src/render/renderConfig';
+import {
+  CAMERA_CONFIG,
+  CAR_VISUAL_CONFIG,
+  FIXED_CAMERA_CONFIG,
+  SPOT_MARKING_CONFIG,
+} from '../src/render/renderConfig';
 import { SHOWCASE_IDS, createShowcaseObject } from '../src/render/showcase';
-import { createCarMesh, updateCarMesh } from '../src/vehicle/carMesh';
+import { BODY_LAYOUT } from '../src/vehicle/carBody';
+import { createCarMesh, updateCarMesh, type CarMesh } from '../src/vehicle/carMesh';
 import { VEHICLE_CONFIG_SI } from '../src/vehicle/vehicleConfig';
 
 const DIGITS = 9;
@@ -99,30 +113,117 @@ describe('車輛模型 carMesh', () => {
     expect(right.rotation.y).toBeCloseTo(-steerRad, DIGITS);
   });
 
-  test('模型的外框等於 VehicleConfig 的長寬高，底部貼地', () => {
+  test.each(['low', 'high'] as const)(
+    '%s 細分：模型的外框等於 VehicleConfig 的長寬高（15 × 6 × 4.6 ft），底部貼地',
+    (detail) => {
+      const car = createCarMesh(detail);
+      car.root.updateMatrixWorld(true);
+      const min = new Vector3(Infinity, Infinity, Infinity);
+      const max = new Vector3(-Infinity, -Infinity, -Infinity);
+      const vertex = new Vector3();
+      car.root.traverse((object) => {
+        if (!(object instanceof Mesh)) {
+          return;
+        }
+        const positions = object.geometry.getAttribute('position');
+        for (let index = 0; index < positions.count; index += 1) {
+          vertex.fromBufferAttribute(positions, index).applyMatrix4(object.matrixWorld);
+          min.min(vertex);
+          max.max(vertex);
+        }
+      });
+      expect(mToFt(max.x - min.x)).toBeCloseTo(6, 5);
+      expect(mToFt(max.z - min.z)).toBeCloseTo(15, 5);
+      expect(mToFt(max.y)).toBeCloseTo(4.6, 5);
+      expect(max.x - min.x).toBeCloseTo(VEHICLE_CONFIG_SI.widthM, 6);
+      expect(max.z - min.z).toBeCloseTo(VEHICLE_CONFIG_SI.lengthM, 6);
+      expect(max.y).toBeCloseTo(VEHICLE_CONFIG_SI.heightM, 6);
+      expect(min.y).toBeCloseTo(0, 6);
+      // 前後、左右對稱於原點：車頭在 −長/2、車尾在 +長/2。
+      expect(min.z).toBeCloseTo(-VEHICLE_CONFIG_SI.lengthM / 2, 6);
+      expect(min.x).toBeCloseTo(-VEHICLE_CONFIG_SI.widthM / 2, 6);
+    },
+  );
+
+  test('後軸在車身中心後方半個軸距；四個輪子的最外緣不超出鈑金', () => {
     const car = createCarMesh();
     car.root.updateMatrixWorld(true);
-    const min = new Vector3(Infinity, Infinity, Infinity);
-    const max = new Vector3(-Infinity, -Infinity, -Infinity);
-    const vertex = new Vector3();
+    const pivots = car.wheelSpinners.map((spinner) => spinner.parent);
+    expect(pivots.length).toBe(4);
+    const zs = pivots.map((pivot) => pivot?.position.z ?? NaN).sort((a, b) => a - b);
+    expect(zs[0]).toBeCloseTo(-VEHICLE_CONFIG_SI.wheelbaseM / 2, DIGITS);
+    expect(zs[3]).toBeCloseTo(VEHICLE_CONFIG_SI.wheelbaseM / 2, DIGITS);
+    for (const spinner of car.wheelSpinners) {
+      const bounds = new Box3().setFromObject(spinner);
+      expect(bounds.max.x).toBeLessThan(BODY_LAYOUT.halfWidthM);
+      expect(bounds.min.x).toBeGreaterThan(-BODY_LAYOUT.halfWidthM);
+    }
+  });
+
+  test('不是方塊車：車殼是一張細分的曲面，烤漆有清漆層，玻璃半透明、不寫深度', () => {
+    const low = createCarMesh('low');
+    const high = createCarMesh('high');
+    const vertexCount = (car: CarMesh): number => car.body.geometry.getAttribute('position').count;
+    // 一個 BoxGeometry 只有 24 個頂點。
+    expect(vertexCount(low)).toBeGreaterThan(500);
+    expect(vertexCount(high)).toBeGreaterThan(vertexCount(low));
+
+    const paint = high.body.material;
+    expect(paint).toBeInstanceOf(MeshPhysicalMaterial);
+    expect((paint as MeshPhysicalMaterial).clearcoat).toBeGreaterThan(0.5);
+    const glass = high.glass.material as MeshStandardMaterial;
+    expect(glass.transparent).toBe(true);
+    expect(glass.opacity).toBeLessThan(0.8);
+    expect(glass.depthWrite).toBe(false);
+    expect(high.glass.castShadow).toBe(false);
+  });
+
+  test('沒有過於光滑的材質：太陽的高光不會超出半浮點緩衝區（否則走後製鏈時整個畫面變黑）', () => {
+    const car = createCarMesh();
+    let checked = 0;
     car.root.traverse((object) => {
-      if (!(object instanceof Mesh)) {
+      if (!(object instanceof Mesh) || !(object.material instanceof MeshStandardMaterial)) {
         return;
       }
-      const positions = object.geometry.getAttribute('position');
-      for (let index = 0; index < positions.count; index += 1) {
-        vertex.fromBufferAttribute(positions, index).applyMatrix4(object.matrixWorld);
-        min.min(vertex);
-        max.max(vertex);
+      checked += 1;
+      expect(object.material.roughness).toBeGreaterThanOrEqual(CAR_VISUAL_CONFIG.minGlossRoughness);
+      if (object.material instanceof MeshPhysicalMaterial) {
+        expect(object.material.clearcoatRoughness).toBeGreaterThanOrEqual(
+          CAR_VISUAL_CONFIG.minGlossRoughness,
+        );
       }
     });
-    expect(max.x - min.x).toBeCloseTo(VEHICLE_CONFIG_SI.widthM, 6);
-    expect(max.z - min.z).toBeCloseTo(VEHICLE_CONFIG_SI.lengthM, 6);
-    expect(max.y).toBeCloseTo(VEHICLE_CONFIG_SI.heightM, 6);
-    expect(min.y).toBeCloseTo(0, 6);
-    // 前後對稱於原點：車頭在 −長/2、車尾在 +長/2。
-    expect(min.z).toBeCloseTo(-VEHICLE_CONFIG_SI.lengthM / 2, 6);
+    expect(checked).toBeGreaterThan(20);
+    expect(CAR_VISUAL_CONFIG.minGlossRoughness).toBeGreaterThanOrEqual(0.1);
   });
+
+  test('車殼的法線朝外：車頂朝上、車頭朝前、車尾朝後、右側朝右', () => {
+    const { body } = createCarMesh();
+    const positions = body.geometry.getAttribute('position');
+    const normals = body.geometry.getAttribute('normal');
+    const index = body.geometry.getIndex();
+    const used = new Set<number>(index === null ? [] : Array.from(index.array));
+    /** 烤漆分區用到的頂點裡，某個座標最大（或最小）的那一個的法線。 */
+    const normalAtExtreme = (pick: (v: Vector3) => number): Vector3 => {
+      let best = -Infinity;
+      const normal = new Vector3();
+      const vertex = new Vector3();
+      for (const vertexIndex of used) {
+        const score = pick(vertex.fromBufferAttribute(positions, vertexIndex));
+        if (score > best) {
+          best = score;
+          normal.fromBufferAttribute(normals, vertexIndex);
+        }
+      }
+      return normal;
+    };
+    expect(normalAtExtreme((v) => v.y).y).toBeGreaterThan(0.9);
+    expect(normalAtExtreme((v) => v.x).x).toBeGreaterThan(0.9);
+    // 車頭、車尾的端點是收成一點的那一圈，取離端點一小段距離內最靠外側的點。
+    expect(normalAtExtreme((v) => (v.z < -2 && Math.abs(v.x) < 0.3 ? -v.z : -Infinity)).z).toBeLessThan(-0.5);
+    expect(normalAtExtreme((v) => (v.z > 2 && Math.abs(v.x) < 0.3 ? v.z : -Infinity)).z).toBeGreaterThan(0.5);
+  });
+
 });
 
 describe('車位標線 spotMarkings', () => {
