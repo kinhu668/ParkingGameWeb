@@ -1,7 +1,9 @@
-// 組裝場景：天空底色、霧、半球補光、太陽與陰影、地面、車。
+// 組裝場景：天空底色、霧、半球補光、太陽與陰影、地面、車位標線、車。
 import { Color, DirectionalLight, Fog, HemisphereLight, Scene, Vector3 } from 'three';
 import { DEFAULT_SEED } from '../core/gameConfig';
+import type { ParkingSpot } from '../level/parkingJudge';
 import { createGround } from '../props/ground';
+import { createSpotMarkings } from '../props/spotMarkings';
 import type { VehiclePose } from '../vehicle/bicycleModel';
 import { createCarMesh, updateCarMesh } from '../vehicle/carMesh';
 import {
@@ -34,8 +36,9 @@ function createSun(): DirectionalLight {
 
 /**
  * @param maxAnisotropy 這張顯示卡支援的最大各向異性過濾等級（renderer.capabilities.getMaxAnisotropy()）
+ * @param spot 要畫標線的車位
  */
-export function createGameScene(maxAnisotropy: number): GameScene {
+export function createGameScene(maxAnisotropy: number, spot: ParkingSpot): GameScene {
   const scene = new Scene();
   scene.background = new Color(SKY_CONFIG.color);
   scene.fog = new Fog(SKY_CONFIG.color, SKY_CONFIG.fogNearM, SKY_CONFIG.fogFarM);
@@ -59,6 +62,8 @@ export function createGameScene(maxAnisotropy: number): GameScene {
 
   const ground = createGround(DEFAULT_SEED, maxAnisotropy);
   scene.add(ground);
+
+  scene.add(createSpotMarkings(spot));
 
   const car = createCarMesh();
   scene.add(car.root);

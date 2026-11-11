@@ -144,3 +144,35 @@ body {
   font-weight: 600;
   text-align: center;
 }
+
+/* 停車成功畫面：水平置中、靠上方。鏡頭把車放在畫面正中央，面板放正中央會蓋住停好的車。
+   display 會蓋掉 hidden 的預設樣式，所以明確寫隱藏規則。 */
+.hud-status {
+  position: absolute;
+  inset: 0;
+  padding-top: 12vh;
+  display: grid;
+  justify-items: center;
+  align-items: start;
+}
+
+.hud-status[hidden] {
+  display: none;
+}
+
+.hud-status-panel {
+  padding: 22px 44px 24px;
+  text-align: center;
+}
+
+.hud-status-title {
+  font-size: 44px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.hud-status-hint {
+  margin-top: 8px;
+  color: var(--ui-text-dim);
+  font-size: 18px;
+}

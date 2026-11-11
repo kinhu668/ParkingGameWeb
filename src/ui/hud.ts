@@ -1,4 +1,4 @@
-// 疊在畫布上的 HTML HUD：車速（mph）、簡要操作說明、語言切換按鈕。
+// 疊在畫布上的 HTML HUD：車速（mph）、簡要操作說明、語言切換按鈕、停車成功畫面。
 // 所有文字都走翻譯鍵；語言切換時就地更新，不重新載入頁面。
 import { getLocale, onLocaleChange, setLocale, t, type Locale, type TranslationKey } from '../core/i18n';
 import { mpsToMph } from '../core/units';
@@ -28,8 +28,8 @@ export function otherLocale(locale: Locale): Locale {
 }
 
 export interface Hud {
-  /** 每幀呼叫；車速文字有變才動 DOM。 */
-  update(speedMps: number): void;
+  /** 每幀呼叫；車速文字或「已停妥」有變才動 DOM。parked 為 true 時顯示成功畫面。 */
+  update(speedMps: number, parked: boolean): void;
 }
 
 /** 在 root 裡建立 HUD，並訂閱語言切換。 */
@@ -93,6 +93,15 @@ export function createHud(root: HTMLElement): Hud {
     translatedElement('dd', 'hud-controls-action', controlsList, row.label);
   }
 
+  // 停車成功畫面：先隱藏，已停妥才顯示；重來後再藏起來。
+  const statusOverlay = element('div', 'hud-status', root);
+  statusOverlay.id = 'hud-status';
+  statusOverlay.setAttribute('role', 'status');
+  statusOverlay.hidden = true;
+  const statusPanel = element('div', 'hud-panel hud-status-panel', statusOverlay);
+  translatedElement('div', 'hud-status-title', statusPanel, 'status.parked');
+  translatedElement('div', 'hud-status-hint', statusPanel, 'status.restartHint');
+
   function renderTexts(): void {
     for (const entry of translated) {
       entry.element.textContent = t(entry.key);
@@ -108,12 +117,17 @@ export function createHud(root: HTMLElement): Hud {
   onLocaleChange(renderTexts);
 
   let shownSpeed = '';
+  let shownParked = false;
   return {
-    update(speedMps: number): void {
+    update(speedMps: number, parked: boolean): void {
       const text = formatSpeedMph(speedMps);
       if (text !== shownSpeed) {
         shownSpeed = text;
         speedValue.textContent = text;
+      }
+      if (parked !== shownParked) {
+        shownParked = parked;
+        statusOverlay.hidden = !parked;
       }
     },
   };

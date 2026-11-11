@@ -1,4 +1,4 @@
-// 畫面的可調數值：鏡頭、燈光、陰影、霧、地面、車輛外觀。
+// 畫面的可調數值：鏡頭、燈光、陰影、霧、地面、車位標線、車輛外觀。
 // 長度一律以英尺填寫，經 units.ts 換成公尺；顏色是 sRGB 十六進位。
 import { ftToM } from '../core/units';
 
@@ -75,6 +75,16 @@ export const GROUND_CONFIG = {
   /** 深色孔隙：出現機率與壓暗量（位元組）。 */
   pitChance: 0.015,
   pitDarken: 34,
+} as const;
+
+/** 車位標線。 */
+export const SPOT_MARKING_CONFIG = {
+  /** 線寬（4 英吋）。線畫在車位邊界的內側，外緣就是邊界。 */
+  lineWidthM: ftToM(1 / 3),
+  /** 標線離地高度；夠高才不會與地面共面閃爍，又低到看不出浮起來。 */
+  liftM: ftToM(0.03),
+  color: 0xf1f1ea,
+  roughness: 0.82,
 } as const;
 
 /** 車輛外觀。整體長寬高與軸距來自 VehicleConfig，這裡只放比例與顏色。 */

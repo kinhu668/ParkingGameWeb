@@ -1,12 +1,14 @@
-// 算圖層裡可以不開瀏覽器就驗證的部分：柏油貼圖的可重現性、鏡頭平滑、車輛模型的朝向約定。
-import { Mesh, Vector3 } from 'three';
+// 算圖層裡可以不開瀏覽器就驗證的部分：柏油貼圖的可重現性、鏡頭平滑、車輛模型的朝向約定、車位標線的範圍。
+import { Box3, Mesh, Vector3 } from 'three';
 import { describe, expect, test } from 'vitest';
 import { DEFAULT_SEED } from '../src/core/gameConfig';
 import { forward } from '../src/core/heading';
-import { degToRad } from '../src/core/units';
+import { degToRad, ftToM } from '../src/core/units';
+import { parkingSpotFromFt } from '../src/level/parkingJudge';
 import { generateAsphaltPixels } from '../src/props/ground';
+import { createSpotMarkings } from '../src/props/spotMarkings';
 import { createFollowCamera, smoothingFactor } from '../src/render/followCamera';
-import { CAMERA_CONFIG, GROUND_CONFIG } from '../src/render/renderConfig';
+import { CAMERA_CONFIG, GROUND_CONFIG, SPOT_MARKING_CONFIG } from '../src/render/renderConfig';
 import { createCarMesh, updateCarMesh } from '../src/vehicle/carMesh';
 import { VEHICLE_CONFIG_SI } from '../src/vehicle/vehicleConfig';
 
@@ -145,5 +147,66 @@ describe('車輛模型 carMesh', () => {
     expect(min.y).toBeCloseTo(0, 6);
     // 前後對稱於原點：車頭在 −長/2、車尾在 +長/2。
     expect(min.z).toBeCloseTo(-VEHICLE_CONFIG_SI.lengthM / 2, 6);
+  });
+});
+
+describe('車位標線 spotMarkings', () => {
+  /** 標線網格在世界座標的外框。 */
+  function worldBounds(headingDeg: number): Box3 {
+    const markings = createSpotMarkings(
+      parkingSpotFromFt({ centerXFt: 40, centerZFt: -25, widthFt: 9, lengthFt: 18, headingDeg }),
+    );
+    markings.updateMatrixWorld(true);
+    return new Box3().setFromObject(markings, true);
+  }
+
+  test('heading 0：外緣剛好是 9×18 ft 的車位邊界，中心在車位中心', () => {
+    const bounds = worldBounds(0);
+    expect(bounds.min.x).toBeCloseTo(ftToM(40 - 4.5), 6);
+    expect(bounds.max.x).toBeCloseTo(ftToM(40 + 4.5), 6);
+    expect(bounds.min.z).toBeCloseTo(ftToM(-25 - 9), 6);
+    expect(bounds.max.z).toBeCloseTo(ftToM(-25 + 9), 6);
+  });
+
+  test('heading 90°：長邊轉到東西向（X）', () => {
+    const bounds = worldBounds(90);
+    expect(bounds.max.x - bounds.min.x).toBeCloseTo(ftToM(18), 6);
+    expect(bounds.max.z - bounds.min.z).toBeCloseTo(ftToM(9), 6);
+    expect((bounds.min.x + bounds.max.x) / 2).toBeCloseTo(ftToM(40), 6);
+    expect((bounds.min.z + bounds.max.z) / 2).toBeCloseTo(ftToM(-25), 6);
+  });
+
+  test('平貼地面、略高於地面，面朝上', () => {
+    const bounds = worldBounds(30);
+    expect(bounds.min.y).toBeCloseTo(SPOT_MARKING_CONFIG.liftM, 9);
+    expect(bounds.max.y).toBeCloseTo(SPOT_MARKING_CONFIG.liftM, 9);
+    expect(SPOT_MARKING_CONFIG.liftM).toBeGreaterThan(0);
+    expect(SPOT_MARKING_CONFIG.liftM).toBeLessThan(ftToM(0.1));
+
+    const markings = createSpotMarkings(
+      parkingSpotFromFt({ centerXFt: 0, centerZFt: 0, widthFt: 9, lengthFt: 18, headingDeg: 0 }),
+    );
+    const normals = markings.geometry.getAttribute('normal');
+    for (let index = 0; index < normals.count; index += 1) {
+      expect(normals.getY(index)).toBeCloseTo(1, 9);
+    }
+  });
+
+  test('是空心外框：車位中心沒有標線，線寬內才有', () => {
+    const markings = createSpotMarkings(
+      parkingSpotFromFt({ centerXFt: 0, centerZFt: 0, widthFt: 9, lengthFt: 18, headingDeg: 0 }),
+    );
+    const positions = markings.geometry.getAttribute('position');
+    const innerHalfWidthM = ftToM(4.5) - SPOT_MARKING_CONFIG.lineWidthM;
+    const innerHalfLengthM = ftToM(9) - SPOT_MARKING_CONFIG.lineWidthM;
+    // 頂點存成 float32，容差要比 float32 的誤差大。
+    const tolerance = 1e-6;
+    expect(positions.count).toBeGreaterThan(0);
+    for (let index = 0; index < positions.count; index += 1) {
+      const insideHole =
+        Math.abs(positions.getX(index)) < innerHalfWidthM - tolerance &&
+        Math.abs(positions.getZ(index)) < innerHalfLengthM - tolerance;
+      expect(insideHole).toBe(false);
+    }
   });
 });

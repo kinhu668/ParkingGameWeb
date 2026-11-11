@@ -1,18 +1,16 @@
-// 進入點：固定步長物理迴圈 + 算圖內插 + 鍵盤開車 + HUD。
+// 進入點：固定步長物理迴圈 + 算圖內插 + 鍵盤開車 + 停車判定 + HUD。
 import { advanceFixedLoop } from './core/fixedLoop';
-import { FIXED_STEP_SECONDS } from './core/gameConfig';
 import { detectLocale, getLocale, onLocaleChange, setLocale } from './core/i18n';
 import { attachKeyboardInput } from './core/input';
 import { msToS } from './core/units';
+import { PROTOTYPE_LAYOUT } from './level/prototypeLayout';
+import { restartSession, startSession, stepSession } from './level/session';
 import { createFollowCamera } from './render/followCamera';
 import { createRenderer, fitRendererToCanvas } from './render/renderer';
 import { createGameScene } from './render/scene';
 import { createHud } from './ui/hud';
 import './ui/style.css';
-import { interpolateVehiclePose, stepVehicle, type VehicleState } from './vehicle/bicycleModel';
-
-/** 起始姿態：原點、車頭朝 −Z（heading 0）、靜止。 */
-const START_STATE: VehicleState = { x: 0, z: 0, headingRad: 0, speedMps: 0, steerRad: 0 };
+import { interpolateVehiclePose } from './vehicle/bicycleModel';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#game-canvas');
 if (canvas === null) {
@@ -33,14 +31,17 @@ syncDocumentLanguage();
 onLocaleChange(syncDocumentLanguage);
 
 const renderer = createRenderer(canvas);
-const gameScene = createGameScene(renderer.capabilities.getMaxAnisotropy());
-const followCamera = createFollowCamera(START_STATE.x, START_STATE.z);
+const gameScene = createGameScene(renderer.capabilities.getMaxAnisotropy(), PROTOTYPE_LAYOUT.spot);
+const followCamera = createFollowCamera(
+  PROTOTYPE_LAYOUT.startState.x,
+  PROTOTYPE_LAYOUT.startState.z,
+);
 const input = attachKeyboardInput(window);
 const hud = createHud(hudRoot);
 
-// 內插需要相鄰兩步的狀態：previous = 上一步、current = 最新一步。
-let previousState = START_STATE;
-let currentState = START_STATE;
+// 內插需要相鄰兩步的車輛狀態：previousVehicle = 上一步、session.vehicle = 最新一步。
+let session = startSession(PROTOTYPE_LAYOUT);
+let previousVehicle = session.vehicle;
 let accumulatorSeconds = 0;
 let lastFrameMs: number | undefined;
 
@@ -49,9 +50,10 @@ function frame(nowMs: number): void {
   const frameSeconds = lastFrameMs === undefined ? 0 : Math.max(msToS(nowMs - lastFrameMs), 0);
   lastFrameMs = nowMs;
 
+  // R 重來：車回起點、判定歸零、成功畫面消失（hud.update 會收到 parked = false）。
   if (input.consumeRestart()) {
-    previousState = START_STATE;
-    currentState = START_STATE;
+    session = restartSession(session);
+    previousVehicle = session.vehicle;
     accumulatorSeconds = 0;
   }
 
@@ -59,16 +61,16 @@ function frame(nowMs: number): void {
   accumulatorSeconds = loop.accumulatorSeconds;
   const driveInput = input.driveInput();
   for (let step = 0; step < loop.steps; step += 1) {
-    previousState = currentState;
-    currentState = stepVehicle(currentState, driveInput, FIXED_STEP_SECONDS);
+    previousVehicle = session.vehicle;
+    session = stepSession(session, driveInput);
   }
 
-  const pose = interpolateVehiclePose(previousState, currentState, loop.alpha);
+  const pose = interpolateVehiclePose(previousVehicle, session.vehicle, loop.alpha);
   gameScene.update(pose);
   followCamera.update(pose.x, pose.z, frameSeconds);
   fitRendererToCanvas(renderer, followCamera.camera);
   renderer.render(gameScene.scene, followCamera.camera);
-  hud.update(currentState.speedMps);
+  hud.update(session.vehicle.speedMps, session.parked);
 
   requestAnimationFrame(frame);
 }
