@@ -639,6 +639,12 @@ export const CAR_VISUAL_CONFIG = {
   rimRoughness: 0.28,
   rimMetalness: 0.9,
   mirrorGlassColor: 0xdfe6ee,
+  /** 鍍鉻飾件（水箱罩橫條、燈框、門把）。 */
+  chromeColor: 0xc9ced4,
+  chromeRoughness: 0.22,
+  /** 車牌底色與字的顏色（字用黑飾條的材質）。 */
+  plateColor: 0xeeece4,
+  plateRoughness: 0.6,
   headlightColor: 0xfff3d0,
   headlightEmissiveIntensity: 2.3,
   taillightColor: 0xe01218,
@@ -676,12 +682,6 @@ export const CAR_DETAIL_CONFIG = {
  * 位置都以車位自己的方向為準（車位本地座標：+X 右、−Z 車位前方）；數量跟著畫質級別走（QUALITY_PRESETS 的 props）。
  * 假車位與目標車位同寬同長，沿前方路緣一列（A 列，目標車位在其中）、場地中段背靠背兩列（B 列）、後方路緣一列（C 列）；
  * 車位中線兩側留一條直通的通道，起點就在通道上。
-  /** 鍍鉻飾件（水箱罩橫條、燈框、門把）。 */
-  chromeColor: 0xc9ced4,
-  chromeRoughness: 0.22,
-  /** 車牌底色與字的顏色（字用黑飾條的材質）。 */
-  plateColor: 0xeeece4,
-  plateRoughness: 0.6,
  */
 export const LOT_PROPS_CONFIG = {
   /** 禁區：起點到車位的通路，中線左右各這麼寬以內不放任何擺設（車寬 6 ft 的一半 + 6 ft）。 */
