@@ -2,6 +2,7 @@
 // 地面（柏油）的測試在 ground.test.ts。
 import {
   Box3,
+  Euler,
   Mesh,
   MeshPhysicalMaterial,
   MeshStandardMaterial,
@@ -224,6 +225,45 @@ describe('車輛模型 carMesh', () => {
     expect(normalAtExtreme((v) => (v.z > 2 && Math.abs(v.x) < 0.3 ? v.z : -Infinity)).z).toBeGreaterThan(0.5);
   });
 
+  test('輪子隨行駛距離滾動：前進時頂端往前，倒車反向；第一次擺放與原地轉向不滾', () => {
+    const car = createCarMesh();
+    const spins = (): number[] => car.wheelSpinners.map((spinner) => spinner.rotation.x);
+    updateCarMesh(car, { x: 5, z: 5, headingRad: 0, steerRad: 0 });
+    expect(spins()).toEqual([0, 0, 0, 0]);
+    updateCarMesh(car, { x: 5, z: 5, headingRad: 0, steerRad: degToRad(20) });
+    expect(spins()).toEqual([0, 0, 0, 0]);
+
+    // 朝北（−Z）前進 0.1 m：繞 +X 軸負轉 0.1 / 輪胎半徑。
+    updateCarMesh(car, { x: 5, z: 4.9, headingRad: 0, steerRad: 0 });
+    const rolledRad = -0.1 / CAR_VISUAL_CONFIG.wheelRadiusM;
+    for (const spin of spins()) {
+      expect(spin).toBeCloseTo(rolledRad, DIGITS);
+    }
+    // 輪胎頂端（本地 +Y）往車頭（−Z）移動。
+    const top = new Vector3(0, 1, 0).applyEuler(car.wheelSpinners[0]?.rotation ?? new Euler());
+    expect(top.z).toBeLessThan(0);
+
+    // 倒回原位：轉回 0。朝東的車往東走也是前進。
+    updateCarMesh(car, { x: 5, z: 5, headingRad: 0, steerRad: 0 });
+    for (const spin of spins()) {
+      expect(spin).toBeCloseTo(0, DIGITS);
+    }
+    updateCarMesh(car, { x: 5.1, z: 5, headingRad: degToRad(90), steerRad: 0 });
+    for (const spin of spins()) {
+      expect(spin).toBeCloseTo(rolledRad, DIGITS);
+    }
+  });
+
+  test('方向盤跟著轉向角轉：向右打是順時針（繞朝向駕駛的軸負轉）', () => {
+    const car = createCarMesh();
+    updateCarMesh(car, { x: 0, z: 0, headingRad: 0, steerRad: degToRad(10) });
+    expect(car.steeringWheel.rotation.z).toBeCloseTo(
+      -degToRad(10) * CAR_VISUAL_CONFIG.steeringRatio,
+      DIGITS,
+    );
+    updateCarMesh(car, { x: 0, z: 0, headingRad: 0, steerRad: 0 });
+    expect(car.steeringWheel.rotation.z).toBeCloseTo(0, DIGITS);
+  });
 });
 
 describe('車位標線 spotMarkings', () => {

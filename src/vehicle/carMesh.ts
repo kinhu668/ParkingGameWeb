@@ -15,7 +15,7 @@ import {
   type BufferGeometry,
   type Material,
 } from 'three';
-import { headingToRotationY } from '../core/heading';
+import { forward, headingToRotationY } from '../core/heading';
 import type { VehicleDetail } from '../render/quality';
 import { CAR_DETAIL_CONFIG, CAR_VISUAL_CONFIG as VISUAL } from '../render/renderConfig';
 import type { VehiclePose } from './bicycleModel';
@@ -29,9 +29,9 @@ export interface CarMesh {
   readonly root: Group;
   /** 兩個前輪的轉向樞軸（左、右）。 */
   readonly frontWheelPivots: readonly [Group, Group];
-  /** 四個輪子的滾動軸（前左、前右、後左、後右）。 */
+  /** 四個輪子的滾動軸（前左、前右、後左、後右）；rotation.x 隨行駛距離轉。 */
   readonly wheelSpinners: readonly Group[];
-  /** 方向盤（繞自己的軸轉）。 */
+  /** 方向盤；rotation.z 隨轉向角轉。 */
   readonly steeringWheel: Group;
   /** 烤漆車殼（引擎蓋、車頂、柱子、行李廂）。 */
   readonly body: Mesh;
@@ -39,6 +39,8 @@ export interface CarMesh {
   readonly glass: Mesh;
   /** 車艙內襯的上半部：頂篷與 A／B／C 柱內飾。只有從車裡（或隔著玻璃）才看得到。 */
   readonly headliner: Mesh;
+  /** 上一次擺放的位置，用來算輪子滾了多遠；還沒擺過是 undefined。 */
+  lastPlacement: { readonly x: number; readonly z: number } | undefined;
 }
 
 const HALF_WIDTH_M = VEHICLE_CONFIG_SI.widthM / 2;
@@ -223,6 +225,7 @@ export function createCarMesh(detail: VehicleDetail = 'high'): CarMesh {
     body,
     glass: glassMesh,
     headliner: headlinerMesh,
+    lastPlacement: undefined,
   };
 }
 
@@ -234,12 +237,26 @@ export function setCarInteriorView(car: CarMesh, enabled: boolean): void {
   car.glass.visible = !enabled;
 }
 
-/** 把模型擺到指定姿態：車身位置與朝向、前輪轉向角。 */
+/** 把模型擺到指定姿態：車身位置與朝向、前輪與方向盤的轉向角；輪子依這次與上次位置的距離滾動。 */
 export function updateCarMesh(car: CarMesh, pose: VehiclePose): void {
+  // 沿車頭方向走了多遠（倒車為負）。輪子頂端往前走 = 繞 +X 軸負轉。
+  if (car.lastPlacement !== undefined) {
+    const ahead = forward(pose.headingRad);
+    const traveledM =
+      (pose.x - car.lastPlacement.x) * ahead.x + (pose.z - car.lastPlacement.z) * ahead.z;
+    const rollRad = -traveledM / VISUAL.wheelRadiusM;
+    for (const spinner of car.wheelSpinners) {
+      spinner.rotation.x = (spinner.rotation.x + rollRad) % (2 * Math.PI);
+    }
+  }
+  car.lastPlacement = { x: pose.x, z: pose.z };
+
   car.root.position.set(pose.x, 0, pose.z);
   car.root.rotation.y = headingToRotationY(pose.headingRad);
   const steerRotationY = headingToRotationY(pose.steerRad);
   for (const pivot of car.frontWheelPivots) {
     pivot.rotation.y = steerRotationY;
   }
+  // 從駕駛看過去，向右打是順時針 = 繞朝向駕駛的軸負轉。
+  car.steeringWheel.rotation.z = -pose.steerRad * VISUAL.steeringRatio;
 }
