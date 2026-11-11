@@ -39,7 +39,7 @@ function showResult(panel: HTMLElement, stats: BenchStats): void {
 
 /** 啟動效能測試。 */
 export function runBench({ renderer, quality, pipeline }: RenderContext): void {
-  const gameScene = createGameScene(renderer.capabilities.getMaxAnisotropy(), PROTOTYPE_LAYOUT.spot);
+  const gameScene = createGameScene(renderer, quality, PROTOTYPE_LAYOUT.spot);
   const start = PROTOTYPE_LAYOUT.startState;
   const followCamera = createFollowCamera(start.x, start.z);
 

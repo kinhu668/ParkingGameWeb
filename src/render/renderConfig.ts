@@ -1,4 +1,4 @@
-// 畫面的可調數值：畫質級別、鏡頭、燈光、陰影、霧、後製、地面、車位標線、車輛外觀。
+// 畫面的可調數值：畫質級別、鏡頭、天空、燈光、陰影、霧、後製、地面、車位標線、車輛外觀。
 // 長度一律以英尺填寫，經 units.ts 換成公尺；顏色是 sRGB 十六進位。
 import { degToRad, ftToM, mphToMps } from '../core/units';
 import type { QualityLevel, QualitySettings } from './quality';
@@ -187,6 +187,9 @@ export const SHOWCASE_CONFIG = {
    * 側面最暗但仍受光，三個面分得開；影子落在車後，不擋住物件。
    */
   directionToKeyLight: { x: 0.45, y: 1, z: -0.75 },
+  /** 主光是中性偏暖的棚燈，不是遊戲裡低角度的橘色夕陽；反射與補光仍來自黃昏的環境貼圖。 */
+  keyLightColor: 0xfff1df,
+  keyLightIntensity: 3.4,
   /** 鏡頭方位：從物件正前方（本地 −Z）往右繞的角度。 */
   cameraAzimuthDeg: 38,
   /** 鏡頭仰角：從水平面往上的角度。 */
@@ -210,29 +213,75 @@ export const BENCH_CONFIG = {
   decimals: 1,
 } as const;
 
-/** 天空底色與霧（霧色 = 天空色，地面遠處會融進背景）。 */
+/**
+ * 黃昏的天空（three 的程序化 Sky，Preetham 大氣散射＋雲）。
+ * 天空在建立場景時烘成立方體貼圖當背景，再由它生成環境貼圖（PMREM）；之後每幀只是查貼圖。
+ */
 export const SKY_CONFIG = {
-  color: 0xb7cfe6,
-  fogNearM: ftToM(140),
-  fogFarM: ftToM(700),
+  /** 大氣混濁度：越大地平線附近越霧、越暖。 */
+  turbidity: 3,
+  /** 瑞利散射係數：越大天頂越藍、太陽附近越橘紅。 */
+  rayleigh: 3,
+  mieCoefficient: 0.003,
+  /** 米氏散射的方向性：越接近 1，太陽周圍的光暈越集中。 */
+  mieDirectionalG: 0.85,
+  cloudCoverage: 0.42,
+  cloudDensity: 0.5,
+  cloudElevation: 0.5,
+  cloudScale: 0.0002,
+  /**
+   * 背景裡太陽圓盤的亮度倍率。原始的圓盤亮到幾萬，泛光會整片炸白；壓到這個比例後仍是畫面最亮的東西。
+   * 環境貼圖一律不畫圓盤（那個亮點會在粗糙反射裡變成雜斑），太陽的高光由 DirectionalLight 負責。
+   */
+  sunDiscIntensity: 0.004,
+  /**
+   * 天空亮度的倍率（Sky 算出來的數值對這個場景的曝光來說太亮）。
+   * 穹頂與環境貼圖各自乘上自己的倍率；地平線的霾烘進貼圖時會先除回來，畫出來剛好是霧色。
+   */
+  intensity: 0.35,
+  /** 環境光（反射＋補光）的倍率。 */
+  environmentIntensity: 0.4,
+  /** 環境貼圖來源的每面邊長（像素）；只給反射與補光用，不必大。 */
+  environmentCubeSizePx: 256,
 } as const;
 
-/** 半球補光：上方天空色、下方地面反彈色。 */
+/**
+ * 霧與地平線的霾。霧把遠處的地面染成 color；天空貼圖在地平線上也疊了一圈同色的霾，
+ * 往上漸淡到 hazeTopDeg，所以地面與天空的交界是同一個顏色，沒有硬邊。
+ */
+export const FOG_CONFIG = {
+  /** 黃昏的暖灰霾。 */
+  color: 0x958282,
+  nearM: ftToM(120),
+  farM: ftToM(700),
+  /** 霾從地平線往上淡到完全透明的仰角。 */
+  hazeTopDeg: 9,
+  /** 地平線以下這個俯角之後，環境貼圖的下半球是地面反彈色（只影響反射與補光，畫面上被地面擋住）。 */
+  groundFadeDeg: 12,
+  /** 環境貼圖下半球的顏色：受黃昏光的柏油。 */
+  groundColor: 0x3b3531,
+} as const;
+
+/** 半球補光：上方是黃昏偏冷的天空色、下方是地面的暖色反彈。大部分的補光來自環境貼圖，這裡只補一點。 */
 export const HEMISPHERE_LIGHT_CONFIG = {
-  skyColor: 0xcfe2f7,
-  groundColor: 0x57534a,
-  intensity: 1.3,
+  skyColor: 0x9fb4e0,
+  groundColor: 0x6b5244,
+  intensity: 0.25,
 } as const;
 
-/** 太陽（DirectionalLight）與陰影。 */
+/** 太陽（DirectionalLight）與陰影。陰影貼圖的解析度跟著畫質級別走。 */
 export const SUN_CONFIG = {
-  color: 0xfff0d9,
-  intensity: 3.2,
-  /** 從目標點指向太陽的方向（不必是單位長）：西南方上空，影子落向東北。 */
-  directionToSun: { x: -0.75, y: 1, z: 0.6 },
+  /** 低角度的陽光穿過厚大氣，偏橘。 */
+  color: 0xffb98a,
+  intensity: 8,
+  /**
+   * 太陽的方位（heading 約定：0 = 北，順時針為正）與仰角。西北方、很低：
+   * 車從起點朝北開，太陽在左前方，跟車鏡頭看得到它；影子又長又斜，落向東南（鏡頭這一側）。
+   */
+  azimuthDeg: -32,
+  elevationDeg: 9,
   /** 光源離目標點的距離。 */
   distanceM: ftToM(160),
-  shadowMapSize: 2048,
   /** 陰影相機是正方形，這是半邊長；範圍跟著車走，所以只要蓋住車附近。 */
   shadowHalfExtentM: ftToM(45),
   shadowNearM: ftToM(20),
@@ -337,7 +386,7 @@ export const CAR_VISUAL_CONFIG = {
   hubColor: 0xb4bac1,
   hubRoughness: 0.4,
   headlightColor: 0xfff3d0,
-  headlightEmissiveIntensity: 1.6,
+  headlightEmissiveIntensity: 3,
   taillightColor: 0xe01218,
-  taillightEmissiveIntensity: 1.3,
+  taillightEmissiveIntensity: 0.9,
 } as const;

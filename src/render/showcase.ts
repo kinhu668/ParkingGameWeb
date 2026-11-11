@@ -20,7 +20,7 @@ import { createCarMesh } from '../vehicle/carMesh';
 import { createCamera } from './followCamera';
 import { SHOWCASE_CONFIG } from './renderConfig';
 import type { RenderContext } from './renderContext';
-import { addLights } from './scene';
+import { addLights, addSkyEnvironment } from './scene';
 
 /** 展示登錄表：id → 建立物件（擺在原點、車頭／車位前方朝 −Z）。用 Map，`toString` 之類的 id 才不會誤中。 */
 const SHOWCASE_OBJECTS: ReadonlyMap<string, () => Object3D> = new Map([
@@ -79,10 +79,15 @@ function showUnknownNotice(): void {
 }
 
 /** 啟動展示模式。畫出完整的一幀後在 `<body>` 設 `data-shot-ready="true"`。 */
-export function runShowcase({ pipeline }: RenderContext, id: string): void {
+export function runShowcase({ renderer, quality, pipeline }: RenderContext, id: string): void {
   const scene = new Scene();
   scene.background = new Color(SHOWCASE_CONFIG.backgroundColor);
-  addLights(scene, SHOWCASE_CONFIG.directionToKeyLight);
+  // 背景是深色展示台，但反射與補光用遊戲裡同一片黃昏天空，物件在這裡與在遊戲裡的質感才一致。
+  addSkyEnvironment(scene, renderer, quality);
+  addLights(scene, SHOWCASE_CONFIG.directionToKeyLight, quality, {
+    color: SHOWCASE_CONFIG.keyLightColor,
+    intensity: SHOWCASE_CONFIG.keyLightIntensity,
+  });
 
   const floor = createFloor();
   scene.add(floor);

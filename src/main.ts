@@ -55,13 +55,13 @@ function browserStorage(): ViewStorage | undefined {
 }
 
 /** 一般遊戲：固定步長物理迴圈 + 算圖內插 + 鍵盤開車 + 停車判定 + 可切換的鏡頭（V）+ HUD。 */
-function runGame({ renderer, pipeline }: RenderContext): void {
+function runGame({ renderer, quality, pipeline }: RenderContext): void {
   const hudRoot = document.querySelector<HTMLElement>('#hud');
   if (hudRoot === null) {
     throw new Error('找不到 #hud');
   }
 
-  const gameScene = createGameScene(renderer.capabilities.getMaxAnisotropy(), PROTOTYPE_LAYOUT.spot);
+  const gameScene = createGameScene(renderer, quality, PROTOTYPE_LAYOUT.spot);
   const input = attachKeyboardInput(window);
   const hud = createHud(hudRoot);
 
@@ -129,7 +129,7 @@ function runGame({ renderer, pipeline }: RenderContext): void {
  * 用指定鏡頭畫一幀後定格，並在 `<body>` 設 `data-shot-ready="true"`。沒有 HUD、不接鍵盤。
  */
 function runCameraShot(
-  { renderer, pipeline }: RenderContext,
+  { renderer, quality, pipeline }: RenderContext,
   preset: CameraPreset,
   timeSeconds: number,
 ): void {
@@ -137,7 +137,7 @@ function runCameraShot(
   const steps = Math.min(Math.round(timeSeconds * PHYSICS_HZ), DEMO_ROUTE_STEPS);
   const vehicle = demoVehicleAfterSteps(PROTOTYPE_LAYOUT.startState, steps);
 
-  const gameScene = createGameScene(renderer.capabilities.getMaxAnisotropy(), PROTOTYPE_LAYOUT.spot);
+  const gameScene = createGameScene(renderer, quality, PROTOTYPE_LAYOUT.spot);
   gameScene.update(vehicle);
   const camera = createPresetCamera(preset, vehicle.x, vehicle.z, PROTOTYPE_LAYOUT.spot);
 
