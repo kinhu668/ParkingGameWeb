@@ -12,6 +12,7 @@ import {
 import { headingToRotationY } from '../core/heading';
 import type { ParkingSpot } from '../level/parkingJudge';
 import { CURB_CONFIG, WHEEL_STOP_CONFIG } from '../render/renderConfig';
+import type { GroundEdgeBox } from './groundShader';
 
 /** 車位本地座標裡的一個矩形（公尺）；本地 −Z 是車位前方、+X 是右方。 */
 export interface LocalRect {
@@ -42,6 +43,38 @@ export function wheelStopFootprint(spot: ParkingSpot): LocalRect {
   };
 }
 
+/** 路緣石的四段各佔的範圍（車位本地座標）：前、後、左、右。前後兩段只有內緣那麼長，左右兩段把四個轉角補滿。 */
+export function curbSegmentRects(spot: ParkingSpot): readonly LocalRect[] {
+  const { widthM } = CURB_CONFIG;
+  const inner = curbInnerBounds(spot);
+  return [
+    { minX: inner.minX, maxX: inner.maxX, minZ: inner.minZ - widthM, maxZ: inner.minZ },
+    { minX: inner.minX, maxX: inner.maxX, minZ: inner.maxZ, maxZ: inner.maxZ + widthM },
+    { minX: inner.minX - widthM, maxX: inner.minX, minZ: inner.minZ - widthM, maxZ: inner.maxZ + widthM },
+    { minX: inner.maxX, maxX: inner.maxX + widthM, minZ: inner.minZ - widthM, maxZ: inner.maxZ + widthM },
+  ];
+}
+
+/**
+ * 路緣石四段與車擋，當成箱子（底面範圍是車位本地座標）。地面的著色器用它們直接算影子（groundShader.ts 的 GroundEdgeShadows）：
+ * 黃昏的太陽很低，這些東西又只有十幾公分高，在蓋住整塊場地的陰影貼圖裡只有兩三個像素，光靠貼圖影子會斷斷續續。
+ * 車擋的斷面是梯形，這裡取頂面與底面寬度的平均。
+ */
+export function edgeShadowBoxes(spot: ParkingSpot): readonly GroundEdgeBox[] {
+  const stop = wheelStopFootprint(spot);
+  const stopInsetM = (WHEEL_STOP_CONFIG.baseDepthM - WHEEL_STOP_CONFIG.topDepthM) / 4;
+  return [
+    ...curbSegmentRects(spot).map((rect) => ({ ...rect, heightM: CURB_CONFIG.heightM })),
+    {
+      minX: stop.minX,
+      maxX: stop.maxX,
+      minZ: stop.minZ + stopInsetM,
+      maxZ: stop.maxZ - stopInsetM,
+      heightM: WHEEL_STOP_CONFIG.heightM,
+    },
+  ];
+}
+
 /** 擺到車位的位置與朝向的空群組；子物件用車位本地座標。 */
 export function createSpotFrame(spot: ParkingSpot): Group {
   const frame = new Group();
@@ -52,11 +85,10 @@ export function createSpotFrame(spot: ParkingSpot): Group {
 
 /**
  * 路緣石：沿場地內緣外側的一圈水泥條（四段箱子，轉角處由左右兩段補滿）。
- * 純視覺，車可以穿過去。
+ * 純視覺，車可以穿過去。會投影到陰影貼圖（標線、車身上的影子）；落在地面上的影子另由地面著色器補完整。
  */
 export function createCurbs(spot: ParkingSpot): Group {
-  const { widthM, heightM } = CURB_CONFIG;
-  const inner = curbInnerBounds(spot);
+  const { heightM } = CURB_CONFIG;
   const material = new MeshStandardMaterial({
     color: CURB_CONFIG.color,
     roughness: CURB_CONFIG.roughness,
@@ -64,23 +96,16 @@ export function createCurbs(spot: ParkingSpot): Group {
   });
 
   const frame = createSpotFrame(spot);
-  const addSegment = (centerX: number, centerZ: number, sizeX: number, sizeZ: number): void => {
-    const segment = new Mesh(new BoxGeometry(sizeX, heightM, sizeZ), material);
-    segment.position.set(centerX, heightM / 2, centerZ);
+  for (const rect of curbSegmentRects(spot)) {
+    const segment = new Mesh(
+      new BoxGeometry(rect.maxX - rect.minX, heightM, rect.maxZ - rect.minZ),
+      material,
+    );
+    segment.position.set((rect.minX + rect.maxX) / 2, heightM / 2, (rect.minZ + rect.maxZ) / 2);
     segment.castShadow = true;
     segment.receiveShadow = true;
     frame.add(segment);
-  };
-
-  const spanX = inner.maxX - inner.minX;
-  const spanZ = inner.maxZ - inner.minZ;
-  const centerX = (inner.minX + inner.maxX) / 2;
-  const centerZ = (inner.minZ + inner.maxZ) / 2;
-  // 前後兩段只有內緣那麼長；左右兩段多出兩個路緣寬，把四個轉角補滿。
-  addSegment(centerX, inner.minZ - widthM / 2, spanX, widthM);
-  addSegment(centerX, inner.maxZ + widthM / 2, spanX, widthM);
-  addSegment(inner.minX - widthM / 2, centerZ, widthM, spanZ + widthM * 2);
-  addSegment(inner.maxX + widthM / 2, centerZ, widthM, spanZ + widthM * 2);
+  }
   return frame;
 }
 

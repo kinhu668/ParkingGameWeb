@@ -1,5 +1,6 @@
 // 地面：一大片平面。柏油的顆粒、裂縫、油漬、潮濕反光在著色器裡用世界座標算（groundShader.ts），
 // 噪聲來源是固定種子的貼圖（groundNoise.ts）。地面跟著車平移，紋理釘在世界上不動。
+// 路緣石與車擋落在地面上的影子也由著色器直接算（陰影貼圖畫不完整的部分）。
 import {
   Color,
   DataTexture,
@@ -19,7 +20,14 @@ import {
 import type { GroundQualitySettings } from '../render/quality';
 import { GROUND_CONFIG } from '../render/renderConfig';
 import { generateAsphaltPixels } from './groundNoise';
-import { groundLayerTransforms, groundShaderDefines, patchGroundShader } from './groundShader';
+import {
+  GROUND_EDGE_SHADOW_SOFTNESS,
+  groundLayerTransforms,
+  groundShaderDefines,
+  groundStainSmear,
+  patchGroundShader,
+  type GroundEdgeShadows,
+} from './groundShader';
 
 /** 噪聲貼圖：線性數值（不是顏色），四個方向都可重複，開 mipmap（遠處自動平均成素色，不會閃爍）。 */
 function createNoiseTexture(seed: number, sizePx: number, anisotropy: number): DataTexture {
@@ -46,11 +54,13 @@ function createNoiseTexture(seed: number, sizePx: number, anisotropy: number): D
  * @param seed 噪聲貼圖與各層位移的亂數種子
  * @param quality 這個畫質級別的地面開關
  * @param maxAnisotropy 顯示卡支援的各向異性過濾上限
+ * @param edgeShadows 路緣石、車擋的影子；不給就只有陰影貼圖的影子
  */
 export function createGroundMaterial(
   seed: number,
   quality: GroundQualitySettings,
   maxAnisotropy: number,
+  edgeShadows?: GroundEdgeShadows,
 ): MeshStandardMaterial {
   const config = GROUND_CONFIG;
   const anisotropy = Math.max(1, Math.min(maxAnisotropy, quality.maxAnisotropy));
@@ -59,7 +69,8 @@ export function createGroundMaterial(
     (layer) =>
       new Vector4(layer.cosOverPeriod, layer.sinOverPeriod, layer.offsetU, layer.offsetV),
   );
-  const defines = groundShaderDefines(quality);
+  const stainSmear = groundStainSmear();
+  const defines = groundShaderDefines(quality, edgeShadows?.boxes.length);
   // 有限差分的步長：細顆粒層的一個貼圖像素。
   const normalEpsM = config.layers.fineGrain.periodM / quality.textureSizePx;
 
@@ -97,6 +108,21 @@ export function createGroundMaterial(
       uGroundStainTint: {
         value: new Vector3(config.stainTint.r, config.stainTint.g, config.stainTint.b),
       },
+      uGroundStainWarp: {
+        value: new Vector3(config.stainWarpScale, config.stainWarp, config.wetWarp),
+      },
+      uGroundStainMacro: {
+        value: new Vector2(config.stainMacroAWeight, config.stainMacroBWeight),
+      },
+      uGroundStainSmear: { value: new Vector2(stainSmear.x, stainSmear.z) },
+      uGroundStainShape: {
+        value: new Vector4(
+          config.stainStreakStretch,
+          config.stainStreakWeight,
+          config.stainSplatterScale,
+          config.stainSplatterWeight,
+        ),
+      },
       uGroundWet: {
         value: new Vector4(config.wetStart, config.wetEnd, config.wetDarken, config.wetRoughness),
       },
@@ -115,6 +141,27 @@ export function createGroundMaterial(
         value: new Vector2(config.normalFadeStartM, config.normalFadeEndM),
       },
     });
+    if (edgeShadows !== undefined && edgeShadows.boxes.length > 0) {
+      Object.assign(shader.uniforms, {
+        uGroundEdgeFrame: {
+          value: new Vector4(
+            edgeShadows.originX,
+            edgeShadows.originZ,
+            edgeShadows.rightX,
+            edgeShadows.rightZ,
+          ),
+        },
+        uGroundEdgeSun: {
+          value: new Vector3(edgeShadows.sunRunX, edgeShadows.sunRunZ, GROUND_EDGE_SHADOW_SOFTNESS),
+        },
+        uGroundEdgeBoxes: {
+          value: edgeShadows.boxes.map(
+            (box) => new Vector4(box.minX, box.minZ, box.maxX, box.maxZ),
+          ),
+        },
+        uGroundEdgeHeights: { value: edgeShadows.boxes.map((box) => box.heightM) },
+      });
+    }
     patchGroundShader(shader, defines);
   };
   // 開關不同就是不同的著色器程式；快取鍵要分開。
@@ -127,15 +174,17 @@ export function createGroundMaterial(
  * @param seed 柏油的亂數種子
  * @param quality 這個畫質級別的地面開關
  * @param maxAnisotropy 顯示卡支援的各向異性過濾上限；斜看地面時遠處才不會糊成一片
+ * @param edgeShadows 路緣石、車擋的影子（著色器裡直接算）；不給就只有陰影貼圖的影子
  */
 export function createGround(
   seed: number,
   quality: GroundQualitySettings,
   maxAnisotropy: number,
+  edgeShadows?: GroundEdgeShadows,
 ): Mesh {
   const ground = new Mesh(
     new PlaneGeometry(GROUND_CONFIG.sizeM, GROUND_CONFIG.sizeM),
-    createGroundMaterial(seed, quality, maxAnisotropy),
+    createGroundMaterial(seed, quality, maxAnisotropy, edgeShadows),
   );
   // PlaneGeometry 預設立在 XY 平面、面朝 +Z；繞 X 轉 −90° 讓它躺平、面朝 +Y。
   ground.rotation.x = -Math.PI / 2;

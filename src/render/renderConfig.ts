@@ -422,6 +422,8 @@ export const GROUND_CONFIG = {
     cracks: { periodM: ftToM(43.9), angleDeg: 14.2 },
     /** 油漬與污斑（A）。 */
     stains: { periodM: ftToM(61.3), angleDeg: -53.3 },
+    /** 油漬的拉絲（A）：周期是橫向的；著色器裡再沿車道方向（大致是 Z）拉長成細長條。 */
+    stainStreaks: { periodM: ftToM(35.3), angleDeg: -8.3 },
     /** 潮濕與積水的分布（A）。 */
     wetness: { periodM: ftToM(187), angleDeg: 43.1 },
   },
@@ -439,11 +441,30 @@ export const GROUND_CONFIG = {
   crackMaskEnd: 0.66,
   crackDarken: 0.78,
   crackWarp: 0.035,
-  /** 油漬：斑塊噪聲超過 start 才開始有、到 end 最深；乘上的顏色；油漬處的粗糙度（比乾柏油亮）。 */
-  stainStart: 0.68,
+  /**
+   * 油漬：不是圓團，而是「斑塊 + 拉絲 − 缺口」再過門檻的不規則形狀（超過 start 才開始有、到 end 最深）；
+   * 乘上的顏色；油漬處的粗糙度（比乾柏油亮）。
+   */
+  stainStart: 0.74,
   stainEnd: 0.9,
   stainTint: { r: 0.45, g: 0.43, b: 0.42 },
   stainRoughness: 0.7,
+  /** 取樣位置的扭曲：扭曲噪聲的頻率（油漬層貼圖座標的倍數）與扭曲量（貼圖座標）；邊緣因此彎彎曲曲。 */
+  stainWarpScale: 3.7,
+  stainWarp: 0.05,
+  /**
+   * 拉絲：條紋噪聲沿拉絲方向拉長的倍數（越大條紋越細長）、它在油漬形狀裡的權重，
+   * 以及斑塊被條紋沿拉絲方向拖動的距離（公尺，最大到最小）：斑塊的邊緣因此被拖出一條條長短不一的尾巴。
+   */
+  stainStreakStretch: 6,
+  stainStreakWeight: 0.24,
+  stainSmearM: ftToM(16),
+  /** 濺灑的缺口與小點：高頻噪聲的頻率倍數與權重（把斑塊邊緣咬出缺口、在旁邊留下零星小點）。 */
+  stainSplatterScale: 2.9,
+  stainSplatterWeight: 0.16,
+  /** 兩層大片深淺各自調整油漬濃淡的幅度：哪幾處有油漬因此不照著油漬層自己的周期重複。 */
+  stainMacroAWeight: 0.25,
+  stainMacroBWeight: 0.2,
   /** 潮濕：分布噪聲超過 start 開始濕、到 end 全濕；濕的地方顏色變深、粗糙度降低。 */
   wetStart: 0.64,
   wetEnd: 0.84,
@@ -453,6 +474,8 @@ export const GROUND_CONFIG = {
   puddleStart: 0.87,
   puddleEnd: 0.91,
   puddleRoughness: 0.2,
+  /** 潮濕分布的取樣位置也跟著油漬的扭曲噪聲推開這麼多（貼圖座標），濕斑的邊緣才不是圓弧。 */
+  wetWarp: 0.016,
   /** 法線用的高度（公尺）：細顆粒、粗顆粒的起伏，與裂縫的深度。 */
   fineGrainHeightM: 0.0011,
   coarseGrainHeightM: 0.004,

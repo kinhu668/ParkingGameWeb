@@ -1,4 +1,5 @@
-// 地面：噪聲貼圖的可重現性、各層疊起來沒有短周期、畫質級別對著色器開關的矩陣、著色器片段插得進 three 的原始碼。
+// 地面：噪聲貼圖的可重現性、各層疊起來沒有短周期、油漬的形狀（不規則、可重現）、畫質級別對著色器開關的矩陣、
+// 著色器片段插得進 three 的原始碼。
 // 不開 WebGL：只測純函式、字串與材質物件。
 import { ShaderLib, type DataTexture, type Vector4 } from 'three';
 import { describe, expect, test } from 'vitest';
@@ -8,13 +9,25 @@ import { createGround, createGroundMaterial } from '../src/props/ground';
 import { GROUND_NOISE_CHANNEL, generateAsphaltPixels } from '../src/props/groundNoise';
 import {
   GROUND_LAYER_ORDER,
+  groundEdgeShadows,
   groundLayerTransforms,
   groundLayerUv,
   groundShaderDefines,
+  groundStainAmount,
+  groundStainSmear,
   patchGroundShader,
+  type GroundNoiseSampler,
 } from '../src/props/groundShader';
+import { PROTOTYPE_LAYOUT } from '../src/level/prototypeLayout';
+import { edgeShadowBoxes } from '../src/props/lotEdges';
 import { QUALITY_LEVELS } from '../src/render/quality';
-import { FOG_CONFIG, GROUND_CONFIG, QUALITY_PRESETS } from '../src/render/renderConfig';
+import {
+  FOG_CONFIG,
+  GROUND_CONFIG,
+  LOT_PROPS_CONFIG,
+  QUALITY_PRESETS,
+} from '../src/render/renderConfig';
+import { SUN_DIRECTION } from '../src/render/sky';
 
 /** 測試用的小貼圖邊長；產生器的行為與邊長無關，小一點測試才快。 */
 const SMALL = 128;
@@ -175,6 +188,172 @@ describe('噪聲層 groundLayerTransforms', () => {
   });
 });
 
+describe('油漬 groundStainAmount', () => {
+  /** 取樣用的貼圖邊長：與 low 級別相同。 */
+  const SIZE = 512;
+  /** 取最近的像素（著色器是線性內插；形狀的統計不受影響）。 */
+  function nearestSampler(seed: number): GroundNoiseSampler {
+    const pixels = generateAsphaltPixels(seed, SIZE);
+    const wrap = (value: number): number => ((Math.floor(value * SIZE) % SIZE) + SIZE) % SIZE;
+    return (u, v) => {
+      const offset = (wrap(v) * SIZE + wrap(u)) * 4;
+      return {
+        grain: (pixels[offset + GROUND_NOISE_CHANNEL.grain] ?? 0) / 255,
+        patch: (pixels[offset + GROUND_NOISE_CHANNEL.patch] ?? 0) / 255,
+        crack: (pixels[offset + GROUND_NOISE_CHANNEL.crack] ?? 0) / 255,
+        blotch: (pixels[offset + GROUND_NOISE_CHANNEL.blotch] ?? 0) / 255,
+      };
+    };
+  }
+
+  /** 取樣格子：360 × 360 ft，每格 0.75 ft。 */
+  const GRID = 480;
+  const CELL_M = ftToM(0.75);
+  /** 一片世界座標範圍內「有油漬」（油漬量過半）的格子。 */
+  function stainMask(amount: (x: number, z: number) => number): Uint8Array {
+    const mask = new Uint8Array(GRID * GRID);
+    for (let row = 0; row < GRID; row += 1) {
+      for (let column = 0; column < GRID; column += 1) {
+        const x = (column - GRID / 2) * CELL_M;
+        const z = (row - GRID * 0.75) * CELL_M;
+        mask[row * GRID + column] = amount(x, z) > 0.5 ? 1 : 0;
+      }
+    }
+    return mask;
+  }
+
+  /**
+   * 遮罩的統計：覆蓋率，以及每一塊（至少 30 格的連通區塊）的「周長² ÷ (4π × 面積)」的中位數。
+   * 圓是最小的；用格子邊數量周長時，圓大約是 1.6，越不規則（缺口、尾巴、鋸齒）越大。
+   */
+  function shapeStats(mask: Uint8Array): { coverage: number; blobs: number; raggedness: number } {
+    const seen = new Uint8Array(mask.length);
+    const ratios: number[] = [];
+    let covered = 0;
+    for (let start = 0; start < mask.length; start += 1) {
+      covered += mask[start] ?? 0;
+      if (mask[start] !== 1 || seen[start] === 1) {
+        continue;
+      }
+      const stack = [start];
+      seen[start] = 1;
+      let area = 0;
+      let perimeter = 0;
+      for (let cell = stack.pop(); cell !== undefined; cell = stack.pop()) {
+        area += 1;
+        const row = Math.floor(cell / GRID);
+        const column = cell % GRID;
+        for (const [stepRow, stepColumn] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+          const nextRow = row + stepRow;
+          const nextColumn = column + stepColumn;
+          const next = nextRow * GRID + nextColumn;
+          const inside = nextRow >= 0 && nextColumn >= 0 && nextRow < GRID && nextColumn < GRID;
+          if (!inside || mask[next] !== 1) {
+            perimeter += 1;
+          } else if (seen[next] !== 1) {
+            seen[next] = 1;
+            stack.push(next);
+          }
+        }
+      }
+      if (area >= 30) {
+        ratios.push(perimeter ** 2 / (4 * Math.PI * area));
+      }
+    }
+    ratios.sort((a, b) => a - b);
+    return {
+      coverage: covered / mask.length,
+      blobs: ratios.length,
+      raggedness: ratios[Math.floor(ratios.length / 2)] ?? NaN,
+    };
+  }
+
+  const sample = nearestSampler(DEFAULT_SEED);
+  const layers = groundLayerTransforms(DEFAULT_SEED);
+  const amount = (x: number, z: number): number => groundStainAmount(sample, layers, x, z);
+
+  test('只看世界座標與種子：同一點每次都一樣，換種子就是另一片油漬', () => {
+    const points = Array.from({ length: 400 }, (_, index) => ({
+      x: ftToM(-150 + (index % 20) * 15.3),
+      z: ftToM(-220 + Math.floor(index / 20) * 14.1),
+    }));
+    const first = points.map(({ x, z }) => amount(x, z));
+    expect(points.map(({ x, z }) => amount(x, z))).toEqual(first);
+    expect(first.every((value) => value >= 0 && value <= 1)).toBe(true);
+
+    const otherSample = nearestSampler(DEFAULT_SEED + 1);
+    const otherLayers = groundLayerTransforms(DEFAULT_SEED + 1);
+    const other = points.map(({ x, z }) => groundStainAmount(otherSample, otherLayers, x, z));
+    expect(other).not.toEqual(first);
+  });
+
+  test('不是圓團：每一塊的輪廓比「斑塊噪聲直接過門檻」的舊做法不規則得多', () => {
+    const stainLayer = layers[GROUND_LAYER_ORDER.indexOf('stains')];
+    const macroLayer = layers[GROUND_LAYER_ORDER.indexOf('macroA')];
+    if (stainLayer === undefined || macroLayer === undefined) {
+      throw new Error('層不存在');
+    }
+    /** 舊做法：斑塊噪聲加上大片深淺，直接過門檻（一團一團的圓斑）。 */
+    const roundBlobs = (x: number, z: number): number => {
+      const stainUv = groundLayerUv(stainLayer, x, z);
+      const macroUv = groundLayerUv(macroLayer, x, z);
+      const field =
+        sample(stainUv.u, stainUv.v).blotch + 0.25 * (sample(macroUv.u, macroUv.v).patch - 0.5);
+      return field > 0.79 ? 1 : 0;
+    };
+    const irregular = shapeStats(stainMask(amount));
+    const round = shapeStats(stainMask(roundBlobs));
+    expect(irregular.blobs).toBeGreaterThan(20);
+    expect(round.blobs).toBeGreaterThan(20);
+    expect(irregular.raggedness).toBeGreaterThan(3.2);
+    expect(irregular.raggedness).toBeGreaterThan(1.2 * round.raggedness);
+  });
+
+  test('拉絲有方向：油漬沿拉絲方向比垂直方向延續得更遠', () => {
+    const smear = groundStainSmear();
+    const length = Math.hypot(smear.x, smear.z);
+    expect(length).toBeCloseTo(GROUND_CONFIG.stainSmearM, 9);
+    const along = { x: smear.x / length, z: smear.z / length };
+    const across = { x: along.z, z: -along.x };
+    /** 有油漬的點沿某個方向走 stepM 之後仍有油漬的比例。 */
+    const persistence = (direction: { x: number; z: number }, stepM: number): number => {
+      let stained = 0;
+      let still = 0;
+      for (let row = 0; row < 240; row += 1) {
+        for (let column = 0; column < 240; column += 1) {
+          const x = (column - 120) * ftToM(1.1);
+          const z = (row - 180) * ftToM(1.1);
+          if (amount(x, z) > 0.5) {
+            stained += 1;
+            still += amount(x + direction.x * stepM, z + direction.z * stepM) > 0.5 ? 1 : 0;
+          }
+        }
+      }
+      expect(stained).toBeGreaterThan(200);
+      return still / stained;
+    };
+    expect(persistence(along, ftToM(2))).toBeGreaterThan(1.15 * persistence(across, ftToM(2)));
+  });
+
+  test('有節制：整片場地只有零星幾處，起點到車位的通路與車位裡大部分是乾淨的', () => {
+    const lot = shapeStats(stainMask(amount));
+    expect(lot.coverage).toBeGreaterThan(0.01);
+    expect(lot.coverage).toBeLessThan(0.06);
+
+    const { spot, startState } = PROTOTYPE_LAYOUT;
+    let cells = 0;
+    let stained = 0;
+    const halfWidthM = LOT_PROPS_CONFIG.corridorHalfWidthM;
+    for (let x = -halfWidthM; x <= halfWidthM; x += CELL_M) {
+      for (let z = spot.z - spot.lengthM / 2; z <= startState.z; z += CELL_M) {
+        cells += 1;
+        stained += amount(spot.x + x, z) > 0.5 ? 1 : 0;
+      }
+    }
+    expect(stained / cells).toBeLessThan(0.1);
+  });
+});
+
 describe('畫質級別 → 地面著色器開關', () => {
   test.each([
     ['low', []],
@@ -183,6 +362,16 @@ describe('畫質級別 → 地面著色器開關', () => {
     ['ultra', ['GROUND_NORMALS', 'GROUND_WETNESS']],
   ] as const)('%s → %j', (level, defines) => {
     expect(groundShaderDefines(QUALITY_PRESETS[level].ground)).toEqual(defines);
+  });
+
+  test('要在著色器裡算影子的箱子數寫進開關；0 個就不寫', () => {
+    expect(groundShaderDefines(QUALITY_PRESETS.low.ground, 5)).toEqual(['GROUND_EDGE_BOXES 5']);
+    expect(groundShaderDefines(QUALITY_PRESETS.high.ground, 5)).toEqual([
+      'GROUND_NORMALS',
+      'GROUND_WETNESS',
+      'GROUND_EDGE_BOXES 5',
+    ]);
+    expect(groundShaderDefines(QUALITY_PRESETS.low.ground, 0)).toEqual([]);
   });
 
   test('開關不同的級別用不同的著色器程式（快取鍵不同），相同的共用', () => {
@@ -214,22 +403,88 @@ describe('著色器片段 patchGroundShader', () => {
     expect(fragmentShader).toContain('normal = normalize( ( viewMatrix');
     // 不用 three 的貼圖座標（uv）：那會跟著網格走。
     expect(fragmentShader).not.toContain('#include <map_fragment>');
-    // 環境光、陰影、霧的片段都還在。
-    for (const chunk of ['lights_fragment_begin', 'shadowmap_pars_fragment', 'fog_fragment']) {
+    expect(fragmentShader).not.toMatch(/\bvUv\b|vMapUv/);
+    // 環境光、陰影、霧的片段都還在；打光的片段整段展開在著色器裡（太陽的陰影那一行要多乘路緣石的影子）。
+    for (const chunk of ['lights_fragment_maps', 'shadowmap_pars_fragment', 'fog_fragment']) {
       expect(fragmentShader).toContain(`#include <${chunk}>`);
     }
+    expect(fragmentShader).toContain('getShadow( directionalShadowMap[ i ]');
+    expect(fragmentShader).toContain('RE_Direct( directLight, geometryPosition');
+  });
+
+  test('油漬用世界座標算：扭曲、拉絲、濺灑三項都在，取樣座標都來自 vGroundXZ', () => {
+    const { fragmentShader } = patched([]);
+    expect(fragmentShader).toContain('vec2 groundStainUv = groundUv( uGroundLayers[ 5 ], vGroundXZ );');
+    // 扭曲：取樣位置被另一次取樣推開。
+    expect(fragmentShader).toContain('groundStainWarp * uGroundStainWarp.y');
+    // 拉絲：條紋層只拉長一個方向（非等向），斑塊再被它沿拉絲方向拖動。
+    expect(fragmentShader).toContain(`uGroundLayers[ ${GROUND_LAYER_ORDER.indexOf('stainStreaks')} ], vGroundXZ`);
+    expect(fragmentShader).toContain('groundStreakUv.y / uGroundStainShape.x');
+    expect(fragmentShader).toContain('vGroundXZ + uGroundStainSmear * ( groundStainStreak - 0.5 )');
+    // 濺灑：減去高頻的缺口。
+    expect(fragmentShader).toContain('- ( groundStainSplatter - 0.5 ) * uGroundStainShape.w');
+    for (const uniform of ['uGroundStainWarp', 'uGroundStainShape', 'uGroundStainMacro', 'uGroundStainSmear']) {
+      expect(fragmentShader).toMatch(new RegExp(`uniform vec\\d ${uniform};`));
+    }
+  });
+
+  test('路緣石與車擋的影子乘在太陽的陰影上（只擋陽光），地面的陰影座標不沿法線偏移', () => {
+    const { vertexShader, fragmentShader } = patched(['GROUND_EDGE_BOXES 5']);
+    expect(fragmentShader).toContain('#define GROUND_EDGE_BOXES 5');
+    expect(fragmentShader).toContain('groundEdgeLit = groundEdgeLight( vGroundXZ );');
+    expect(fragmentShader).not.toContain('#include <lights_fragment_begin>');
+    expect(fragmentShader).toContain('vDirectionalShadowCoord[ i ] ) * groundEdgeLit : 1.0;');
+    // 路燈、車燈（SpotLight）的那一行沒有被動到。
+    expect(fragmentShader).toContain('vSpotLightCoord[ i ] ) : 1.0;');
+    expect(vertexShader).toContain(
+      'vDirectionalShadowCoord[ i ] = directionalShadowMatrix[ i ] * worldPosition;',
+    );
+    expect(vertexShader.indexOf('directionalShadowMatrix[ i ] * worldPosition;')).toBeGreaterThan(
+      vertexShader.indexOf('#include <shadowmap_vertex>'),
+    );
   });
 
   test('沒開的開關不會出現在著色器裡', () => {
     const { fragmentShader } = patched([]);
     expect(fragmentShader).not.toContain('#define GROUND_NORMALS');
     expect(fragmentShader).not.toContain('#define GROUND_WETNESS');
+    expect(fragmentShader).not.toContain('#define GROUND_EDGE_BOXES');
   });
 
   test('找不到插入點就丟錯，不會悄悄變回素色地面', () => {
     expect(() =>
       patchGroundShader({ vertexShader: 'void main() {}', fragmentShader: 'void main() {}' }, []),
     ).toThrow();
+  });
+});
+
+describe('地面上的路緣石與車擋影子 createGroundMaterial', () => {
+  test('給了箱子：每個箱子一組範圍與高度送進著色器，著色器程式與沒有箱子的分開', () => {
+    const { spot } = PROTOTYPE_LAYOUT;
+    const boxes = edgeShadowBoxes(spot);
+    const edges = groundEdgeShadows(spot, spot.headingRad, SUN_DIRECTION, boxes);
+    const quality = { ...QUALITY_PRESETS.medium.ground, textureSizePx: 32 };
+    const material = createGroundMaterial(DEFAULT_SEED, quality, 4, edges);
+    const shader = {
+      uniforms: {} as Record<string, { value: unknown }>,
+      vertexShader: ShaderLib.standard.vertexShader,
+      fragmentShader: ShaderLib.standard.fragmentShader,
+    };
+    material.onBeforeCompile(shader as never, undefined as never);
+
+    expect((shader.uniforms.uGroundEdgeBoxes?.value as Vector4[]).length).toBe(boxes.length);
+    expect((shader.uniforms.uGroundEdgeHeights?.value as number[])).toEqual(
+      boxes.map((box) => box.heightM),
+    );
+    expect(shader.fragmentShader).toContain(`#define GROUND_EDGE_BOXES ${boxes.length}`);
+    expect(material.customProgramCacheKey()).not.toBe(
+      createGroundMaterial(DEFAULT_SEED, quality, 4).customProgramCacheKey(),
+    );
+
+    // 太陽在西北方很低：每公尺高度的影子有好幾公尺長，朝東南（本地 +X、+Z 的反方向是朝太陽）。
+    expect(edges.sunRunX).toBeLessThan(0);
+    expect(edges.sunRunZ).toBeLessThan(0);
+    expect(Math.hypot(edges.sunRunX, edges.sunRunZ)).toBeGreaterThan(3);
   });
 });
 
@@ -273,6 +528,19 @@ describe('地面網格 createGround', () => {
     expect(noise.image.width).toBe(64);
     expect(noise.anisotropy).toBe(QUALITY_PRESETS.high.ground.maxAnisotropy);
     expect((high.uGroundLayers?.value as Vector4[]).length).toBe(GROUND_LAYER_ORDER.length);
+
+    // 油漬形狀的參數都送進著色器，數值就是設定裡的那幾個。
+    for (const name of ['uGroundStain', 'uGroundStainWarp', 'uGroundStainShape', 'uGroundStainMacro', 'uGroundStainSmear']) {
+      expect(high[name], name).toBeDefined();
+    }
+    expect((high.uGroundStainShape?.value as Vector4).toArray()).toEqual([
+      GROUND_CONFIG.stainStreakStretch,
+      GROUND_CONFIG.stainStreakWeight,
+      GROUND_CONFIG.stainSplatterScale,
+      GROUND_CONFIG.stainSplatterWeight,
+    ]);
+    // 沒給路緣石與車擋就沒有那幾個 uniform。
+    expect(high.uGroundEdgeBoxes).toBeUndefined();
 
     const limited = uniformsFor('ultra', 4).uGroundNoise?.value as DataTexture;
     expect(limited.anisotropy).toBe(4);

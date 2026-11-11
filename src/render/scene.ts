@@ -12,7 +12,13 @@ import type { GroundVector } from '../core/heading';
 import { createSceneEffects } from '../effects/sceneEffects';
 import type { ParkingSpot } from '../level/parkingJudge';
 import { createGround } from '../props/ground';
-import { createCurbs, createWheelStop, curbInnerBounds } from '../props/lotEdges';
+import { groundEdgeShadows } from '../props/groundShader';
+import {
+  createCurbs,
+  createWheelStop,
+  curbInnerBounds,
+  edgeShadowBoxes,
+} from '../props/lotEdges';
 import { createLotLayout, spotLocalToWorld } from '../props/lotLayout';
 import { createLotProps } from '../props/lotProps';
 import { createSpotMarkings } from '../props/spotMarkings';
@@ -210,6 +216,8 @@ export function createGameScene(
     DEFAULT_SEED,
     quality.ground,
     renderer.capabilities.getMaxAnisotropy(),
+    // 路緣石與車擋又矮又長，低角度的太陽下陰影貼圖畫不完整；它們落在地面上的影子由地面著色器直接算。
+    groundEdgeShadows(spot, spot.headingRad, SUN_DIRECTION, edgeShadowBoxes(spot)),
   );
   scene.add(ground);
 
