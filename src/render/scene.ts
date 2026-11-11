@@ -26,6 +26,7 @@ import type { VehiclePose } from '../vehicle/bicycleModel';
 import { createCarHeadlights } from '../vehicle/carHeadlights';
 import {
   createCarMesh,
+  setCarHoodView,
   setCarInteriorView,
   setCarLights,
   updateCarMesh,
@@ -50,6 +51,8 @@ export interface GameScene {
   update(pose: VehiclePose, frameSeconds?: number): void;
   /** 駕駛座視角開關：開啟時藏起玻璃（車殼、頂篷、內裝保留）。 */
   setInteriorView(enabled: boolean): void;
+  /** 引擎蓋視角開關：開啟時收斂烤漆的掠射反光（夕陽不把引擎蓋洗白）。 */
+  setHoodView(enabled: boolean): void;
   /** 燈號：煞車燈、倒車燈。 */
   setLights(lights: CarLights): void;
 }
@@ -263,6 +266,9 @@ export function createGameScene(
     },
     setInteriorView(enabled) {
       setCarInteriorView(car, enabled);
+    },
+    setHoodView(enabled) {
+      setCarHoodView(car, enabled);
     },
     setLights(lights) {
       setCarLights(car, lights);

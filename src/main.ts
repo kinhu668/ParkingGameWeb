@@ -120,6 +120,8 @@ function runGame({ renderer, quality, pipeline }: RenderContext): void {
     gameScene.update(pose, frameSeconds);
     // 駕駛座視角要藏起玻璃，其他模式恢復。
     gameScene.setInteriorView(gameCamera.view() === 'cockpit');
+    // 引擎蓋視角收斂烤漆的掠射反光，其他模式恢復。
+    gameScene.setHoodView(gameCamera.view() === 'hood');
     gameScene.setLights(carLightsFor(driveInput, session.vehicle.speedMps));
     gameCamera.update(pose, session.vehicle.speedMps, frameSeconds);
     pipeline.render(gameScene.scene, gameCamera.camera);

@@ -667,6 +667,18 @@ export const CAR_VISUAL_CONFIG = {
    * 後製鏈半浮點緩衝區的上限，變成無限大，經過泛光後整個畫面變黑（引擎蓋視角最容易遇到）。
    */
   minGlossRoughness: 0.12,
+  /**
+   * 引擎蓋鏡頭專用的烤漆（等於鏡頭前加一片偏光鏡）：視線貼著引擎蓋、正對低角度的夕陽，
+   * 平常的烤漆在這個角度幾乎整片是太陽與天空的掠射反光，看不出車色與摺線。
+   * 只在 `view=hood` 套用：金屬感與底漆反光降低（漫射的車色變多）、清漆變淡變霧、環境反射收斂；其他鏡頭與展示台不受影響。
+   */
+  hoodViewPaint: {
+    metalness: 0.1,
+    specularIntensity: 0.25,
+    clearcoat: 0.15,
+    clearcoatRoughness: 0.3,
+    envMapIntensity: 0.7,
+  },
   glassColor: 0x0d1820,
   glassOpacity: 0.48,
   /** 黑色飾條、底盤、輪拱內襯。 */

@@ -3,6 +3,7 @@
 import {
   Box3,
   Mesh,
+  MeshPhysicalMaterial,
   MeshStandardMaterial,
   Raycaster,
   Vector3,
@@ -25,6 +26,7 @@ import {
 import { BODY_LAYOUT } from '../src/vehicle/carBody';
 import {
   createCarMesh,
+  setCarHoodView,
   setCarInteriorView,
   updateCarMesh,
   type CarMesh,
@@ -643,6 +645,48 @@ describe('駕駛座視角的車身 setCarInteriorView', () => {
       // 離眼睛比近平面遠得多，不會被切掉。
       expect(hit?.distance).toBeGreaterThan(5 * camera.near);
     }
+  });
+});
+
+describe('引擎蓋視角的烤漆 setCarHoodView', () => {
+  test('開啟時烤漆的掠射反光收斂（清漆變淡變霧、底漆反光與環境反射降低），關閉後完全恢復', () => {
+    const car = createCarMesh();
+    const paint = car.body.material;
+    if (!(paint instanceof MeshPhysicalMaterial)) {
+      throw new Error('烤漆不是 MeshPhysicalMaterial');
+    }
+    const read = (): Record<string, number> => ({
+      metalness: paint.metalness,
+      specularIntensity: paint.specularIntensity,
+      clearcoat: paint.clearcoat,
+      clearcoatRoughness: paint.clearcoatRoughness,
+      envMapIntensity: paint.envMapIntensity,
+      roughness: paint.roughness,
+      color: paint.color.getHex(),
+    });
+    const normal = read();
+    expect(normal.clearcoat).toBe(CAR_VISUAL_CONFIG.clearcoat);
+    expect(normal.metalness).toBe(CAR_VISUAL_CONFIG.bodyMetalness);
+
+    setCarHoodView(car, true);
+    const hood = read();
+    expect(hood.clearcoat).toBeLessThan(0.5 * (normal.clearcoat ?? 0));
+    expect(hood.clearcoatRoughness).toBeGreaterThan(normal.clearcoatRoughness ?? 1);
+    expect(hood.specularIntensity).toBeLessThan(normal.specularIntensity ?? 0);
+    expect(hood.metalness).toBeLessThan(normal.metalness ?? 0);
+    expect(hood.envMapIntensity).toBeLessThan(normal.envMapIntensity ?? 0);
+    // 清漆沒有整個關掉（著色器不必重編），車色與底漆粗糙度不變，最光滑的表面也不低於下限（後製不會溢位）。
+    expect(hood.clearcoat).toBeGreaterThan(0);
+    expect(hood.color).toBe(normal.color);
+    expect(hood.roughness).toBe(normal.roughness);
+    expect(hood.clearcoatRoughness).toBeGreaterThanOrEqual(CAR_VISUAL_CONFIG.minGlossRoughness);
+
+    setCarHoodView(car, false);
+    expect(read()).toEqual(normal);
+    // 重複關閉也一樣；駕駛座視角的開關不影響烤漆。
+    setCarHoodView(car, false);
+    setCarInteriorView(car, true);
+    expect(read()).toEqual(normal);
   });
 });
 

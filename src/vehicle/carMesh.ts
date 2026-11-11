@@ -304,6 +304,23 @@ export function setCarInteriorView(car: CarMesh, enabled: boolean): void {
 }
 
 /**
+ * 引擎蓋視角開關：開啟時烤漆換成 hoodViewPaint 的數值（掠射反光收斂，看得出車色與摺線），關閉就恢復。
+ * 只改材質的數值、不換材質也不增減功能（清漆始終開著），所以切換鏡頭不必重新編譯著色器。
+ */
+export function setCarHoodView(car: CarMesh, enabled: boolean): void {
+  const paint = car.body.material;
+  if (!(paint instanceof MeshPhysicalMaterial)) {
+    return;
+  }
+  const hood = VISUAL.hoodViewPaint;
+  paint.metalness = enabled ? hood.metalness : VISUAL.bodyMetalness;
+  paint.specularIntensity = enabled ? hood.specularIntensity : 1;
+  paint.clearcoat = enabled ? hood.clearcoat : VISUAL.clearcoat;
+  paint.clearcoatRoughness = enabled ? hood.clearcoatRoughness : VISUAL.minGlossRoughness;
+  paint.envMapIntensity = enabled ? hood.envMapIntensity : 1;
+}
+
+/**
  * 由駕駛輸入與車速決定燈號（與 bicycleModel 的車速規則一致，但不影響物理）：
  * 手煞車、或油門與行進方向相反（正在煞車）→ 煞車燈；正在倒退、或靜止時按著倒車 → 倒車燈。
  */
