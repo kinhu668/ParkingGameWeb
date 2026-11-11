@@ -23,7 +23,7 @@ export interface CarMesh {
   readonly frontWheelPivots: readonly [Group, Group];
   /** 車艙玻璃（不透明的深色方塊）。駕駛座視角要藏起來，否則視點被包在裡面什麼都看不到。 */
   readonly cabinGlass: Mesh;
-  /** 車頂；駕駛座視角與玻璃一起藏起來。 */
+  /** 車頂；駕駛座視角也保持可見，A 柱才接得到車頂、畫面上方有車頂邊緣。 */
   readonly roof: Mesh;
 }
 
@@ -219,12 +219,12 @@ export function createCarMesh(): CarMesh {
 }
 
 /**
- * 駕駛座視角開關：開啟時藏起車艙玻璃與車頂，視線才看得出去，並看得到儀表板、A 柱與引擎蓋；
- * 關閉就恢復外觀。藏起來的網格也不投影，所以這段期間地上的車影少了車艙那一塊。
+ * 駕駛座視角開關：開啟時只藏起車艙玻璃，視線才看得出去，並看得到儀表板、A 柱與引擎蓋；
+ * 車頂留著，A 柱頂端才接得到車頂，不會像敞篷車。關閉就恢復外觀。
+ * 藏起來的網格也不投影，所以這段期間地上的車影少了車艙玻璃那一塊。
  */
 export function setCarInteriorView(car: CarMesh, enabled: boolean): void {
   car.cabinGlass.visible = !enabled;
-  car.roof.visible = !enabled;
 }
 
 /** 把模型擺到指定姿態：車身位置與朝向、前輪轉向角。 */

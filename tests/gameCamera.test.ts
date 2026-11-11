@@ -407,20 +407,20 @@ describe('駕駛座視角的車身 setCarInteriorView', () => {
     return meshes;
   }
 
-  test('開啟時只藏車艙玻璃與車頂，關閉後全部恢復', () => {
+  test('開啟時只藏車艙玻璃、車頂仍可見，關閉後全部恢復', () => {
     const car = createCarMesh();
     const meshes = meshesOf(car);
     expect(meshes.every((mesh) => mesh.visible)).toBe(true);
 
     setCarInteriorView(car, true);
     expect(car.cabinGlass.visible).toBe(false);
-    expect(car.roof.visible).toBe(false);
+    expect(car.roof.visible).toBe(true);
     const hidden = meshes.filter((mesh) => !mesh.visible);
-    expect(hidden.sort((a, b) => a.id - b.id)).toEqual(
-      [car.cabinGlass, car.roof].sort((a, b) => a.id - b.id),
-    );
+    expect(hidden).toEqual([car.cabinGlass]);
 
     setCarInteriorView(car, false);
+    expect(car.cabinGlass.visible).toBe(true);
+    expect(car.roof.visible).toBe(true);
     expect(meshes.every((mesh) => mesh.visible)).toBe(true);
   });
 
@@ -461,7 +461,7 @@ describe('駕駛座視角的車身 setCarInteriorView', () => {
     expect(dashboard.max.x).toBeGreaterThan(eye.x);
   });
 
-  test('有左右兩根 A 柱：從下車身頂面斜上到車頂前緣，藏起玻璃與車頂後仍看得到', () => {
+  test('有左右兩根 A 柱：從下車身頂面斜上到車頂前緣，藏起玻璃後仍看得到、頂端接到看得到的車頂', () => {
     const car = createCarMesh();
     const meshes = meshesOf(car);
     const cabin = boundsOf(car.cabinGlass);
@@ -472,12 +472,18 @@ describe('駕駛座視角的車身 setCarInteriorView', () => {
       // 又細又高：從下車身頂面附近一路到車頂底面附近，寬度遠小於車艙。
       return (
         mesh.visible &&
+        mesh !== car.roof &&
         bounds.min.y < HOOD_TOP_M + ftToM(0.2) &&
         bounds.max.y > roof.min.y - ftToM(0.2) &&
         bounds.max.x - bounds.min.x < ftToM(1)
       );
     });
     expect(pillars.length).toBe(2);
+    // 車頂留著：A 柱頂端碰得到車頂底面，不懸空。
+    expect(car.roof.visible).toBe(true);
+    for (const pillar of pillars) {
+      expect(boundsOf(pillar).intersectsBox(roof)).toBe(true);
+    }
     const centers = pillars.map((pillar) => boundsOf(pillar).getCenter(new Vector3()));
     const [first, second] = centers.sort((a, b) => a.x - b.x);
     expect(first?.x).toBeLessThan(0);
