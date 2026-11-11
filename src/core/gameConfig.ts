@@ -3,6 +3,9 @@
 /** 物理固定更新頻率（每秒步數），與畫面更新率脫鉤。 */
 export const PHYSICS_HZ = 60;
 
+/** 一步物理的秒數（1/60 s）。 */
+export const FIXED_STEP_SECONDS = 1 / PHYSICS_HZ;
+
 /** 單幀最多累加的秒數；避免分頁切回來後一次補跑太多步物理。 */
 export const MAX_FRAME_SECONDS = 0.25;
 

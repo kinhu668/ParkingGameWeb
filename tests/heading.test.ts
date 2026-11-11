@@ -4,6 +4,7 @@ import {
   headingDelta,
   headingFromDirection,
   headingToRotationY,
+  normalizeHeading,
   right,
   type GroundVector,
 } from '../src/core/heading';
@@ -185,5 +186,39 @@ describe('headingToRotationY：φ = −θ', () => {
   test('不取負號（φ = +θ）會轉錯邊：90° 會朝 −X', () => {
     const wrong = rotateAroundY(MODEL_FORWARD, degToRad(90));
     expectVector(wrong, -1, 0);
+  });
+});
+
+describe('normalizeHeading：折到 [0, 2π)', () => {
+  const FULL_TURN_RAD = 2 * Math.PI;
+
+  test('已經在範圍內的值原封不動（逐位元相同）', () => {
+    for (const heading of [0, 0.1, 1, degToRad(123.4), Math.PI, 6.28]) {
+      expect(normalizeHeading(heading)).toBe(heading);
+    }
+  });
+
+  test('負值與超過一圈的值折回來', () => {
+    expect(radToDeg(normalizeHeading(degToRad(-90)))).toBeCloseTo(270, DIGITS);
+    expect(radToDeg(normalizeHeading(degToRad(-1)))).toBeCloseTo(359, DIGITS);
+    expect(radToDeg(normalizeHeading(degToRad(400)))).toBeCloseTo(40, DIGITS);
+    expect(radToDeg(normalizeHeading(degToRad(-725)))).toBeCloseTo(355, DIGITS);
+  });
+
+  test('剛好一圈、負零、極小負值都回傳 0，不會回傳 2π', () => {
+    expect(normalizeHeading(FULL_TURN_RAD)).toBe(0);
+    expect(normalizeHeading(-FULL_TURN_RAD)).toBe(0);
+    expect(normalizeHeading(-0)).toBe(0);
+    expect(normalizeHeading(-1e-20)).toBe(0);
+  });
+
+  test('結果一律在 [0, 2π)，方向不變', () => {
+    for (const degrees of [...SAMPLE_HEADINGS_DEG, -720, -360, 360, 719.5, -0.001]) {
+      const heading = degToRad(degrees);
+      const normalized = normalizeHeading(heading);
+      expect(normalized).toBeGreaterThanOrEqual(0);
+      expect(normalized).toBeLessThan(FULL_TURN_RAD);
+      expectVector(forward(normalized), forward(heading).x, forward(heading).z);
+    }
   });
 });

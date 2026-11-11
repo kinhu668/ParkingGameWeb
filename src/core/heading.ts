@@ -30,6 +30,23 @@ export function headingFromDirection(dx: number, dz: number): number {
 }
 
 /**
+ * 把 heading 折到 [0, 2π)。
+ * 已經在範圍內的值原封不動回傳（不做「加一圈再取餘數」，那會吃掉低位元，讓靜止的車 heading 慢慢漂移）。
+ */
+export function normalizeHeading(headingRad: number): number {
+  const wrapped = headingRad % FULL_TURN_RAD;
+  if (wrapped > 0) {
+    return wrapped;
+  }
+  if (wrapped === 0) {
+    return 0;
+  }
+  // 極小的負值加一圈會進位成剛好 2π，這時算 0。
+  const lifted = wrapped + FULL_TURN_RAD;
+  return lifted < FULL_TURN_RAD ? lifted : 0;
+}
+
+/**
  * 從 fromRad 轉到 toRad 的最短有號夾角，折到 (−π, π]；正值 = 順時針。
  * 剛好反向時回傳 +π，不論引數順序。
  */
