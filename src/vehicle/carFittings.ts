@@ -420,6 +420,31 @@ function createDoorHandles(): BufferGeometry {
   return merged(handles);
 }
 
+/** 前後兩塊車牌的牌面與字（車的本地座標）。前車牌的字就是車長的最前端。 */
+function createPlates(text: string): {
+  front: ReturnType<typeof createPlate>;
+  rear: ReturnType<typeof createPlate>;
+} {
+  return {
+    front: createPlate(text, FIT.frontPlateCenterYM, -HALF_LENGTH_M + FIT.plateTextProudM, -1),
+    rear: createPlate(
+      text,
+      FIT.rearPlateCenterYM,
+      bodyEndFaceZM(false, 0, FIT.rearPlateCenterYM) + FIT.plateThicknessM,
+      1,
+    ),
+  };
+}
+
+/** 配件名稱：車牌上的字。背景車把它從共用的車殼裡拿掉，換成每台車自己的號碼。 */
+export const PLATE_TEXT_FITTINGS: readonly string[] = ['plate:front:text', 'plate:rear:text'];
+
+/** 一台車前後兩塊車牌上的字（車的本地座標，只有位置與法線、有索引）。 */
+export function createPlateTextGeometry(text: string): BufferGeometry {
+  const plates = createPlates(text);
+  return merged([plates.front.text, plates.rear.text]);
+}
+
 /** 建立全部的配件（還沒併進車殼）。每次呼叫都是新的幾何。 */
 export function createCarFittings(): CarFitting[] {
   const fittings: CarFitting[] = [];
@@ -492,24 +517,12 @@ export function createCarFittings(): CarFitting[] {
     ),
   );
 
-  // 車牌：同一個號碼前後各一塊。前車牌的字就是車長的最前端。
-  const text = plateText(DEFAULT_SEED);
-  const frontPlate = createPlate(
-    text,
-    FIT.frontPlateCenterYM,
-    -HALF_LENGTH_M + FIT.plateTextProudM,
-    -1,
-  );
-  add('plate:front', 'plate', frontPlate.plate);
-  add('plate:front:text', 'trim', frontPlate.text);
-  const rearPlate = createPlate(
-    text,
-    FIT.rearPlateCenterYM,
-    bodyEndFaceZM(false, 0, FIT.rearPlateCenterYM) + FIT.plateThicknessM,
-    1,
-  );
-  add('plate:rear', 'plate', rearPlate.plate);
-  add('plate:rear:text', 'trim', rearPlate.text);
+  // 車牌：同一個號碼前後各一塊。
+  const plates = createPlates(plateText(DEFAULT_SEED));
+  add('plate:front', 'plate', plates.front.plate);
+  add('plate:front:text', 'trim', plates.front.text);
+  add('plate:rear', 'plate', plates.rear.plate);
+  add('plate:rear:text', 'trim', plates.rear.text);
 
   const seams = createSeams();
   add('seam:doors', 'trim', seams.doors);
@@ -522,11 +535,18 @@ export function createCarFittings(): CarFitting[] {
 /**
  * 整台車身各材質分區的幾何：車殼曲面（carBody.ts）加上併進去的配件。
  * 每個分區的 `userData.fittings` 是併進這個分區的配件名稱。
+ * @param options plateText: false = 不併入車牌上的字（背景車另外畫每台車自己的號碼）
  */
-export function createBodyGeometries(detail: VehicleDetail): Map<BodyPart, BufferGeometry> {
+export function createBodyGeometries(
+  detail: VehicleDetail,
+  options: { readonly plateText?: boolean } = {},
+): Map<BodyPart, BufferGeometry> {
   const geometries = createShellGeometries(detail);
   const byPart = new Map<BodyPart, CarFitting[]>();
   for (const fitting of createCarFittings()) {
+    if (options.plateText === false && PLATE_TEXT_FITTINGS.includes(fitting.name)) {
+      continue;
+    }
     byPart.set(fitting.part, [...(byPart.get(fitting.part) ?? []), fitting]);
   }
   for (const [part, fittings] of byPart) {
