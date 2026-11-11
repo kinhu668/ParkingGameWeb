@@ -1,5 +1,6 @@
 // 斜俯視跟隨鏡頭：鏡頭位置 = 平滑後的目標點 + 固定的世界座標偏移，看向目標點。
 // 偏移固定在世界座標，所以鏡頭不隨車身旋轉。另有 `?cam=` 用的固定鏡頭預設。
+// 這個鏡頭現在只給 `?cam=follow` 的定格與 `?bench` 用；一般遊戲的鏡頭在 gameCamera.ts。
 import { PerspectiveCamera } from 'three';
 import { forward, right } from '../core/heading';
 import type { CameraPreset } from '../core/urlParams';

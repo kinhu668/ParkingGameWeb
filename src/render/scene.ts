@@ -5,7 +5,7 @@ import type { ParkingSpot } from '../level/parkingJudge';
 import { createGround } from '../props/ground';
 import { createSpotMarkings } from '../props/spotMarkings';
 import type { VehiclePose } from '../vehicle/bicycleModel';
-import { createCarMesh, updateCarMesh } from '../vehicle/carMesh';
+import { createCarMesh, setCarInteriorView, updateCarMesh } from '../vehicle/carMesh';
 import {
   GROUND_CONFIG,
   HEMISPHERE_LIGHT_CONFIG,
@@ -17,6 +17,8 @@ export interface GameScene {
   readonly scene: Scene;
   /** 每個畫面幀呼叫：把車擺到算圖姿態，並讓陰影範圍與地面跟著車走。 */
   update(pose: VehiclePose): void;
+  /** 駕駛座視角開關：開啟時藏起會擋住視線的車艙玻璃與車頂。 */
+  setInteriorView(enabled: boolean): void;
 }
 
 /** 場景的燈光：半球補光 + 會投影的太陽。 */
@@ -101,6 +103,9 @@ export function createGameScene(maxAnisotropy: number, spot: ParkingSpot): GameS
       // 車怎麼開都開不到地面邊緣。
       ground.position.x = Math.round(pose.x / GROUND_CONFIG.tileM) * GROUND_CONFIG.tileM;
       ground.position.z = Math.round(pose.z / GROUND_CONFIG.tileM) * GROUND_CONFIG.tileM;
+    },
+    setInteriorView(enabled) {
+      setCarInteriorView(car, enabled);
     },
   };
 }

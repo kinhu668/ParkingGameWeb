@@ -1,6 +1,6 @@
 // 畫面的可調數值：鏡頭、燈光、陰影、霧、地面、車位標線、車輛外觀。
 // 長度一律以英尺填寫，經 units.ts 換成公尺；顏色是 sRGB 十六進位。
-import { ftToM } from '../core/units';
+import { degToRad, ftToM, mphToMps } from '../core/units';
 
 /** 算圖器。 */
 export const RENDERER_CONFIG = {
@@ -9,7 +9,10 @@ export const RENDERER_CONFIG = {
   toneMappingExposure: 1.0,
 } as const;
 
-/** 斜俯視跟隨鏡頭。偏移是世界座標：鏡頭在目標點的上方、南邊（+Z），朝北看。 */
+/**
+ * 斜俯視跟隨鏡頭（`?cam=follow` 的定格與 `?bench` 用；一般遊戲的鏡頭見 GAME_CAMERA_CONFIG）。
+ * 偏移是世界座標：鏡頭在目標點的上方、南邊（+Z），朝北看。
+ */
 export const CAMERA_CONFIG = {
   fovDeg: 40,
   nearM: ftToM(2),
@@ -31,6 +34,69 @@ export const FIXED_CAMERA_CONFIG = {
   spotLowHeightM: ftToM(4.5),
   /** 鏡頭看向車位中心上方這個高度（大約是車身腰線）。 */
   spotLowLookAtHeightM: ftToM(2),
+} as const;
+
+/**
+ * 一般遊戲的鏡頭（按 V 循環）。每個模式有自己的視角（fovDeg）與近平面（nearM）；
+ * 貼在車上的兩個模式近平面要很近，否則會把眼前的引擎蓋、儀表板切掉。
+ */
+export const GAME_CAMERA_CONFIG = {
+  farM: ftToM(1500),
+
+  /** 車向前快過這個速度，跟車鏡頭的平滑朝向才追車頭；倒車快過這個速度則極慢地跟。其間（幾乎靜止）不動。 */
+  headingFollowSpeedMps: mphToMps(1),
+  /** 前進時平滑朝向追車頭的時間常數（秒）；轉彎時鏡頭會稍微落後。 */
+  headingTimeConstantS: 0.35,
+  /** 倒車時的時間常數（秒）：很慢，鏡頭留在車尾後方，不會甩到車頭前面。 */
+  reverseHeadingTimeConstantS: 2,
+  /** 跟車鏡頭位置與看向點的平滑時間常數（秒）。 */
+  positionTimeConstantS: 0.14,
+  lookAtTimeConstantS: 0.08,
+
+  /** 近距離跟車：鏡頭在車尾後方不遠、略高於車頂，看向車身上方。 */
+  chaseNear: {
+    fovDeg: 58,
+    nearM: ftToM(1),
+    /** 鏡頭離車尾（後保險桿）的水平距離。 */
+    behindRearM: ftToM(11),
+    heightM: ftToM(5.5),
+    /** 看向車身中心上方這個高度。 */
+    lookAtHeightM: ftToM(4),
+  },
+  /** 遠距離跟車：較高較遠的斜俯視，看得到車四周的地面。 */
+  chaseFar: {
+    fovDeg: 45,
+    nearM: ftToM(2),
+    behindRearM: ftToM(30),
+    heightM: ftToM(22),
+    lookAtHeightM: ftToM(2),
+  },
+  /** 引擎蓋：視點在引擎蓋中線上方，沿車頭向前略俯，畫面下方看得到引擎蓋與車頭。 */
+  hood: {
+    fovDeg: 65,
+    nearM: ftToM(0.25),
+    /** 相對車身中心：向右為正。 */
+    lateralM: 0,
+    heightM: ftToM(3.55),
+    /** 相對車身中心：向車頭為正。前擋下緣在 2.9 ft，這裡在它前方的引擎蓋上。 */
+    aheadM: ftToM(4.2),
+    pitchDownRad: degToRad(5),
+  },
+  /** 駕駛座：左側座位的眼睛位置，低於車頂、高於儀表板，在前擋後方。 */
+  cockpit: {
+    fovDeg: 72,
+    nearM: ftToM(0.25),
+    lateralM: ftToM(-1.3),
+    heightM: ftToM(3.9),
+    aheadM: ftToM(-0.8),
+    pitchDownRad: degToRad(3),
+  },
+  /** 俯視：車正上方垂直往下看，畫面上方是北（−Z），停車對位用。 */
+  top: {
+    fovDeg: 50,
+    nearM: ftToM(2),
+    heightM: ftToM(70),
+  },
 } as const;
 
 /** `?show=` 展示台：深色背景、圓形地台、固定主光與 3/4 視角。 */
@@ -165,12 +231,21 @@ export const CAR_VISUAL_CONFIG = {
   lightDepthM: ftToM(0.3),
   /** 燈塊與輪框蓋凸出所在表面的量，避免共面閃爍。 */
   trimProudM: ftToM(0.06),
+  /** 儀表板：下車身頂面上、前擋後方的一條箱子，整個藏在車艙玻璃裡，只有駕駛座視角看得到。 */
+  dashboardHeightM: ftToM(0.35),
+  dashboardLengthM: ftToM(1.85),
+  /** 儀表板比車艙底部每側內縮，也離前擋下緣這麼遠（玻璃往內斜，要退到斜面後方）。 */
+  dashboardInsetM: ftToM(0.45),
+  /** A 柱（沿前擋兩側斜邊的細柱）的粗細。 */
+  pillarThicknessM: ftToM(0.18),
 
   bodyColor: 0x1f63b3,
   bodyRoughness: 0.38,
   bodyMetalness: 0.25,
   glassColor: 0x18222d,
   glassRoughness: 0.12,
+  dashboardColor: 0x23272d,
+  dashboardRoughness: 0.85,
   tireColor: 0x17181a,
   tireRoughness: 0.9,
   hubColor: 0xb4bac1,

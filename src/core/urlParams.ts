@@ -1,6 +1,7 @@
 // 把網址參數解析成有型別的啟動模式。不碰 DOM：查詢字串由呼叫端傳入。
 // 優先順序：show > cam > bench > 一般遊戲。
 // `?lang=` 不在這裡處理（i18n.detectLocale 負責），所以可以與任何模式並用。
+// `?view=`（一般遊戲的初始鏡頭）也不在這裡：它不是啟動模式，由 cameraView.ts 解析。
 
 /** `?cam=` 可用的固定鏡頭預設。 */
 export const CAMERA_PRESETS = ['follow', 'top', 'spot_low'] as const;

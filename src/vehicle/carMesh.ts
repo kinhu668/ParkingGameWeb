@@ -1,4 +1,5 @@
-// 第 1 階段的簡單車輛模型：下車身 + 斜面車艙 + 車頂 + 四個輪子 + 頭燈／尾燈色塊。
+// 第 1 階段的簡單車輛模型：下車身 + 斜面車艙 + 車頂 + 四個輪子 + 頭燈／尾燈色塊，
+// 以及駕駛座視角要看的極簡內裝（儀表板、A 柱）。
 // 建模約定：車頭朝本地 −Z、右側是本地 +X、輪胎著地點在 y = 0、原點在車身中心的地面投影。
 import {
   BoxGeometry,
@@ -6,6 +7,7 @@ import {
   Group,
   Mesh,
   MeshStandardMaterial,
+  Vector3,
   type BufferGeometry,
   type Material,
 } from 'three';
@@ -19,6 +21,10 @@ export interface CarMesh {
   readonly root: Group;
   /** 兩個前輪的轉向樞軸（左、右）。 */
   readonly frontWheelPivots: readonly [Group, Group];
+  /** 車艙玻璃（不透明的深色方塊）。駕駛座視角要藏起來，否則視點被包在裡面什麼都看不到。 */
+  readonly cabinGlass: Mesh;
+  /** 車頂；駕駛座視角與玻璃一起藏起來。 */
+  readonly roof: Mesh;
 }
 
 const HALF_LENGTH_M = VEHICLE_CONFIG_SI.lengthM / 2;
@@ -54,6 +60,15 @@ function createCabinGeometry(widthM: number, heightM: number, lengthM: number): 
   return geometry;
 }
 
+/** 從 from 到 to 的細方柱（A 柱用）：方塊的長軸（本地 Y）轉到兩點連線的方向。 */
+function createStrut(from: Vector3, to: Vector3, thicknessM: number, material: Material): Mesh {
+  const span = new Vector3().subVectors(to, from);
+  const strut = shadowMesh(new BoxGeometry(thicknessM, span.length(), thicknessM), material);
+  strut.position.copy(from).addScaledVector(span, 0.5);
+  strut.quaternion.setFromUnitVectors(new Vector3(0, 1, 0), span.normalize());
+  return strut;
+}
+
 export function createCarMesh(): CarMesh {
   const paint = new MeshStandardMaterial({
     color: VISUAL.bodyColor,
@@ -63,6 +78,10 @@ export function createCarMesh(): CarMesh {
   const glass = new MeshStandardMaterial({
     color: VISUAL.glassColor,
     roughness: VISUAL.glassRoughness,
+  });
+  const dashboardTrim = new MeshStandardMaterial({
+    color: VISUAL.dashboardColor,
+    roughness: VISUAL.dashboardRoughness,
   });
   const tire = new MeshStandardMaterial({
     color: VISUAL.tireColor,
@@ -118,6 +137,40 @@ export function createCarMesh(): CarMesh {
   );
   root.add(roof);
 
+  // 儀表板：下車身頂面上、前擋後方的一條箱子。整個在車艙玻璃裡面，從車外看不到。
+  const cabinFrontZM = cabinCenterZM - cabinLengthM / 2;
+  const dashboard = shadowMesh(
+    new BoxGeometry(
+      cabinWidthM - 2 * VISUAL.dashboardInsetM,
+      VISUAL.dashboardHeightM,
+      VISUAL.dashboardLengthM,
+    ),
+    dashboardTrim,
+  );
+  dashboard.position.set(
+    0,
+    bodyTopM + VISUAL.dashboardHeightM / 2,
+    cabinFrontZM + VISUAL.dashboardInsetM + VISUAL.dashboardLengthM / 2,
+  );
+  root.add(dashboard);
+
+  // A 柱：沿前擋兩側的斜邊，從車艙前下角到車頂前角。一半露在玻璃外，從車外看是前擋的邊框。
+  const glassTopM = bodyTopM + glassHeightM;
+  for (const side of [-1, 1]) {
+    root.add(
+      createStrut(
+        new Vector3((side * cabinWidthM) / 2, bodyTopM, cabinFrontZM),
+        new Vector3(
+          side * (cabinWidthM / 2 - VISUAL.cabinTopSideInsetM),
+          glassTopM,
+          cabinFrontZM + VISUAL.windshieldRakeM,
+        ),
+        VISUAL.pillarThicknessM,
+        paint,
+      ),
+    );
+  }
+
   // 燈塊：包住車身上緣的兩個角，略凸出端面與頂面，從正後上方的鏡頭也看得到。
   const lightGeometry = new BoxGeometry(
     VISUAL.lightWidthM,
@@ -162,7 +215,16 @@ export function createCarMesh(): CarMesh {
   createWheel(-1, HALF_WHEELBASE_M);
   createWheel(1, HALF_WHEELBASE_M);
 
-  return { root, frontWheelPivots: [frontLeft, frontRight] };
+  return { root, frontWheelPivots: [frontLeft, frontRight], cabinGlass: cabin, roof };
+}
+
+/**
+ * 駕駛座視角開關：開啟時藏起車艙玻璃與車頂，視線才看得出去，並看得到儀表板、A 柱與引擎蓋；
+ * 關閉就恢復外觀。藏起來的網格也不投影，所以這段期間地上的車影少了車艙那一塊。
+ */
+export function setCarInteriorView(car: CarMesh, enabled: boolean): void {
+  car.cabinGlass.visible = !enabled;
+  car.roof.visible = !enabled;
 }
 
 /** 把模型擺到指定姿態：車身位置與朝向、前輪轉向角。 */
