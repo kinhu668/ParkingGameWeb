@@ -13,7 +13,13 @@ import { createGround } from '../props/ground';
 import { createCurbs, createWheelStop } from '../props/lotEdges';
 import { createSpotMarkings } from '../props/spotMarkings';
 import type { VehiclePose } from '../vehicle/bicycleModel';
-import { createCarMesh, setCarInteriorView, updateCarMesh } from '../vehicle/carMesh';
+import {
+  createCarMesh,
+  setCarInteriorView,
+  setCarLights,
+  updateCarMesh,
+  type CarLights,
+} from '../vehicle/carMesh';
 import type { QualitySettings } from './quality';
 import {
   FOG_CONFIG,
@@ -29,6 +35,8 @@ export interface GameScene {
   update(pose: VehiclePose): void;
   /** 駕駛座視角開關：開啟時藏起玻璃（車殼、頂篷、內裝保留）。 */
   setInteriorView(enabled: boolean): void;
+  /** 燈號：煞車燈、倒車燈。 */
+  setLights(lights: CarLights): void;
 }
 
 /** 場景的燈光：半球補光 + 會投影的太陽。 */
@@ -154,6 +162,9 @@ export function createGameScene(
     },
     setInteriorView(enabled) {
       setCarInteriorView(car, enabled);
+    },
+    setLights(lights) {
+      setCarLights(car, lights);
     },
   };
 }

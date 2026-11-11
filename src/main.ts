@@ -34,6 +34,7 @@ import { runShowcase } from './render/showcase';
 import { createHud } from './ui/hud';
 import './ui/style.css';
 import { interpolateVehiclePose } from './vehicle/bicycleModel';
+import { carLightsFor } from './vehicle/carMesh';
 
 declare global {
   interface Window {
@@ -114,6 +115,7 @@ function runGame({ renderer, quality, pipeline }: RenderContext): void {
     gameScene.update(pose);
     // 駕駛座視角要藏起玻璃，其他模式恢復。
     gameScene.setInteriorView(gameCamera.view() === 'cockpit');
+    gameScene.setLights(carLightsFor(driveInput, session.vehicle.speedMps));
     gameCamera.update(pose, session.vehicle.speedMps, frameSeconds);
     pipeline.render(gameScene.scene, gameCamera.camera);
     hud.update(session.vehicle.speedMps, session.parked);

@@ -18,11 +18,19 @@ import {
 import { forward, headingToRotationY } from '../core/heading';
 import type { VehicleDetail } from '../render/quality';
 import { CAR_DETAIL_CONFIG, CAR_VISUAL_CONFIG as VISUAL } from '../render/renderConfig';
-import type { VehiclePose } from './bicycleModel';
+import type { DriveInput, VehiclePose } from './bicycleModel';
 import { BODY_LAYOUT, createBodyGeometries, type BodyPart } from './carBody';
 import { createCarInterior } from './carInterior';
 import { createBrakeDiscGeometry, createRimGeometry, createTireGeometry } from './carWheel';
 import { VEHICLE_CONFIG_SI } from './vehicleConfig';
+
+/** 燈號狀態。 */
+export interface CarLights {
+  /** 煞車燈（尾燈加亮）。 */
+  readonly braking: boolean;
+  /** 倒車燈。 */
+  readonly reversing: boolean;
+}
 
 export interface CarMesh {
   /** 整台車；位置與 rotation.y 由 updateCarMesh 設定。 */
@@ -39,6 +47,9 @@ export interface CarMesh {
   readonly glass: Mesh;
   /** 車艙內襯的上半部：頂篷與 A／B／C 柱內飾。只有從車裡（或隔著玻璃）才看得到。 */
   readonly headliner: Mesh;
+  /** 尾燈與倒車燈的材質；亮度由 setCarLights 設定。 */
+  readonly taillightMaterial: MeshStandardMaterial;
+  readonly reverseLightMaterial: MeshStandardMaterial;
   /** 上一次擺放的位置，用來算輪子滾了多遠；還沒擺過是 undefined。 */
   lastPlacement: { readonly x: number; readonly z: number } | undefined;
 }
@@ -225,6 +236,8 @@ export function createCarMesh(detail: VehicleDetail = 'high'): CarMesh {
     body,
     glass: glassMesh,
     headliner: headlinerMesh,
+    taillightMaterial,
+    reverseLightMaterial,
     lastPlacement: undefined,
   };
 }
@@ -235,6 +248,27 @@ export function createCarMesh(detail: VehicleDetail = 'high'): CarMesh {
  */
 export function setCarInteriorView(car: CarMesh, enabled: boolean): void {
   car.glass.visible = !enabled;
+}
+
+/**
+ * 由駕駛輸入與車速決定燈號（與 bicycleModel 的車速規則一致，但不影響物理）：
+ * 手煞車、或油門與行進方向相反（正在煞車）→ 煞車燈；正在倒退、或靜止時按著倒車 → 倒車燈。
+ */
+export function carLightsFor(input: DriveInput, speedMps: number): CarLights {
+  return {
+    braking: input.handbrake || speedMps * input.throttle < 0,
+    reversing: speedMps < 0 || (speedMps === 0 && input.throttle < 0),
+  };
+}
+
+/** 套用燈號：煞車時尾燈加亮，倒車時倒車燈亮。 */
+export function setCarLights(car: CarMesh, lights: CarLights): void {
+  car.taillightMaterial.emissiveIntensity = lights.braking
+    ? VISUAL.brakeLightEmissiveIntensity
+    : VISUAL.taillightEmissiveIntensity;
+  car.reverseLightMaterial.emissiveIntensity = lights.reversing
+    ? VISUAL.reverseLightEmissiveIntensity
+    : 0;
 }
 
 /** 把模型擺到指定姿態：車身位置與朝向、前輪與方向盤的轉向角；輪子依這次與上次位置的距離滾動。 */

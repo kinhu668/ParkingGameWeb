@@ -23,8 +23,15 @@ import {
   SPOT_MARKING_CONFIG,
 } from '../src/render/renderConfig';
 import { SHOWCASE_IDS, createShowcaseObject } from '../src/render/showcase';
+import type { DriveInput } from '../src/vehicle/bicycleModel';
 import { BODY_LAYOUT } from '../src/vehicle/carBody';
-import { createCarMesh, updateCarMesh, type CarMesh } from '../src/vehicle/carMesh';
+import {
+  carLightsFor,
+  createCarMesh,
+  setCarLights,
+  updateCarMesh,
+  type CarMesh,
+} from '../src/vehicle/carMesh';
 import { VEHICLE_CONFIG_SI } from '../src/vehicle/vehicleConfig';
 
 const DIGITS = 9;
@@ -263,6 +270,58 @@ describe('車輛模型 carMesh', () => {
     );
     updateCarMesh(car, { x: 0, z: 0, headingRad: 0, steerRad: 0 });
     expect(car.steeringWheel.rotation.z).toBeCloseTo(0, DIGITS);
+  });
+});
+
+describe('燈號 carLightsFor / setCarLights', () => {
+  const drive = (throttle: -1 | 0 | 1, handbrake = false): DriveInput => ({
+    throttle,
+    steer: 0,
+    handbrake,
+  });
+
+  test('煞車燈：手煞車，或油門與行進方向相反；滑行與加速不亮', () => {
+    expect(carLightsFor(drive(0, true), 3).braking).toBe(true);
+    expect(carLightsFor(drive(-1), 3).braking).toBe(true);
+    expect(carLightsFor(drive(1), -2).braking).toBe(true);
+    expect(carLightsFor(drive(0), 3).braking).toBe(false);
+    expect(carLightsFor(drive(1), 3).braking).toBe(false);
+    expect(carLightsFor(drive(-1), -2).braking).toBe(false);
+    expect(carLightsFor(drive(0), 0).braking).toBe(false);
+  });
+
+  test('倒車燈：正在倒退，或靜止時按著倒車；前進中按倒車只是煞車', () => {
+    expect(carLightsFor(drive(-1), -2).reversing).toBe(true);
+    expect(carLightsFor(drive(0), -1).reversing).toBe(true);
+    expect(carLightsFor(drive(-1), 0).reversing).toBe(true);
+    expect(carLightsFor(drive(-1), 3).reversing).toBe(false);
+    expect(carLightsFor(drive(1), 0).reversing).toBe(false);
+    expect(carLightsFor(drive(0), 0).reversing).toBe(false);
+  });
+
+  test('頭燈常亮；尾燈平常微亮、煞車時加亮；倒車燈平常不亮', () => {
+    const car = createCarMesh();
+    const emissiveIntensities = new Map<number, number>();
+    car.root.traverse((object) => {
+      if (object instanceof Mesh && object.material instanceof MeshStandardMaterial) {
+        emissiveIntensities.set(object.material.emissive.getHex(), object.material.emissiveIntensity);
+      }
+    });
+    expect(emissiveIntensities.get(CAR_VISUAL_CONFIG.headlightColor)).toBeGreaterThan(1);
+
+    expect(car.taillightMaterial.emissive.getHex()).toBe(CAR_VISUAL_CONFIG.taillightColor);
+    expect(car.taillightMaterial.emissiveIntensity).toBe(CAR_VISUAL_CONFIG.taillightEmissiveIntensity);
+    expect(car.reverseLightMaterial.emissiveIntensity).toBe(0);
+
+    setCarLights(car, { braking: true, reversing: true });
+    expect(car.taillightMaterial.emissiveIntensity).toBeGreaterThan(
+      2 * CAR_VISUAL_CONFIG.taillightEmissiveIntensity,
+    );
+    expect(car.reverseLightMaterial.emissiveIntensity).toBeGreaterThan(1);
+
+    setCarLights(car, { braking: false, reversing: false });
+    expect(car.taillightMaterial.emissiveIntensity).toBe(CAR_VISUAL_CONFIG.taillightEmissiveIntensity);
+    expect(car.reverseLightMaterial.emissiveIntensity).toBe(0);
   });
 });
 
