@@ -9,6 +9,7 @@ import {
 } from 'three';
 import { DEFAULT_SEED } from '../core/gameConfig';
 import type { GroundVector } from '../core/heading';
+import { createSceneEffects } from '../effects/sceneEffects';
 import type { ParkingSpot } from '../level/parkingJudge';
 import { createGround } from '../props/ground';
 import { createCurbs, createWheelStop, curbInnerBounds } from '../props/lotEdges';
@@ -36,8 +37,11 @@ import { SUN_DIRECTION, createSkyEnvironment, type Direction3 } from './sky';
 
 export interface GameScene {
   readonly scene: Scene;
-  /** 每個畫面幀呼叫：把車擺到算圖姿態，並讓地面跟著車走（車開出場地時陰影範圍也跟著走）。 */
-  update(pose: VehiclePose): void;
+  /**
+   * 每個畫面幀呼叫：把車擺到算圖姿態，並讓地面跟著車走（車開出場地時陰影範圍也跟著走）。
+   * @param frameSeconds 距離上一幀多久（輪胎痕、灰塵、落葉用）；定格截圖不傳，這些效果停在起始狀態。
+   */
+  update(pose: VehiclePose, frameSeconds?: number): void;
   /** 駕駛座視角開關：開啟時藏起玻璃（車殼、頂篷、內裝保留）。 */
   setInteriorView(enabled: boolean): void;
   /** 燈號：煞車燈、倒車燈。 */
@@ -234,8 +238,9 @@ export function createGameScene(
 
   return {
     scene,
-    update(pose) {
+    update(pose, frameSeconds = 0) {
       updateCarMesh(car, pose);
+      effects.update(pose, frameSeconds);
 
       // 車在場地裡時陰影範圍不動；開出去多遠，範圍就跟著平移多遠。
       lights.aimAt(

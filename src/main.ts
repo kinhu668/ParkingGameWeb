@@ -117,7 +117,7 @@ function runGame({ renderer, quality, pipeline }: RenderContext): void {
     }
 
     const pose = interpolateVehiclePose(previousVehicle, session.vehicle, loop.alpha);
-    gameScene.update(pose);
+    gameScene.update(pose, frameSeconds);
     // 駕駛座視角要藏起玻璃，其他模式恢復。
     gameScene.setInteriorView(gameCamera.view() === 'cockpit');
     gameScene.setLights(carLightsFor(driveInput, session.vehicle.speedMps));

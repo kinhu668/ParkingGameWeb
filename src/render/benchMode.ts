@@ -80,7 +80,7 @@ export function runBench({ renderer, quality, pipeline }: RenderContext): void {
     }
 
     const pose = interpolateVehiclePose(previousVehicle, vehicle, loop.alpha);
-    gameScene.update(pose);
+    gameScene.update(pose, frameSeconds);
     followCamera.update(pose.x, pose.z, frameSeconds);
     pipeline.render(gameScene.scene, followCamera.camera);
 
