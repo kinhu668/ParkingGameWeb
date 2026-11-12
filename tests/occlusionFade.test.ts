@@ -6,6 +6,7 @@ import { ftToM } from '../src/core/units';
 import { levelById } from '../src/level/levelCatalog';
 import { createEnvironmentLayout } from '../src/props/environmentLayout';
 import { createEnvironment } from '../src/props/environments';
+import { createObstacleMeshes } from '../src/props/obstacleMeshes';
 import { occluderBox, occludersOf, registerOccluders } from '../src/props/occluders';
 import { createParkedCars } from '../src/props/parkedCars';
 import { createGameCamera } from '../src/render/gameCamera';
@@ -265,6 +266,52 @@ describe('只淡擋住的那一個實例', () => {
     }
     expect(fade.fadedCount()).toBe(0);
     expect(instanceScale(mesh, 0)).toBeGreaterThan(1);
+  });
+});
+
+describe('w1_l04：推車回收架', () => {
+  const level = levelById('w1_l04');
+  if (level === undefined) {
+    throw new Error('找不到 w1_l04');
+  }
+  const corral = level.obstaclesFt.find((obstacle) => obstacle.type === 'cart_corral');
+  if (corral === undefined) {
+    throw new Error('w1_l04 沒有推車回收架');
+  }
+
+  test('回收架擋住跟車鏡頭時，兩面的 CART RETURN 牌子跟著一起淡，不擋了一起恢復', () => {
+    const obstacles = createObstacleMeshes(level, 'low');
+    const signs = obstacles.children.filter(
+      (child): child is Mesh<BoxGeometry, MeshStandardMaterial> =>
+        child instanceof Mesh && child.name === 'sign',
+    );
+    expect(signs).toHaveLength(2);
+    const fade = createOcclusionFade(obstacles);
+
+    // 車在回收架的一側、鏡頭在另一側（都在回收架的中線上），視線穿過回收架。
+    const x = ftToM(corral.centerXFt);
+    const z = ftToM(corral.centerZFt);
+    const pose: VehiclePose = { x, z: z - ftToM(14), headingRad: 0, steerRad: 0 };
+    const camera = { x, y: ftToM(5.5), z: z + ftToM(8) };
+    for (let frame = 0; frame < 30; frame += 1) {
+      fade.update(camera, pose, true, FRAME_SECONDS);
+    }
+    expect(fade.fadedCount()).toBe(1);
+    const corralMesh = obstacles.getObjectByName('obstacle:cart_corral');
+    expect(corralMesh instanceof InstancedMesh && standIns(corralMesh).length).toBe(1);
+    for (const sign of signs) {
+      expect(sign.material.transparent).toBe(true);
+      expect(sign.material.opacity).toBe(OCCLUSION_FADE_CONFIG.opacity);
+    }
+
+    for (let frame = 0; frame < 30; frame += 1) {
+      fade.update(camera, pose, false, FRAME_SECONDS);
+    }
+    expect(fade.fadedCount()).toBe(0);
+    for (const sign of signs) {
+      expect(sign.material.transparent).toBe(false);
+      expect(sign.material.opacity).toBe(1);
+    }
   });
 });
 

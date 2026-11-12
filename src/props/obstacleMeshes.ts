@@ -14,6 +14,7 @@ import {
   SphereGeometry,
   Vector3,
   type BufferGeometry,
+  type Mesh,
 } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { forward, headingToRotationY } from '../core/heading';
@@ -445,6 +446,50 @@ const BOUNDS_SIDE_VARIATION = [
 ] as const;
 
 /**
+ * 貼在模型上的字：投遞箱前面的 MAIL、推車回收架招牌兩面的 CART RETURN。其他種類沒有。
+ * 每一片都有自己專用的材質，所以可以跟著它的模型一起淡（遮擋半透明）。
+ */
+function obstacleLabels(type: ModelObstacleType, obstacle: ObbFt): Mesh[] {
+  const headingRad = degToRad(obstacle.headingDeg);
+  const ahead = forward(headingRad);
+  const x = ftToM(obstacle.centerXFt);
+  const z = ftToM(obstacle.centerZFt);
+  if (type === 'mailbox') {
+    const outM = ftToM(obstacle.lengthFt / 2 + 0.03);
+    return [
+      createSignMesh({
+        text: signText('post_office', 'MAIL'),
+        style: 'mail',
+        x: x + ahead.x * outM,
+        y: ftToM(2.15),
+        z: z + ahead.z * outM,
+        facingRad: headingRad,
+        widthM: ftToM(1.3),
+        heightM: ftToM(0.55),
+        glow: 0,
+      }),
+    ];
+  }
+  if (type === 'cart_corral') {
+    return [1, -1].map((face) => {
+      const outM = ftToM(obstacle.lengthFt / 2 - 0.12 + face * 0.1);
+      return createSignMesh({
+        text: signText('warehouse_club', 'CART RETURN'),
+        style: 'club',
+        x: x + ahead.x * outM,
+        y: ftToM(6.25),
+        z: z + ahead.z * outM,
+        facingRad: face > 0 ? headingRad : headingRad + Math.PI,
+        widthM: ftToM(5.6),
+        heightM: ftToM(1.45),
+        glow: 0.25,
+      });
+    });
+  }
+  return [];
+}
+
+/**
  * 建立障礙物與邊界的模型。
  * 子物件：每種障礙物一個 InstancedMesh（`obstacle:<type>`，userData.obstacleIndices 是各實例在 JSON 裡的索引）、
  * 停放車輛的群組（`parkedCars`，同樣有 obstacleIndices）、邊界（`bounds`）、貼在障礙物上的字（`sign`）。
@@ -512,6 +557,11 @@ export function createObstacleMeshes(source: ObstacleSource, detail: VehicleDeta
         instance,
         obstacleMatrix(obstacle, geometry, type === 'wall' ? ftToM(wall.heightFt) : 1),
       );
+      // 貼在模型上的字（投遞箱的 MAIL、回收架的 CART RETURN）：跟著這一個模型一起淡。
+      const labels = obstacleLabels(type, obstacle);
+      if (labels.length > 0) {
+        group.add(...labels);
+      }
       if (heightM >= FADE.minHeightM) {
         occluders.push({
           boxes: [
@@ -522,6 +572,7 @@ export function createObstacleMeshes(source: ObstacleSource, detail: VehicleDeta
             ),
           ],
           parts: [{ mesh, index: instance }],
+          ...(labels.length > 0 ? { meshes: labels } : {}),
         });
       }
       if (type === 'wall') {
@@ -536,49 +587,6 @@ export function createObstacleMeshes(source: ObstacleSource, detail: VehicleDeta
     mesh.receiveShadow = true;
     group.add(mesh);
     registerOccluders(group, occluders);
-
-    // 貼在模型上的字：投遞箱前面的 MAIL、推車回收架招牌兩面的 CART RETURN。
-    for (const index of indices) {
-      const obstacle = obstacleAt(index);
-      const headingRad = degToRad(obstacle.headingDeg);
-      const ahead = forward(headingRad);
-      const x = ftToM(obstacle.centerXFt);
-      const z = ftToM(obstacle.centerZFt);
-      if (type === 'mailbox') {
-        const outM = ftToM(obstacle.lengthFt / 2 + 0.03);
-        group.add(
-          createSignMesh({
-            text: signText('post_office', 'MAIL'),
-            style: 'mail',
-            x: x + ahead.x * outM,
-            y: ftToM(2.15),
-            z: z + ahead.z * outM,
-            facingRad: headingRad,
-            widthM: ftToM(1.3),
-            heightM: ftToM(0.55),
-            glow: 0,
-          }),
-        );
-      }
-      if (type === 'cart_corral') {
-        for (const face of [1, -1]) {
-          const outM = ftToM(obstacle.lengthFt / 2 - 0.12 + face * 0.1);
-          group.add(
-            createSignMesh({
-              text: signText('warehouse_club', 'CART RETURN'),
-              style: 'club',
-              x: x + ahead.x * outM,
-              y: ftToM(6.25),
-              z: z + ahead.z * outM,
-              facingRad: face > 0 ? headingRad : headingRad + Math.PI,
-              widthM: ftToM(5.6),
-              heightM: ftToM(1.45),
-              glow: 0.25,
-            }),
-          );
-        }
-      }
-    }
   }
 
   if (source.boundsFt !== undefined) {
