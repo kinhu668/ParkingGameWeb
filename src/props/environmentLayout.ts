@@ -499,6 +499,8 @@ function addPostOffice(builder: Builder, frame: SideFrame): void {
 const STREET = {
   sidewalk: 0xb3afa4,
   yellow: 0xd6b23a,
+  parkWall: 0x8c5a48,
+  grass: 0x4f6b3a,
   shops: [0x8c4a3c, 0xcdbf9f, 0x5f7480, 0x9b8468, 0x6f7f5c, 0xa1543a, 0x7a6a8a],
   awnings: [0x1f5b3a, 0x8f2a22, 0x27566b, 0xb9772a, 0x3b3a36],
 } as const;
@@ -508,7 +510,7 @@ const SIDEWALK_FT = 14;
 const STREET_OVERRUN_FT = 70;
 
 /**
- * 街道：bounds 是一段沿 X 的馬路。兩旁是人行道與一整排店面，路面有黃色中線、
+ * 街道：bounds 是一段沿 X 的馬路。兩旁是人行道，北側一整排店面、南側是矮牆與公園，路面有黃色中線、
  * 路邊停車格的白線（依目標車位與 JSON 裡的停放車輛畫格子），人行道上有路燈、行道樹與路牌。
  */
 function addCityStreet(builder: Builder, source: EnvironmentSource, bounds: BoundsFt, rng: Rng): void {
@@ -524,12 +526,20 @@ function addCityStreet(builder: Builder, source: EnvironmentSource, bounds: Boun
     builder.sideSlab('solid', frame, fromX, toX, CURB_FT, SIDEWALK_FT, 0, 0.48, STREET.sidewalk);
     builder.sideSlab('solid', frame, fromX, bounds.minXFt - CURB_FT, 0, CURB_FT, 0, 0.5, STREET.sidewalk);
     builder.sideSlab('solid', frame, bounds.maxXFt + CURB_FT, toX, 0, CURB_FT, 0, 0.5, STREET.sidewalk);
+    addLamps(builder, { ...frame, from: fromX + (side === 'n' ? 0 : 30), to: toX }, 62, 6);
+    addTrees(builder, { ...frame, from: frame.from + (side === 'n' ? 25 : -5), to: frame.to - 20 }, rng, 9.5, 58, 7);
+    if (side === 's') {
+      // 南側（固定的跟隨鏡頭在這一邊）不蓋房子：人行道外是一道矮磚牆與公園，鏡頭才看得到街道與對面的店面。
+      builder.sideSlab('solid', frame, fromX, toX, SIDEWALK_FT, SIDEWALK_FT + 1, 0, 2.6, STREET.parkWall);
+      builder.sideSlab('solid', frame, fromX, toX, SIDEWALK_FT + 1, SIDEWALK_FT + 90, 0, 0.3, STREET.grass);
+      addTrees(builder, frame, rng, SIDEWALK_FT + 14, 30);
+      addTrees(builder, frame, rng, SIDEWALK_FT + 42, 36);
+      continue;
+    }
     // 店面：一棟接一棟，寬度、高度、顏色各自不同。靠近中間的幾間掛招牌。
     let x = fromX;
-    const namesHere = side === 'n' ? 3 : 2;
-    let named = 0;
     while (x < toX - 12) {
-      const width = Math.min(26 + 14 * rng(), toX - x);
+      const width = Math.min(28 + 6 * rng(), toX - x);
       const height = 24 + Math.floor(rng() * 3) * 7;
       const color = STREET.shops[Math.floor(rng() * STREET.shops.length)] ?? STREET.shops[0];
       const awning = STREET.awnings[Math.floor(rng() * STREET.awnings.length)] ?? STREET.awnings[0];
@@ -541,7 +551,7 @@ function addCityStreet(builder: Builder, source: EnvironmentSource, bounds: Boun
       builder.sideSlab('solid', frame, x + 1.5, x + width - 1.5, SIDEWALK_FT - 3, SIDEWALK_FT, 9.6, 10.2, awning);
       addWindowGrid(builder, frame, x + 1, x + width - 1, SIDEWALK_FT, 13.5, height, rng);
       const center = x + width / 2;
-      if (named < namesHere && center > bounds.minXFt + 8 + (side === 'n' ? 0 : 12) && center < bounds.maxXFt && nextName < shopNames.length) {
+      if (center > bounds.minXFt - 25 && center < bounds.maxXFt + 25 && nextName < shopNames.length) {
         const text = shopNames[nextName] ?? '';
         builder.sign(
           frame,
@@ -550,17 +560,14 @@ function addCityStreet(builder: Builder, source: EnvironmentSource, bounds: Boun
           center,
           SIDEWALK_FT,
           12,
-          Math.min(width - 5, 24),
-          2.7,
+          Math.min(width - 4, 26),
+          3.2,
           0.45,
         );
         nextName += 1;
-        named += 1;
       }
       x += width;
     }
-    addLamps(builder, { ...frame, from: fromX + (side === 'n' ? 0 : 30), to: toX }, 62, 6);
-    addTrees(builder, { ...frame, from: frame.from + (side === 'n' ? 25 : -5), to: frame.to - 20 }, rng, 9.5, 58, 7);
   }
 
   // 路面標線。目標車位在路的哪一側，就在那一側畫路邊停車格。
