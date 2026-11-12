@@ -18,6 +18,12 @@ export interface SceneEffects {
    * @param frameSeconds 距離上一幀多久；定格截圖傳 0：落葉與雨絲停在起始位置，沒有輪胎痕與灰塵。
    */
   update(pose: VehiclePose, frameSeconds: number): void;
+  /**
+   * 不畫灰塵地跑 draw（跑完恢復）。倒車輔助層的小畫面用：後視鏡沿著車身往後看，後輪揚起的灰塵就在視線正中間，
+   * 窄視角下幾顆半透明的粒子就蓋滿整個畫面；而且 three 用主畫布的高度算粒子的像素大小，
+   * 畫進小的離屏緩衝區時粒子會大上好幾倍。小畫面是看路用的，不畫這個裝飾效果。
+   */
+  drawWithoutDust(draw: () => void): void;
 }
 
 /** 灰塵與落葉各用自己的亂數序列（種子加上這個位移），互不影響，也不影響場地擺設。 */
@@ -86,6 +92,18 @@ export function createSceneEffects(
       dust?.update(pose, frameSeconds);
       leaves?.setTime(elapsedSeconds);
       rain?.update(elapsedSeconds, pose.x, pose.z);
+    },
+    drawWithoutDust(draw) {
+      if (dust === undefined || !dust.points.visible) {
+        draw();
+        return;
+      }
+      dust.points.visible = false;
+      try {
+        draw();
+      } finally {
+        dust.points.visible = true;
+      }
     },
   };
 }

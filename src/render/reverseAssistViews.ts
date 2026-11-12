@@ -4,6 +4,7 @@
 // - 後視鏡與倒後鏡頭左右鏡像（鏡子與真車的倒車顯影都是這樣）：畫面左邊就是車的左邊。
 // - 陰影貼圖沿用主畫面這一幀剛畫好的，不重畫。
 // - 跟車鏡頭的遮擋半透明不套用在這裡：畫這四個畫面時擺設都是不透明的（drawScene，見 occlusionFade.ts）。
+// - 車輪揚起的灰塵也不畫（同一個 drawScene，見 SceneEffects.drawWithoutDust）：它就在後視鏡的視線上，會把畫面蓋成白霧。
 // 引導線與文字不在這裡：那是疊在上面的 SVG／DOM（ui/reverseAssist.ts），這裡只提供投影。
 import {
   HalfFloatType,
@@ -206,7 +207,7 @@ export type AssistSceneGuard = (draw: () => void) => void;
 
 /**
  * 建立四個視口的鏡頭與緩衝區。renderer 要用同一個 quality 建立。
- * @param drawScene 畫小畫面時包在外面的那一層（GameScene.drawUnfaded：不套用遮擋半透明）；不給就直接畫
+ * @param drawScene 畫小畫面時包在外面的那一層（GameScene.drawAssistViews：不套用遮擋半透明、不畫灰塵）；不給就直接畫
  */
 export function createReverseAssistViews(
   renderer: WebGLRenderer,

@@ -197,7 +197,7 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
   // 四個小畫面用沒有遮擋淡出的場景畫（跟車鏡頭的主畫面才淡）。
   const reverseAssist = parseAssistOffParam(window.location.search)
     ? undefined
-    : createReverseAssist(renderer, quality, hudRoot, gameScene.scene, gameScene.drawUnfaded);
+    : createReverseAssist(renderer, quality, hudRoot, gameScene.scene, gameScene.drawAssistViews);
 
   // 內插需要相鄰兩步的車輛狀態：previousVehicle = 上一步、session.vehicle = 最新一步。
   let session = startSession(layout);

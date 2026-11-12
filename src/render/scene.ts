@@ -100,10 +100,12 @@ export interface GameScene {
     frameSeconds: number,
   ): void;
   /**
-   * 用沒有遮擋淡出的場景跑 draw（淡掉的擺設暫時放回不透明，跑完恢復）。
-   * 倒車輔助層的小畫面用：那些鏡頭不是跟車鏡頭，看到的鄰車與燈柱不該是半透明的。
+   * 用「倒車輔助層的小畫面該看到的場景」跑 draw（跑完恢復）：
+   * - 沒有遮擋淡出：那些鏡頭不是跟車鏡頭，看到的鄰車與燈柱不該是半透明的（淡掉的擺設暫時放回不透明）。
+   * - 沒有車輪揚起的灰塵：它就在後視鏡的視線上，會把整個小畫面蓋成一片白霧（見 SceneEffects.drawWithoutDust）。
+   * 倒車燈與車尾的光斑照常畫。
    */
-  drawUnfaded(draw: () => void): void;
+  drawAssistViews(draw: () => void): void;
 }
 
 /** 場景的燈光：半球補光 + 會投影的太陽。 */
@@ -437,12 +439,14 @@ export function createGameScene(
     fadeOccluders(cameraPosition, pose, enabled, frameSeconds) {
       occlusion?.update(cameraPosition, pose, enabled, frameSeconds);
     },
-    drawUnfaded(draw) {
-      if (occlusion === undefined) {
-        draw();
-      } else {
-        occlusion.drawUnfaded(draw);
-      }
+    drawAssistViews(draw) {
+      effects.drawWithoutDust(() => {
+        if (occlusion === undefined) {
+          draw();
+        } else {
+          occlusion.drawUnfaded(draw);
+        }
+      });
     },
     update(pose, frameSeconds = 0) {
       updateCarMesh(car, pose);

@@ -74,7 +74,7 @@ function polylinePoints(
 /**
  * 在 root（#hud）裡建立倒車輔助層。一開始是收起的。
  * @param renderer 主畫布的 renderer（四個畫面貼在同一張畫布上）
- * @param drawScene 畫四個小畫面時包在外面的那一層（GameScene.drawUnfaded）：小畫面不套用跟車鏡頭的遮擋半透明
+ * @param drawScene 畫四個小畫面時包在外面的那一層（GameScene.drawAssistViews）：小畫面不套用跟車鏡頭的遮擋半透明、不畫車輪揚起的灰塵
  */
 export function createReverseAssist(
   renderer: WebGLRenderer,
