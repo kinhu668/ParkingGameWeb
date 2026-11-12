@@ -127,7 +127,7 @@ test('沒給 level：一般遊戲是關卡選擇；?cam、?bench 是原型關（
   await expect(html).toHaveAttribute('data-level', 'prototype');
 });
 
-test('?cam 可以指定關卡：w1_l03 定格在起點', async ({ page }) => {
+test('?cam 可以指定關卡：w1_l03 沿參考路線跑到 t 的定格', async ({ page }) => {
   await page.goto('/?cam=top&t=2&level=w1_l03');
   await expect(page.locator(SHOT_READY)).toBeAttached();
   await expect(page.locator('html')).toHaveAttribute('data-level', 'w1_l03');
@@ -140,7 +140,19 @@ test('不認得的 level：不啟動遊戲，畫面列出可用的關卡 id', as
   const notice = page.locator('#level-notice');
   await expect(notice).toBeVisible();
   await expect(notice).toContainText('找不到這個關卡');
-  await expect(notice.locator('code')).toHaveText(['prototype', 'w1_l01', 'w1_l03']);
+  await expect(notice.locator('code')).toHaveText([
+    'prototype',
+    'w1_l01',
+    'w1_l02',
+    'w1_l03',
+    'w1_l04',
+    'w1_l05',
+    'w1_l06',
+    'w1_l07',
+    'w1_l08',
+    'w1_l09',
+    'w1_l10',
+  ]);
   // 沒有悄悄退回原型關：沒有決議出關卡，也沒有遊戲狀態與 HUD。
   await expect(page.locator('html')).not.toHaveAttribute('data-level');
   expect(await page.evaluate(() => window.__parkingGame === undefined)).toBe(true);

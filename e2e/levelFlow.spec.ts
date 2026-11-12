@@ -1,8 +1,9 @@
 // 驗收 e2e（計畫 4.6）：關卡選擇 → 進關 → 用真實鍵盤停好車 → 結算有星 → 回關卡選擇星數還在、下一關解鎖
 // → 重新整理後仍然如此 → localStorage 的內容正確。另有：下一關／重來按鈕、Esc 暫停、?unlock=all、語言寫進存檔。
 //
-// 目前第 1 世界只做好兩關（w1_l01、w1_l03，其餘 8 格顯示「即將推出」），所以「下一關」是 w1_l03。
-// 測試不寫死下一關的 id：一律用「做好的關」（有 data-level 的卡）的第 1、第 2 張，之後補上 w1_l02 也成立。
+// 第 1 世界的 10 關都做好了，「下一關」是 w1_l02。
+// 測試不寫死下一關的 id：一律用「做好的關」（有 data-level 的卡）的第 1、第 2 張；
+// 「即將推出」的格子現在是 0 張，那幾個迴圈留著給之後還沒做完的世界。
 import type { Locator, Page } from '@playwright/test';
 import { driveIntoSpot, nextSnapshot } from './driving';
 import { expect, OUTPUT_DIR, test } from './fixtures';
