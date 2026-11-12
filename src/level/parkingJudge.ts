@@ -55,6 +55,11 @@ export function parkingSpotFromFt(spot: ParkingSpotFt): ParkingSpot {
   };
 }
 
+/** 車頭與車位 heading 的夾角（弧度，絕對值，0–π）。HUD 的角度誤差與 3 星的門檻都看它。 */
+export function angleErrorRad(vehicle: Pick<VehicleState, 'headingRad'>, spot: ParkingSpot): number {
+  return Math.abs(headingDelta(vehicle.headingRad, spot.headingRad));
+}
+
 /** 條件 1：車身四個角都在車位內。角轉到車位本地座標（橫向、縱向）後比半寬、半長；邊線算內。 */
 function allCornersInside(vehicle: VehicleState, spot: ParkingSpot): boolean {
   const spotRight = right(spot.headingRad);
@@ -75,8 +80,7 @@ function allCornersInside(vehicle: VehicleState, spot: ParkingSpot): boolean {
  * headingDelta 折到 (−180°, 180°]，所以車頭反向時差值是 180°，不會被當成對正。
  */
 function headingAligned(vehicle: VehicleState, spot: ParkingSpot): boolean {
-  const deltaRad = headingDelta(vehicle.headingRad, spot.headingRad);
-  return Math.abs(deltaRad) <= spot.angleToleranceRad + ANGLE_EPSILON_RAD;
+  return angleErrorRad(vehicle, spot) <= spot.angleToleranceRad + ANGLE_EPSILON_RAD;
 }
 
 /** 條件 3：車速夠慢。倒車是負值，看絕對值。 */

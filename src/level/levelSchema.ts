@@ -3,8 +3,10 @@
 // 座標約定（規格第 6 節）：pos 是 [x, y, z]（英尺），heading 0 朝 −Z、從上方看順時針為正（度）。
 import { PARKING_RULES } from '../core/gameConfig';
 import { degToRad, ftToM } from '../core/units';
+import { boundsWallsFt, obbFromFt } from './collision';
 import { defaultObstacleSizeFt, isObstacleType, type ObstacleType } from './obstacleTypes';
 import { parkingSpotFromFt, type ParkingSpotFt } from './parkingJudge';
+import { rulesFromLevel, type SessionRules } from './scoring';
 import type { SessionLayout } from './session';
 
 /** `environment` 可用的值：做好擺設的場景環境。 */
@@ -93,7 +95,10 @@ export interface LevelDefinition {
   /** 目標車位；angleToleranceDeg 一定有值。 */
   readonly spotFt: ParkingSpotFt;
   readonly obstaclesFt: readonly LevelObstacleFt[];
-  /** 判定、物理與算圖用的配置（公尺、弧度）。車一開始靜止、方向盤回正。 */
+  /**
+   * 判定、物理與算圖用的配置（公尺、弧度）。車一開始靜止、方向盤回正；
+   * obstacles 是障礙物加四面邊界的碰撞盒，rules 是換成步數的時間與碰撞上限。
+   */
   readonly layout: SessionLayout;
 }
 
@@ -322,8 +327,18 @@ function readObstacles(value: unknown, at: Cursor): readonly LevelObstacleFt[] {
   return items.map((item, index) => readObstacle(item, child(at, index)));
 }
 
-/** 英尺／度的關卡資料 → 一局的配置（公尺、弧度）。 */
-function layoutOf(startFt: LevelStartFt, spotFt: ParkingSpotFt): SessionLayout {
+/**
+ * 英尺／度的關卡資料 → 一局的配置（公尺、弧度）。
+ * 會撞到的矩形 = 關卡的障礙物（依 JSON 的順序）＋ bounds 的四面邊界（西、東、北、南）。
+ */
+function layoutOf(
+  startFt: LevelStartFt,
+  spotFt: ParkingSpotFt,
+  obstaclesFt: readonly LevelObstacleFt[],
+  boundsFt: LevelBoundsFt | undefined,
+  rules: SessionRules,
+): SessionLayout {
+  const wallsFt = boundsFt === undefined ? [] : boundsWallsFt(boundsFt);
   return {
     spot: parkingSpotFromFt(spotFt),
     startState: {
@@ -333,6 +348,8 @@ function layoutOf(startFt: LevelStartFt, spotFt: ParkingSpotFt): SessionLayout {
       speedMps: 0,
       steerRad: 0,
     },
+    obstacles: [...obstaclesFt, ...wallsFt].map(obbFromFt),
+    rules,
   };
 }
 
@@ -382,6 +399,9 @@ export function parseLevel(raw: unknown, source: string): LevelDefinition {
 
   const startFt = readStart(start.value, start.at);
   const spotFt = readTarget(target.value, target.at, angleToleranceDeg);
+  const maxCollisionCount = readInteger(maxCollisions.value, maxCollisions.at, 0, Infinity);
+  const boundsFt = bounds === undefined ? undefined : readBounds(bounds.value, bounds.at);
+  const obstaclesFt = readObstacles(obstacles.value, obstacles.at);
 
   return {
     id: levelId,
@@ -395,11 +415,17 @@ export function parseLevel(raw: unknown, source: string): LevelDefinition {
     vehicle: readOneOf(vehicle.value, vehicle.at, LEVEL_VEHICLES),
     timeLimitS,
     targetTimeS,
-    maxCollisions: readInteger(maxCollisions.value, maxCollisions.at, 0, Infinity),
-    ...(bounds === undefined ? {} : { boundsFt: readBounds(bounds.value, bounds.at) }),
+    maxCollisions: maxCollisionCount,
+    ...(boundsFt === undefined ? {} : { boundsFt }),
     startFt,
     spotFt,
-    obstaclesFt: readObstacles(obstacles.value, obstacles.at),
-    layout: layoutOf(startFt, spotFt),
+    obstaclesFt,
+    layout: layoutOf(
+      startFt,
+      spotFt,
+      obstaclesFt,
+      boundsFt,
+      rulesFromLevel(timeLimitS, targetTimeS, maxCollisionCount),
+    ),
   };
 }
