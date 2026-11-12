@@ -1,0 +1,15 @@
+{
+  "id": "w1_l01",
+  "name_key": "level.w1_l01.name",
+  "world": 1,
+  "environment": "open_lot",
+  "weather": "clear",
+  "vehicle": "sedan",
+  "time_limit": 60,
+  "target_time": 15,
+  "max_collisions": 5,
+  "bounds": { "min": [-30, -76], "max": [30, 16] },
+  "start": { "pos": [0, 0, 0], "heading": 0 },
+  "target": { "pos": [0, 0, -60], "heading": 0, "size": [11, 20] },
+  "obstacles": []
+}

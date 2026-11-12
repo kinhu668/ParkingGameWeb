@@ -1,0 +1,15 @@
+{
+  "id": "prototype",
+  "name_key": "level.prototype.name",
+  "world": 0,
+  "environment": "open_lot",
+  "weather": "dusk",
+  "vehicle": "sedan",
+  "time_limit": 600,
+  "target_time": 30,
+  "max_collisions": 0,
+  "angle_tolerance": 8,
+  "start": { "pos": [0, 0, 0], "heading": 0 },
+  "target": { "pos": [0, 0, -60], "heading": 0, "size": [9, 18] },
+  "obstacles": []
+}

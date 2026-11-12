@@ -1,0 +1,21 @@
+{
+  "id": "w1_l03",
+  "name_key": "level.w1_l03.name",
+  "world": 1,
+  "environment": "warehouse_club",
+  "weather": "clear",
+  "vehicle": "sedan",
+  "time_limit": 75,
+  "target_time": 22,
+  "max_collisions": 4,
+  "angle_tolerance": 8,
+  "bounds": { "min": [-22, -48], "max": [34, 44] },
+  "start": { "pos": [0, 0, -33], "heading": 180 },
+  "target": { "pos": [20, 0, 13], "heading": 90, "size": [9.5, 18.5] },
+  "obstacles": [
+    { "type": "parked_car", "pos": [20, 0, 4], "heading": 90 },
+    { "type": "parked_car", "pos": [20, 0, 22], "heading": 270 },
+    { "type": "cone", "pos": [-9, 0, 13] },
+    { "type": "shopping_cart", "pos": [-8, 0, 30], "heading": 20 }
+  ]
+}
