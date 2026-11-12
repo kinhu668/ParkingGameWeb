@@ -1,0 +1,22 @@
+{
+  "id": "w1_l08",
+  "name_key": "level.w1_l08.name",
+  "world": 1,
+  "environment": "city_street",
+  "weather": "clear",
+  "vehicle": "sedan",
+  "time_limit": 90,
+  "target_time": 30,
+  "max_collisions": 3,
+  "bounds": { "min": [-60, -14.5], "max": [60, 14] },
+  "start": { "pos": [-45, 0, 2], "heading": 90 },
+  "target": { "pos": [0, 0, 9.75], "heading": 90, "size": [8.5, 25] },
+  "obstacles": [
+    { "type": "parked_car", "pos": [-21, 0, 10.5], "heading": 90 },
+    { "type": "parked_car", "pos": [21, 0, 10.5], "heading": 90 },
+    { "type": "parked_car", "pos": [-41, 0, 10.5], "heading": 90 },
+    { "type": "parked_car", "pos": [42, 0, 10.5], "heading": 90 },
+    { "type": "trash_bin", "pos": [50, 0, -12.5] },
+    { "type": "planter", "pos": [-30, 0, -12] }
+  ]
+}

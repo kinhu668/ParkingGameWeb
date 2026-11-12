@@ -1,0 +1,26 @@
+{
+  "id": "w1_l10",
+  "name_key": "level.w1_l10.name",
+  "world": 1,
+  "environment": "narrow_alley",
+  "weather": "rain",
+  "vehicle": "sedan",
+  "time_limit": 130,
+  "target_time": 50,
+  "max_collisions": 2,
+  "angle_tolerance": 6,
+  "bounds": { "min": [-6.75, -40], "max": [31.25, 90] },
+  "start": { "pos": [1.3, 0, 80], "heading": 0 },
+  "target": { "pos": [3, 0, -30.75], "heading": 180, "size": [9, 17.5] },
+  "obstacles": [
+    { "type": "wall", "pos": [19, 0, 45], "heading": 0, "size": [24.5, 90] },
+    { "type": "dumpster", "pos": [-4.9, 0, 66], "heading": 90 },
+    { "type": "pallet", "pos": [4.95, 0, 40] },
+    { "type": "trash_bin", "pos": [-5.4, 0, 15] },
+    { "type": "trash_bin", "pos": [-5.4, 0, 18.5] },
+    { "type": "dumpster", "pos": [-3.6, 0, -33], "heading": 90 },
+    { "type": "pallet_stack", "pos": [9.8, 0, -27] },
+    { "type": "pallet", "pos": [24, 0, -36] },
+    { "type": "trash_bin", "pos": [28, 0, -4] }
+  ]
+}

@@ -15,7 +15,7 @@
   "obstacles": [
     { "type": "parked_car", "pos": [20, 0, 4], "heading": 90 },
     { "type": "parked_car", "pos": [20, 0, 22], "heading": 270 },
-    { "type": "cone", "pos": [-9, 0, 13] },
+    { "type": "cone", "pos": [-18, 0, 14] },
     { "type": "shopping_cart", "pos": [-8, 0, 30], "heading": 20 }
   ]
 }

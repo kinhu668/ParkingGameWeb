@@ -1,0 +1,28 @@
+{
+  "id": "w1_l07",
+  "name_key": "level.w1_l07.name",
+  "world": 1,
+  "environment": "warehouse_club",
+  "weather": "storm",
+  "vehicle": "sedan",
+  "time_limit": 95,
+  "target_time": 34,
+  "max_collisions": 3,
+  "bounds": { "min": [-48, -27.5], "max": [38, 30.5] },
+  "start": { "pos": [-38, 0, 1], "heading": 90 },
+  "target": { "pos": [0, 0, 21], "heading": 0, "size": [9, 18] },
+  "obstacles": [
+    { "type": "parked_car", "pos": [-18, 0, 21], "heading": 180 },
+    { "type": "parked_car", "pos": [-9, 0, 21], "heading": 0 },
+    { "type": "parked_car", "pos": [9, 0, 21], "heading": 180 },
+    { "type": "parked_car", "pos": [18, 0, 21], "heading": 0 },
+    { "type": "parked_car", "pos": [-18, 0, -19.5], "heading": 180 },
+    { "type": "parked_car", "pos": [-9, 0, -19.5], "heading": 0 },
+    { "type": "parked_car", "pos": [9, 0, -19.5], "heading": 180 },
+    { "type": "parked_car", "pos": [18, 0, -19.5], "heading": 180 },
+    { "type": "shopping_cart", "pos": [1, 0, -15], "heading": 80 },
+    { "type": "shopping_cart", "pos": [-24, 0, 8.5], "heading": 15 },
+    { "type": "cone", "pos": [30, 0, -3] },
+    { "type": "cone", "pos": [30, 0, 5] }
+  ]
+}

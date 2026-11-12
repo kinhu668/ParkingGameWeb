@@ -1,0 +1,28 @@
+{
+  "id": "w1_l09",
+  "name_key": "level.w1_l09.name",
+  "world": 1,
+  "environment": "city_street",
+  "weather": "night",
+  "vehicle": "sedan",
+  "time_limit": 110,
+  "target_time": 40,
+  "max_collisions": 2,
+  "angle_tolerance": 7,
+  "bounds": { "min": [-60, -14.5], "max": [60, 13.5] },
+  "start": { "pos": [-45, 0, 2], "heading": 90 },
+  "target": { "pos": [0, 0, 9.5], "heading": 90, "size": [8, 21.5] },
+  "obstacles": [
+    { "type": "parked_car", "pos": [-18.75, 0, 10], "heading": 90 },
+    { "type": "parked_car", "pos": [18.75, 0, 10], "heading": 90 },
+    { "type": "parked_car", "pos": [-37, 0, 10], "heading": 90 },
+    { "type": "parked_car", "pos": [37.5, 0, 10], "heading": 90 },
+    { "type": "cone", "pos": [-36, 0, -10.1] },
+    { "type": "cone", "pos": [-24, 0, -10.1] },
+    { "type": "cone", "pos": [-12, 0, -10.1] },
+    { "type": "cone", "pos": [0, 0, -10.1] },
+    { "type": "cone", "pos": [12, 0, -10.1] },
+    { "type": "cone", "pos": [24, 0, -10.1] },
+    { "type": "cone", "pos": [36, 0, -10.1] }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "id": "w1_l06",
+  "name_key": "level.w1_l06.name",
+  "world": 1,
+  "environment": "post_office",
+  "weather": "dusk",
+  "vehicle": "sedan",
+  "time_limit": 90,
+  "target_time": 30,
+  "max_collisions": 3,
+  "bounds": { "min": [-44, -13], "max": [36, 33] },
+  "start": { "pos": [-32, 0, 1], "heading": 90 },
+  "target": { "pos": [0, 0, 22.25], "heading": 0, "size": [9.5, 18.5] },
+  "obstacles": [
+    { "type": "parked_car", "pos": [9.5, 0, 22.25], "heading": 0 },
+    { "type": "parked_car", "pos": [19, 0, 22.25], "heading": 180 },
+    { "type": "mailbox", "pos": [-6.5, 0, 15] },
+    { "type": "bollard", "pos": [-6.5, 0, 19.5] },
+    { "type": "bollard", "pos": [-6.5, 0, 24] },
+    { "type": "trash_bin", "pos": [-12, 0, 15.5] }
+  ]
+}

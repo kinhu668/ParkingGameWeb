@@ -20,6 +20,20 @@ import {
 import en from '../src/locale/en.json';
 import zhTW from '../src/locale/zh-TW.json';
 
+/** 第 1 世界的 10 關，依關卡順序。 */
+const WORLD_1_IDS = [
+  'w1_l01',
+  'w1_l02',
+  'w1_l03',
+  'w1_l04',
+  'w1_l05',
+  'w1_l06',
+  'w1_l07',
+  'w1_l08',
+  'w1_l09',
+  'w1_l10',
+];
+
 /** 測試自己再讀一次原始 JSON（不經過目錄），用來對照。 */
 const RAW_FILES: Record<string, unknown> = import.meta.glob('../src/levels/*.json', {
   import: 'default',
@@ -46,8 +60,8 @@ function facingTargetFt(level: LevelDefinition): number {
 }
 
 describe('關卡目錄', () => {
-  test('這一輪的三關都載得進來，依 id 排序', () => {
-    expect(LEVEL_IDS).toEqual(['prototype', 'w1_l01', 'w1_l03']);
+  test('原型關與第 1 世界的 10 關都載得進來，依 id 排序', () => {
+    expect(LEVEL_IDS).toEqual(['prototype', ...WORLD_1_IDS]);
     expect(LEVELS.map((level) => level.id)).toEqual(LEVEL_IDS);
   });
 
@@ -55,7 +69,7 @@ describe('關卡目錄', () => {
     const fileIds = Object.keys(RAW_FILES)
       .map((path) => path.slice(path.lastIndexOf('/') + 1).replace(/\.json$/, ''))
       .sort();
-    expect(fileIds.length).toBeGreaterThanOrEqual(3);
+    expect(fileIds).toHaveLength(11);
     expect([...LEVEL_IDS].sort()).toEqual(fileIds);
     expect(new Set(LEVEL_IDS).size).toBe(LEVEL_IDS.length);
   });
@@ -98,14 +112,16 @@ describe('關卡目錄', () => {
   });
 
   test('worldLevels：第 1 世界依關卡順序；world 0 只有原型關', () => {
-    expect(worldLevels(1).map((level) => level.id)).toEqual(['w1_l01', 'w1_l03']);
+    expect(worldLevels(1).map((level) => level.id)).toEqual(WORLD_1_IDS);
     expect(worldLevels(0).map((level) => level.id)).toEqual(['prototype']);
     expect(worldLevels(2)).toEqual([]);
   });
 
   test('nextLevelId：同一個世界的下一關；最後一關、原型關、不認得的 id 沒有下一關', () => {
-    expect(nextLevelId('w1_l01')).toBe('w1_l03');
-    expect(nextLevelId('w1_l03')).toBeUndefined();
+    expect(nextLevelId('w1_l01')).toBe('w1_l02');
+    expect(nextLevelId('w1_l02')).toBe('w1_l03');
+    expect(nextLevelId('w1_l09')).toBe('w1_l10');
+    expect(nextLevelId('w1_l10')).toBeUndefined();
     expect(nextLevelId('prototype')).toBeUndefined();
     expect(nextLevelId('nope')).toBeUndefined();
   });
@@ -116,11 +132,11 @@ describe('resolveLevelRequest：網址要求的關卡', () => {
     expect(resolveLevelRequest(undefined)).toEqual({ kind: 'level', level: PROTOTYPE_LEVEL });
   });
 
-  test.each(['prototype', 'w1_l01', 'w1_l03'])('%s → 那一關', (id) => {
+  test.each(['prototype', ...WORLD_1_IDS])('%s → 那一關', (id) => {
     expect(resolveLevelRequest(id)).toEqual({ kind: 'level', level: mustFind(id) });
   });
 
-  test.each(['w1_l02', 'nope', 'W1_L03', 'toString', 'w1_l03.json'])(
+  test.each(['w1_l11', 'w2_l01', 'nope', 'W1_L03', 'toString', 'w1_l03.json'])(
     '不認得的 id %j → unknown（明確錯誤，不悄悄退回原型關）',
     (id) => {
       expect(resolveLevelRequest(id)).toEqual({ kind: 'unknown', id });
@@ -239,5 +255,75 @@ describe('w1_l01（第一個車位）', () => {
     expect(level.spotFt.centerZFt - level.spotFt.lengthFt / 2).toBeGreaterThan(bounds.minZFt);
     expect(level.spotFt.centerXFt - level.spotFt.widthFt / 2).toBeGreaterThan(bounds.minXFt);
     expect(level.spotFt.centerXFt + level.spotFt.widthFt / 2).toBeLessThan(bounds.maxXFt);
+  });
+});
+
+describe('第 1 世界的 10 關（計畫 §3.1）', () => {
+  /** id、環境、天氣、車位 heading 與起點 heading 的關係（正停 = 車頭開進去、倒車 = 車尾進去、平行 = 路邊）。 */
+  const PLAN: readonly (readonly [string, string, string, readonly string[]])[] = [
+    ['w1_l01', 'open_lot', 'clear', []],
+    ['w1_l02', 'open_lot', 'dusk', ['cone']],
+    ['w1_l03', 'warehouse_club', 'clear', ['parked_car', 'cone', 'shopping_cart']],
+    ['w1_l04', 'warehouse_club', 'wet', ['cart_corral', 'parked_car', 'shopping_cart', 'pallet_stack']],
+    ['w1_l05', 'post_office', 'clear', ['mailbox', 'trash_bin']],
+    ['w1_l06', 'post_office', 'dusk', ['parked_car', 'mailbox', 'bollard']],
+    ['w1_l07', 'warehouse_club', 'storm', ['parked_car', 'shopping_cart', 'cone']],
+    ['w1_l08', 'city_street', 'clear', ['parked_car']],
+    ['w1_l09', 'city_street', 'night', ['parked_car', 'cone']],
+    ['w1_l10', 'narrow_alley', 'rain', ['wall', 'dumpster', 'pallet', 'trash_bin', 'pallet_stack']],
+  ];
+
+  test.each(PLAN)('%s：%s、%s，障礙物類型齊全', (id, environment, weather, obstacleTypes) => {
+    const level = mustFind(id);
+    expect(level.world).toBe(1);
+    expect(level.environment).toBe(environment);
+    expect(level.weather).toBe(weather);
+    const types = new Set<string>(level.obstaclesFt.map((obstacle) => obstacle.type));
+    for (const type of obstacleTypes) {
+      expect(types.has(type), `${id} 應該有 ${type}`).toBe(true);
+    }
+    expect(level.boundsFt, `${id} 必須有邊界`).toBeDefined();
+  });
+
+  test('五種環境、六種天氣都用到', () => {
+    const levels = worldLevels(1);
+    expect(new Set(levels.map((level) => level.environment)).size).toBe(5);
+    expect(new Set(levels.map((level) => level.weather)).size).toBe(6);
+  });
+
+  test('難度遞增：碰撞上限只減不增；窄的關卡角度容許值比較小', () => {
+    const levels = worldLevels(1);
+    levels.slice(1).forEach((level, index) => {
+      expect(level.maxCollisions, level.id).toBeLessThanOrEqual(levels[index]?.maxCollisions ?? 0);
+    });
+    expect(mustFind('w1_l09').spotFt.angleToleranceDeg).toBe(7);
+    expect(mustFind('w1_l10').spotFt.angleToleranceDeg).toBe(6);
+  });
+
+  test('倒車的關卡：起點在車位「車頭那一側」或側邊，車位 heading 不是朝著遠離起點的方向', () => {
+    // 倒車入庫停好時車頭朝外（朝通道）：車位的車頭方向指回通道，也就是大致指向起點那一側。
+    for (const id of ['w1_l05', 'w1_l06', 'w1_l07', 'w1_l10']) {
+      const level = mustFind(id);
+      const out = forward(degToRad(level.spotFt.headingDeg ?? 0));
+      const toStartX = level.startFt.xFt - level.spotFt.centerXFt;
+      const toStartZ = level.startFt.zFt - level.spotFt.centerZFt;
+      expect(out.x * toStartX + out.z * toStartZ, id).toBeGreaterThan(0);
+    }
+  });
+
+  test('平行停車：車位長邊沿著路（比寬邊長得多），前後各有一台同向的停放車', () => {
+    for (const id of ['w1_l08', 'w1_l09']) {
+      const level = mustFind(id);
+      expect(level.spotFt.lengthFt, id).toBeGreaterThan(level.spotFt.widthFt * 2.5);
+      const neighbours = level.obstaclesFt.filter(
+        (obstacle) =>
+          obstacle.type === 'parked_car' &&
+          obstacle.headingDeg === level.spotFt.headingDeg &&
+          Math.abs(obstacle.centerXFt - level.spotFt.centerXFt) < 25,
+      );
+      expect(neighbours, id).toHaveLength(2);
+    }
+    // 第 9 關的空位比第 8 關短。
+    expect(mustFind('w1_l09').spotFt.lengthFt).toBeLessThan(mustFind('w1_l08').spotFt.lengthFt);
   });
 });
