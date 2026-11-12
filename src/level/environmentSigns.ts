@@ -43,3 +43,14 @@ export function signTextsFor(environment: LevelEnvironment): readonly string[] {
   const { main, secondary } = ENVIRONMENT_SIGNS[environment];
   return main === null ? secondary : [main, ...secondary];
 }
+
+/**
+ * 取一塊招牌的文字，同時確認它真的在這個環境的表裡（畫招牌的程式只能透過這裡拿字）。
+ * 表裡沒有就丟錯：招牌文字不能在別的地方自己發明。
+ */
+export function signText(environment: LevelEnvironment, text: string): string {
+  if (!signTextsFor(environment).includes(text)) {
+    throw new Error(`招牌文字「${text}」不在 ${environment} 的表裡`);
+  }
+  return text;
+}

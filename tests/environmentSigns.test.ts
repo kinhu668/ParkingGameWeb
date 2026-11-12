@@ -21,6 +21,29 @@ const REAL_BRANDS = [
   'starbucks',
   'home depot',
   "bj's",
+  'cvs',
+  'walgreens',
+  "mcdonald's",
+  'mcdonalds',
+  'amazon',
+  'lowes',
+  "lowe's",
+  'dhl',
+];
+
+/** 多個字的真實品牌與機構名稱（小寫，整句裡出現就不行）。 */
+const REAL_BRAND_PHRASES = [
+  'home depot',
+  'united states postal service',
+  'u.s. postal service',
+  'us postal service',
+  'postal service',
+  'us post office',
+  'u.s. post office',
+  'united states post office',
+  'whole foods',
+  'best buy',
+  'trader joe',
 ];
 
 describe('環境招牌', () => {
@@ -52,6 +75,11 @@ describe('環境招牌', () => {
       for (const brand of REAL_BRANDS) {
         expect(text.toLowerCase().split(/[^a-z']+/), text).not.toContain(brand);
       }
+      for (const phrase of REAL_BRAND_PHRASES) {
+        expect(text.toLowerCase(), text).not.toContain(phrase);
+      }
+      // 「POST OFFICE」只能跟在虛構地名後面當通稱，不能單獨當官方名稱。
+      expect(text).not.toBe('POST OFFICE');
     }
   });
 });
