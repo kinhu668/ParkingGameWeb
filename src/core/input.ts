@@ -60,7 +60,10 @@ export interface KeyboardInput {
   consumeToggleCamera(): boolean;
   /** 上次呼叫之後是否按過「暫停」；語意與 consumeRestart 相同。 */
   consumePause(): boolean;
-  /** 上次呼叫之後按過的掛檔鍵要掛的檔（按了好幾次取最後一次）；沒按是 null。讀完就清掉。 */
+  /**
+   * 上次呼叫之後按過的掛檔鍵要掛的檔（按了好幾次取最後一次）；沒按是 null。讀完就清掉。
+   * 按「重來」會把在它之前按的掛檔鍵丟掉，所以與 consumeRestart 同一幀讀到的一定是重來之後才按的。
+   */
   consumeShift(): Gear | null;
   /**
    * 攔下一個按鍵（按鍵設定用）：下一次按下的鍵不當成遊戲輸入，而是把它的 code 交給 onKey，只攔一次。
@@ -107,6 +110,9 @@ export function attachKeyboardInput(
       const current = bindings();
       if (current.restart.includes(event.code)) {
         restartPressed = true;
+        // 重來之前按的掛檔鍵屬於上一局：丟掉，否則同一幀裡「先掛 R、再重來」會讓新的一局從 R 檔開始。
+        // 重來之後才按的掛檔鍵照常算（下面會再記上）。
+        shiftPressed = null;
       }
       if (current.toggleCamera.includes(event.code)) {
         toggleCameraPressed = true;

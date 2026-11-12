@@ -35,6 +35,25 @@ export function shiftTo(gear: Gear): Gearbox {
   return { gear, manual: true };
 }
 
+/** 一個畫面幀開頭，玩家對檔位下的指令。 */
+export interface GearCommands {
+  /** 這一幀重來了（按鍵或面板上的按鈕）。 */
+  readonly restarted: boolean;
+  /** 重來之後才按的掛檔鍵要掛的檔（重來之前按的不算，見 core/input.ts）；沒按是 null。 */
+  readonly shift: Gear | null;
+  /** 現在能不能換檔：這一局（重來的話是新的一局）還在進行，而且沒有暫停。 */
+  readonly canShift: boolean;
+}
+
+/**
+ * 畫面幀開頭的檔位：重來一律先回到自排 D 檔（上一局掛的檔、手排與否都不留），
+ * 之後才看掛檔鍵——所以重來後只有「又按了一次掛 R」才會是 R 檔。
+ */
+export function gearboxForFrame(gearbox: Gearbox, commands: GearCommands): Gearbox {
+  const base = commands.restarted ? INITIAL_GEARBOX : gearbox;
+  return commands.shift !== null && commands.canShift ? shiftTo(commands.shift) : base;
+}
+
 /**
  * 物理步之後更新檔位。手排：只有掛檔鍵能換，這裡不動。
  * 自排：新的一局在第一次駕駛輸入之前（ready）是前進檔；已經結束（停妥或失敗）就不再換。

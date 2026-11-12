@@ -4,6 +4,7 @@ import { FIXED_STEP_SECONDS } from '../src/core/gameConfig';
 import { stepVehicle, type DriveInput, type VehicleState } from '../src/vehicle/bicycleModel';
 import {
   INITIAL_GEARBOX,
+  gearboxForFrame,
   inputForGear,
   nextGearbox,
   shiftTo,
@@ -135,5 +136,72 @@ describe('手排（按了掛 D／掛 R）', () => {
     const shifted = { vehicle: cruising.vehicle, gearbox: shiftTo('reverse') };
     const later = drive(shifted, BACKWARD, 240);
     expect(later.vehicle.speedMps).toBeLessThan(0);
+  });
+});
+
+describe('重來：回到自排 D 檔', () => {
+  const RESTART = { restarted: true, shift: null, canShift: true } as const;
+  const STEER_ONLY: DriveInput = { ...IDLE, steer: 1 };
+  const AUTO_REVERSE: Gearbox = { gear: 'reverse', manual: false };
+
+  test('沒有重來、沒有掛檔：檔位不變（同一個物件）', () => {
+    const reverse = shiftTo('reverse');
+    expect(gearboxForFrame(reverse, { restarted: false, shift: null, canShift: true })).toBe(reverse);
+  });
+
+  test.each([
+    ['手排 R', shiftTo('reverse')],
+    ['手排 D', shiftTo('forward')],
+    ['自排 R（倒車中或倒車撞到失敗）', AUTO_REVERSE],
+  ])('%s 時重來：當幀就是 INITIAL_GEARBOX', (_name, gearbox) => {
+    expect(gearboxForFrame(gearbox, RESTART)).toBe(INITIAL_GEARBOX);
+    // 暫停中或上一局已經結束（不能換檔）時重來也一樣。
+    expect(gearboxForFrame(gearbox, { ...RESTART, canShift: false })).toBe(INITIAL_GEARBOX);
+  });
+
+  test.each([
+    ['什麼都不按', IDLE],
+    ['只按著轉向', STEER_ONLY],
+    ['按著油門', FORWARD],
+    ['按著油門與轉向', { ...FORWARD, steer: -1 as const }],
+    ['按著腳剎與手煞車', { ...IDLE, brake: true, handbrake: true }],
+  ])('手排 R 檔重來後%s：一直是自排 D 檔，車不會往後', (_name, pressed) => {
+    let gearbox = gearboxForFrame(shiftTo('reverse'), RESTART);
+    let vehicle = AT_REST;
+    // 重來的那一幀可能還沒跑物理步（狀態仍是 ready），之後按著鍵開始跑（driving）。
+    gearbox = nextGearbox(gearbox, 'ready', vehicle.speedMps, pressed.throttle);
+    expect(gearbox).toBe(INITIAL_GEARBOX);
+    for (let step = 0; step < 180; step += 1) {
+      // 之後的每一幀都沒有再重來、也沒有再按掛檔鍵。
+      gearbox = gearboxForFrame(gearbox, { restarted: false, shift: null, canShift: true });
+      ({ vehicle, gearbox } = drive({ vehicle, gearbox }, pressed, 1));
+      expect(gearbox).toBe(INITIAL_GEARBOX);
+      expect(vehicle.speedMps).toBeGreaterThanOrEqual(0);
+    }
+    expect(vehicle.speedMps > 0).toBe(pressed.throttle === 1 && pressed.handbrake === false);
+  });
+
+  test('重來之後又按了掛 R（同一幀或之後）：R 檔手排——這是玩家新下的指令', () => {
+    expect(gearboxForFrame(shiftTo('reverse'), { ...RESTART, shift: 'reverse' })).toEqual({
+      gear: 'reverse',
+      manual: true,
+    });
+    const restarted = gearboxForFrame(shiftTo('reverse'), RESTART);
+    expect(
+      gearboxForFrame(restarted, { restarted: false, shift: 'reverse', canShift: true }),
+    ).toEqual({ gear: 'reverse', manual: true });
+  });
+
+  test('暫停中或這一局已經結束：掛檔鍵不換檔', () => {
+    expect(
+      gearboxForFrame(INITIAL_GEARBOX, { restarted: false, shift: 'reverse', canShift: false }),
+    ).toBe(INITIAL_GEARBOX);
+  });
+
+  test('重來後仍按著倒車油門：回到自排，車真的開始倒退時檔位才跟著變成 R（不是上一局留下的手排）', () => {
+    const restarted = gearboxForFrame(shiftTo('reverse'), RESTART);
+    const later = drive({ vehicle: AT_REST, gearbox: restarted }, BACKWARD, 30);
+    expect(later.vehicle.speedMps).toBeLessThan(0);
+    expect(later.gearbox).toEqual({ gear: 'reverse', manual: false });
   });
 });

@@ -256,6 +256,42 @@ describe('attachKeyboardInput：掛檔鍵', () => {
   });
 });
 
+describe('attachKeyboardInput：重來與掛檔鍵的先後', () => {
+  test('先掛 R、再重來（同一幀內）：重來之前按的掛檔鍵被丟掉，新的一局不會從 R 檔開始', () => {
+    const { target, input } = attach();
+    key(target, 'keydown', 'KeyR');
+    key(target, 'keydown', 'Backspace');
+    expect(input.consumeRestart()).toBe(true);
+    expect(input.consumeShift()).toBeNull();
+
+    // 備用的重來鍵（T）與掛 D 也一樣。
+    key(target, 'keydown', 'KeyQ');
+    key(target, 'keydown', 'KeyT');
+    expect(input.consumeRestart()).toBe(true);
+    expect(input.consumeShift()).toBeNull();
+  });
+
+  test('先重來、再掛 R：重來之後按的照算', () => {
+    const { target, input } = attach();
+    key(target, 'keydown', 'KeyR');
+    key(target, 'keydown', 'Backspace');
+    key(target, 'keydown', 'KeyR');
+    expect(input.consumeRestart()).toBe(true);
+    expect(input.consumeShift()).toBe('reverse');
+  });
+
+  test('按住掛 R 鍵不放再重來：重複事件不算再掛一次', () => {
+    const { target, input } = attach();
+    key(target, 'keydown', 'KeyR');
+    expect(input.consumeShift()).toBe('reverse');
+    key(target, 'keydown', 'KeyR', { repeat: true });
+    key(target, 'keydown', 'Backspace');
+    key(target, 'keydown', 'KeyR', { repeat: true });
+    expect(input.consumeRestart()).toBe(true);
+    expect(input.consumeShift()).toBeNull();
+  });
+});
+
 describe('attachKeyboardInput：綁定可以換', () => {
   test('每次按鍵都用當下的綁定：改完立刻生效', () => {
     let bindings: ControlBindings = DEFAULT_BINDINGS;

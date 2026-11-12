@@ -63,7 +63,7 @@ import { createReverseAssist } from './ui/reverseAssist';
 import './ui/style.css';
 import { interpolateVehiclePose, type DriveInput } from './vehicle/bicycleModel';
 import { carLightsFor } from './vehicle/carMesh';
-import { INITIAL_GEARBOX, inputForGear, nextGearbox, shiftTo } from './vehicle/gearbox';
+import { INITIAL_GEARBOX, gearboxForFrame, inputForGear, nextGearbox } from './vehicle/gearbox';
 
 declare global {
   interface Window {
@@ -231,14 +231,19 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
 
     // 重來：車回起點、判定／計時／碰撞歸零、檔位回到自排 D 檔，成功或失敗的面板消失（hud.update 會看到新的一局）。
     // 按鍵與面板上的「重來」按鈕走同一條路；暫停中重來會順便解除暫停。
-    if (input.consumeRestart() || restartRequested) {
+    // 重來之前按的掛檔鍵不帶進新的一局：鍵盤重來由 input 依按鍵先後丟掉；面板按鈕不知道先後，這裡一律丟掉。
+    const restarted = input.consumeRestart() || restartRequested;
+    if (restarted) {
+      if (restartRequested) {
+        input.consumeShift();
+      }
       restartRequested = false;
       session = restartSession(session);
-      gearbox = INITIAL_GEARBOX;
       previousVehicle = session.vehicle;
       accumulatorSeconds = 0;
       gameCamera.snapTo(session.vehicle);
       setPaused(false);
+      reverseAssist?.reset();
     }
 
     // 暫停／繼續。已經停妥或失敗就沒有東西可以暫停（結算面板上已經有同樣的按鈕）。
@@ -247,11 +252,12 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
       setPaused(!paused);
     }
 
-    // 掛 D／掛 R：進入手排，檔位立刻換過去。暫停中或這一局已經結束時不換檔。
-    const shift = input.consumeShift();
-    if (shift !== null && running && !paused) {
-      gearbox = shiftTo(shift);
-    }
+    // 檔位：重來先回到自排 D 檔；掛 D／掛 R 進入手排，檔位立刻換過去。暫停中或這一局已經結束時不換檔。
+    gearbox = gearboxForFrame(gearbox, {
+      restarted,
+      shift: input.consumeShift(),
+      canShift: running && !paused,
+    });
 
     // 切換鏡頭：換到循環順序的下一個，記住選擇，HUD 顯示名稱。
     if (input.consumeToggleCamera()) {

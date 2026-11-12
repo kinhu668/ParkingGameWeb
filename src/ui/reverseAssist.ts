@@ -53,6 +53,8 @@ export interface ReverseAssist {
    * @param frameSeconds 距離上一幀多久（真實時間；暫停時也照樣淡入淡出）
    */
   frame(scene: Scene, pose: VehiclePose, drive: AssistDriveState, frameSeconds: number): void;
+  /** 重來：立刻收起（不淡出），新的一局從收起的狀態開始。下一次 frame 才會改到畫面。 */
+  reset(): void;
 }
 
 /** 一條引導線的 SVG `points`：車身座標的地面點投影到這個畫面。 */
@@ -200,6 +202,9 @@ export function createReverseAssist(
       }
       renderPath(pose.steerRad);
       views.render(frameScene, pose, fitLayout(), opacity);
+    },
+    reset() {
+      visibility = ASSIST_HIDDEN;
     },
   };
 }
