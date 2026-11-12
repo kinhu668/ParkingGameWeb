@@ -4,6 +4,8 @@ import {
   LOCALES,
   detectLocale,
   getLocale,
+  isLocale,
+  isTranslationKey,
   onLocaleChange,
   setLocale,
   t,
@@ -30,6 +32,22 @@ const PLANNED_KEYS = [
   'status.failed',
   'status.failTimeout',
   'status.failCollisions',
+  // 第 2 階段第 3 輪：結算、暫停、關卡選擇。
+  'hud.controlPause',
+  'result.time',
+  'result.collisions',
+  'result.angle',
+  'result.next',
+  'result.retry',
+  'result.levelSelect',
+  'pause.title',
+  'pause.resume',
+  'pause.hint',
+  'select.title',
+  'select.world',
+  'select.bestTime',
+  'select.locked',
+  'select.comingSoon',
   'show.unknown',
   'bench.running',
   'bench.avgFps',
@@ -103,6 +121,37 @@ describe('detectLocale', () => {
     expect(detectLocale('?lang=fr', 'en-US')).toBe('en');
     expect(detectLocale('?lang=', 'zh-TW')).toBe('zh-TW');
     expect(detectLocale('?lang=zh', 'en-US')).toBe('en');
+  });
+});
+
+describe('detectLocale：存檔裡的語言', () => {
+  test('優先順序是 ?lang= > 存檔 > 瀏覽器', () => {
+    expect(detectLocale('?lang=en', 'zh-TW', 'zh-TW')).toBe('en');
+    expect(detectLocale('', 'zh-TW', 'en')).toBe('en');
+    expect(detectLocale('', 'en-US', 'zh-TW')).toBe('zh-TW');
+    expect(detectLocale('?level=w1_l01', 'en-US', 'zh-TW')).toBe('zh-TW');
+  });
+
+  test('?lang= 不認得：退回存檔的語言；沒有存檔才看瀏覽器', () => {
+    expect(detectLocale('?lang=fr', 'zh-TW', 'en')).toBe('en');
+    expect(detectLocale('?lang=fr', 'zh-TW', undefined)).toBe('zh-TW');
+  });
+});
+
+describe('isLocale / isTranslationKey', () => {
+  test('isLocale 只認支援的語言（大小寫要相同）', () => {
+    expect(LOCALES.every((locale) => isLocale(locale))).toBe(true);
+    expect(isLocale('zh-tw')).toBe(false);
+    expect(isLocale('fr')).toBe(false);
+    expect(isLocale('')).toBe(false);
+  });
+
+  test('isTranslationKey 只認翻譯檔裡有的鍵，不被物件內建屬性騙到', () => {
+    expect(isTranslationKey('level.w1_l01.name')).toBe(true);
+    expect(isTranslationKey('select.title')).toBe(true);
+    expect(isTranslationKey('level.w9_l99.name')).toBe(false);
+    expect(isTranslationKey('toString')).toBe(false);
+    expect(isTranslationKey('')).toBe(false);
   });
 });
 
