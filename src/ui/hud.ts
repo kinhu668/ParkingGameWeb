@@ -1,11 +1,38 @@
-// 疊在畫布上的 HTML HUD：車速（mph）、簡要操作說明、語言切換按鈕、目前鏡頭名稱、停車成功畫面。
+// 疊在畫布上的 HTML HUD：車速（mph）、倒數計時、碰撞次數、檔位、角度誤差、簡要操作說明、
+// 語言切換按鈕、目前鏡頭名稱、成功／失敗的狀態面板（完整的結算畫面之後再做）。
 // 所有文字都走翻譯鍵；語言切換時就地更新，不重新載入頁面。
 import type { GameCameraView } from '../core/cameraView';
 import { getLocale, onLocaleChange, setLocale, t, type Locale, type TranslationKey } from '../core/i18n';
-import { mpsToMph } from '../core/units';
+import { mpsToMph, radToDeg } from '../core/units';
+import { angleErrorRad } from '../level/parkingJudge';
+import { UNLIMITED_RULES, stepsToSeconds, type FailReason } from '../level/scoring';
+import type { Session } from '../level/session';
+import type { DriveInput } from '../vehicle/bicycleModel';
+import { formatStars, formatTime } from './format';
 
 /** 車速顯示到小數第幾位；停車判定門檻是 0.5 mph，整數不夠看。 */
 const SPEED_DECIMALS = 1;
+
+/** 角度誤差顯示到小數第幾位；3 星的門檻是 3°。 */
+const ANGLE_DECIMALS = 1;
+
+/** 剩餘時間低於這個秒數，倒數會變色提醒。 */
+const LOW_TIME_SECONDS = 10;
+
+/** 檔位：前進或倒車。 */
+export type Gear = 'forward' | 'reverse';
+
+/** 檔位 → 儀表上的字母與名稱的翻譯鍵。 */
+const GEAR_LABELS: Readonly<Record<Gear, { readonly letter: string; readonly key: TranslationKey }>> = {
+  forward: { letter: 'D', key: 'hud.gearForward' },
+  reverse: { letter: 'R', key: 'hud.gearReverse' },
+};
+
+/** 失敗原因 → 說明的翻譯鍵；少列一個原因會編譯失敗。 */
+const FAIL_REASON_LABELS: Readonly<Record<FailReason, TranslationKey>> = {
+  timeout: 'status.failTimeout',
+  collisions: 'status.failCollisions',
+};
 
 /** 鏡頭名稱出現後多久完全淡出（毫秒），以及其中維持不透明的比例。 */
 const CAMERA_LABEL_FADE_MS = 2600;
@@ -42,14 +69,73 @@ export function formatSpeedMph(speedMps: number): string {
   return Math.abs(mpsToMph(speedMps)).toFixed(SPEED_DECIMALS);
 }
 
+/**
+ * 檔位：車在動就看行進方向；停著就看油門（踩倒車 = 倒車檔）；
+ * 停著又沒踩油門，維持上一次的檔位。
+ */
+export function gearFor(speedMps: number, throttle: DriveInput['throttle'], previous: Gear): Gear {
+  const direction = speedMps !== 0 ? speedMps : throttle;
+  if (direction === 0) {
+    return previous;
+  }
+  return direction > 0 ? 'forward' : 'reverse';
+}
+
+/** 角度誤差文字：弧度換成度的絕對值，固定小數位，加度數符號。 */
+export function formatAngleDeg(angleRad: number): string {
+  return `${Math.abs(radToDeg(angleRad)).toFixed(ANGLE_DECIMALS)}°`;
+}
+
+/** 碰撞次數文字：`已撞次數 / 上限`；沒有上限就只顯示次數。 */
+export function formatCollisions(collisions: number, maxCollisions: number): string {
+  return Number.isFinite(maxCollisions) ? `${collisions} / ${maxCollisions}` : String(collisions);
+}
+
+/** HUD 每幀要顯示的內容（已經換成文字，方便比對有沒有變）。 */
+export interface HudReadout {
+  readonly speed: string;
+  /** 倒數：剩餘時間 `m:ss.s`；還沒開始計時就是整個時間上限。 */
+  readonly time: string;
+  /** 剩餘時間是否偏低。 */
+  readonly lowTime: boolean;
+  readonly collisions: string;
+  readonly angle: string;
+  /** 狀態面板：null = 不顯示（還在開）。 */
+  readonly outcome: 'parked' | 'failed' | null;
+  /** 停妥的星數；其他時候是 null。 */
+  readonly stars: number | null;
+  readonly failReason: FailReason | null;
+}
+
+/** 由一局的現況算出 HUD 要顯示的內容。 */
+export function hudReadout(session: Session): HudReadout {
+  const rules = session.layout.rules ?? UNLIMITED_RULES;
+  const remainingS = stepsToSeconds(Math.max(rules.timeLimitSteps - session.elapsedSteps, 0));
+  return {
+    speed: formatSpeedMph(session.vehicle.speedMps),
+    time: formatTime(remainingS),
+    lowTime: remainingS < LOW_TIME_SECONDS,
+    collisions: formatCollisions(session.collisions, rules.maxCollisions),
+    angle: formatAngleDeg(angleErrorRad(session.vehicle, session.layout.spot)),
+    outcome: session.status === 'parked' || session.status === 'failed' ? session.status : null,
+    stars: session.result?.stars ?? null,
+    failReason: session.failReason,
+  };
+}
+
 /** 按語言按鈕會切到的語言（只有兩種語言，就是另一種）。 */
 export function otherLocale(locale: Locale): Locale {
   return locale === 'zh-TW' ? 'en' : 'zh-TW';
 }
 
 export interface Hud {
-  /** 每幀呼叫；車速文字或「已停妥」有變才動 DOM。parked 為 true 時顯示成功畫面。 */
-  update(speedMps: number, parked: boolean): void;
+  /**
+   * 每幀呼叫；顯示的文字有變才動 DOM。
+   * 停妥顯示成功面板（含星數），失敗顯示失敗面板（含原因），重來後收起來。
+   * @param session 這一局的現況
+   * @param input 這一幀的駕駛輸入（決定停著時的檔位）
+   */
+  update(session: Session, input: DriveInput): void;
   /**
    * 顯示目前的鏡頭名稱（進場與每次切換時呼叫）：短暫出現後淡出。
    * 淡出只是看不見，`#hud-camera` 的文字與 `data-view` 一直留著。
@@ -86,6 +172,20 @@ export function createHud(root: HTMLElement): Hud {
   const speedValue = element('span', 'hud-speed-value', speedPanel);
   speedValue.id = 'hud-speed';
   translatedElement('span', 'hud-speed-unit', speedPanel, 'hud.speedUnit');
+
+  // 行車資訊：上方置中一排。倒數、碰撞次數、檔位、角度誤差。
+  const statsPanel = element('div', 'hud-panel hud-stats', root);
+  function stat(id: string, label: TranslationKey): HTMLElement {
+    const cell = element('div', 'hud-stat', statsPanel);
+    translatedElement('span', 'hud-stat-label', cell, label);
+    const value = element('span', 'hud-stat-value', cell);
+    value.id = id;
+    return value;
+  }
+  const timeValue = stat('hud-time', 'hud.time');
+  const collisionsValue = stat('hud-collisions', 'hud.collisions');
+  const gearValue = stat('hud-gear', 'hud.gear');
+  const angleValue = stat('hud-angle', 'hud.angle');
 
   // 語言按鈕：顯示「會切到的語言」的名稱。
   const languageButton = document.createElement('button');
@@ -125,19 +225,56 @@ export function createHud(root: HTMLElement): Hud {
   let shownView: GameCameraView | undefined;
   let cameraLabelFade: Animation | undefined;
 
-  // 停車成功畫面：先隱藏，已停妥才顯示；重來後再藏起來。
+  // 狀態面板：先隱藏，停妥或失敗才顯示；重來後再藏起來。
+  // `data-status` 是 parked 或 failed；標題下面那一行，成功時是星數、失敗時是原因。
   const statusOverlay = element('div', 'hud-status', root);
   statusOverlay.id = 'hud-status';
   statusOverlay.setAttribute('role', 'status');
   statusOverlay.hidden = true;
   const statusPanel = element('div', 'hud-panel hud-status-panel', statusOverlay);
-  translatedElement('div', 'hud-status-title', statusPanel, 'status.parked');
+  const statusTitle = element('div', 'hud-status-title', statusPanel);
+  const statusDetail = element('div', 'hud-status-detail', statusPanel);
+  statusDetail.id = 'hud-status-detail';
   translatedElement('div', 'hud-status-hint', statusPanel, 'status.restartHint');
+
+  let shown: HudReadout | undefined;
+  let shownGear: Gear = 'forward';
+
+  /** 檔位：字母 + 名稱（名稱跟著語言變）。 */
+  function renderGear(): void {
+    const label = GEAR_LABELS[shownGear];
+    gearValue.dataset.gear = shownGear;
+    gearValue.textContent = `${label.letter} ${t(label.key)}`;
+  }
+
+  /** 狀態面板的標題與說明（跟著語言變）。 */
+  function renderOutcome(): void {
+    const outcome = shown?.outcome ?? null;
+    statusOverlay.hidden = outcome === null;
+    if (outcome === null || shown === undefined) {
+      delete statusOverlay.dataset.status;
+      delete statusDetail.dataset.stars;
+      return;
+    }
+    statusOverlay.dataset.status = outcome;
+    if (outcome === 'parked') {
+      statusTitle.textContent = t('status.parked');
+      statusDetail.textContent = formatStars(shown.stars ?? 0);
+      statusDetail.dataset.stars = String(shown.stars ?? 0);
+    } else {
+      statusTitle.textContent = t('status.failed');
+      statusDetail.textContent =
+        shown.failReason === null ? '' : t(FAIL_REASON_LABELS[shown.failReason]);
+      delete statusDetail.dataset.stars;
+    }
+  }
 
   function renderTexts(): void {
     for (const entry of translated) {
       entry.element.textContent = t(entry.key);
     }
+    renderGear();
+    renderOutcome();
     if (shownView !== undefined) {
       cameraLabel.textContent = t(cameraViewLabelKey(shownView));
     }
@@ -151,18 +288,39 @@ export function createHud(root: HTMLElement): Hud {
   renderTexts();
   onLocaleChange(renderTexts);
 
-  let shownSpeed = '';
-  let shownParked = false;
   return {
-    update(speedMps: number, parked: boolean): void {
-      const text = formatSpeedMph(speedMps);
-      if (text !== shownSpeed) {
-        shownSpeed = text;
-        speedValue.textContent = text;
+    update(session: Session, input: DriveInput): void {
+      const next = hudReadout(session);
+      const previous = shown;
+      shown = next;
+      if (next.speed !== previous?.speed) {
+        speedValue.textContent = next.speed;
       }
-      if (parked !== shownParked) {
-        shownParked = parked;
-        statusOverlay.hidden = !parked;
+      if (next.time !== previous?.time) {
+        timeValue.textContent = next.time;
+      }
+      if (next.lowTime !== previous?.lowTime) {
+        timeValue.dataset.low = String(next.lowTime);
+      }
+      if (next.collisions !== previous?.collisions) {
+        collisionsValue.textContent = next.collisions;
+      }
+      if (next.angle !== previous?.angle) {
+        angleValue.textContent = next.angle;
+      }
+      // 已經結束（停妥或失敗）就不再換檔位：車不會動了。
+      const gear =
+        next.outcome === null ? gearFor(session.vehicle.speedMps, input.throttle, shownGear) : shownGear;
+      if (gear !== shownGear) {
+        shownGear = gear;
+        renderGear();
+      }
+      if (
+        next.outcome !== previous?.outcome ||
+        next.stars !== previous.stars ||
+        next.failReason !== previous.failReason
+      ) {
+        renderOutcome();
       }
     },
     showCameraView(view: GameCameraView): void {

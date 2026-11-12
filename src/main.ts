@@ -63,7 +63,7 @@ function browserStorage(): ViewStorage | undefined {
   }
 }
 
-/** 一般遊戲：固定步長物理迴圈 + 算圖內插 + 鍵盤開車 + 停車判定 + 可切換的鏡頭（V）+ HUD。 */
+/** 一般遊戲：固定步長物理迴圈 + 算圖內插 + 鍵盤開車 + 碰撞／計時／停車判定 + 可切換的鏡頭（V）+ HUD。 */
 function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDefinition): void {
   const { layout } = level;
   const hudRoot = document.querySelector<HTMLElement>('#hud');
@@ -99,7 +99,7 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
     const frameSeconds = lastFrameMs === undefined ? 0 : Math.max(msToS(nowMs - lastFrameMs), 0);
     lastFrameMs = nowMs;
 
-    // R 重來：車回起點、判定歸零、成功畫面消失（hud.update 會收到 parked = false）。
+    // R 重來：車回起點、判定／計時／碰撞歸零，成功或失敗的面板消失（hud.update 會看到新的一局）。
     if (input.consumeRestart()) {
       session = restartSession(session);
       previousVehicle = session.vehicle;
@@ -132,7 +132,7 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
     gameScene.setLights(carLightsFor(driveInput, session.vehicle.speedMps));
     gameCamera.update(pose, session.vehicle.speedMps, frameSeconds);
     pipeline.render(gameScene.scene, gameCamera.camera);
-    hud.update(session.vehicle.speedMps, session.parked);
+    hud.update(session, driveInput);
 
     requestAnimationFrame(frame);
   }
