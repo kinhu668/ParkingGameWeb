@@ -87,7 +87,20 @@ test('沒給 level：一般遊戲、?cam、?bench 都是原型關（heading 0）
   await expect(html).toHaveAttribute('data-level', 'prototype');
   const { levelId, snapshot } = await nextState(page);
   expect(levelId).toBe('prototype');
-  expect(snapshot).toEqual({ xFt: 0, zFt: 0, headingDeg: 0, speedMph: 0, parked: false });
+  // 車在起點、朝北、靜止；還沒有駕駛輸入，所以計時未開始、碰撞 0 次、沒有成績也沒有失敗。
+  expect(snapshot).toEqual({
+    xFt: 0,
+    zFt: 0,
+    headingDeg: 0,
+    speedMph: 0,
+    parked: false,
+    status: 'ready',
+    elapsedS: 0,
+    collisions: 0,
+    angleErrorDeg: 0,
+    stars: null,
+    failReason: null,
+  });
 
   // ?cam：沒給 level 與明講 level=prototype 是同一張圖。
   await page.goto('/?cam=top&t=2');

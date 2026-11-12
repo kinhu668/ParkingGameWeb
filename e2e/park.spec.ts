@@ -129,9 +129,14 @@ test('用鍵盤把車停進車位、切換語言、按 R 重來', async ({ page 
   expect(Math.abs(parkedAt.xFt - START_X_FT)).toBeLessThan(POSITION_TOLERANCE_FT);
   expect(Math.abs(parkedAt.zFt - SPOT_CENTER_Z_FT)).toBeLessThanOrEqual(SPOT_LENGTHWISE_MARGIN_FT);
 
-  // 成功訊息（中文）。
+  // 成功訊息（中文）。直線開進去：沒有碰撞、車身是正的、遠低於目標時間 → 3 星。
   await expect(status).toBeVisible();
   await expect(statusTitle).toContainText('停車成功！');
+  await expect(status).toHaveAttribute('data-status', 'parked');
+  await expect(page.locator('#hud-status-detail')).toHaveAttribute('data-stars', '3');
+  expect(parkedAt.status).toBe('parked');
+  expect(parkedAt.collisions).toBe(0);
+  expect(parkedAt.stars).toBe(3);
   await page.screenshot({ path: `${OUTPUT_DIR}/park-success-zh-TW.png` });
 
   // 按語言按鈕：同一個訊息就地變成英文，<html lang> 跟著變。
