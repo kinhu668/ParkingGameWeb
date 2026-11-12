@@ -92,5 +92,12 @@
   "assist.rear": "Rear camera",
   "assist.mirrorLeft": "Left mirror",
   "assist.mirrorRight": "Right mirror",
-  "assist.warning": "Check surroundings for safety."
+  "assist.warning": "Check surroundings for safety.",
+  "touch.wheel": "Steering wheel",
+  "touch.gas": "Gas",
+  "touch.brake": "Brake",
+  "touch.gearDrive": "Shift to D",
+  "touch.gearReverse": "Shift to R",
+  "touch.pause": "Pause",
+  "touch.restart": "Restart"
 }

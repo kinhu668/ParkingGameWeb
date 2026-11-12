@@ -92,5 +92,12 @@
   "assist.rear": "倒車鏡頭",
   "assist.mirrorLeft": "左後視鏡",
   "assist.mirrorRight": "右後視鏡",
-  "assist.warning": "請注意周圍安全。"
+  "assist.warning": "請注意周圍安全。",
+  "touch.wheel": "方向盤",
+  "touch.gas": "油門",
+  "touch.brake": "剎車",
+  "touch.gearDrive": "掛 D 檔",
+  "touch.gearReverse": "掛 R 檔",
+  "touch.pause": "暫停",
+  "touch.restart": "重來"
 }

@@ -140,3 +140,17 @@ export function parseAssistOffParam(urlSearch: string): boolean {
   const params = new URLSearchParams(urlSearch);
   return params.get(ASSIST_PARAM) === ASSIST_OFF_VALUE || params.get(FX_PARAM) === FX_OFF_VALUE;
 }
+
+const TOUCH_PARAM = 'touch';
+
+/** `?touch=` 認得的值：`on` 強制顯示觸控層、`off` 強制不顯示。 */
+export type TouchParam = 'on' | 'off';
+
+/**
+ * `?touch=on`／`?touch=off`：蓋過裝置偵測，強制顯示或不顯示觸控層。
+ * 沒給或不認得的值回傳 undefined（照偵測結果）。
+ */
+export function parseTouchParam(urlSearch: string): TouchParam | undefined {
+  const value = new URLSearchParams(urlSearch).get(TOUCH_PARAM);
+  return value === 'on' || value === 'off' ? value : undefined;
+}
