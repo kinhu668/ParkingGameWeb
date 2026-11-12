@@ -7,10 +7,12 @@ import { levelById } from '../src/level/levelCatalog';
 import { createEnvironmentLayout } from '../src/props/environmentLayout';
 import { createEnvironment } from '../src/props/environments';
 import { occluderBox, occludersOf, registerOccluders } from '../src/props/occluders';
+import { createParkedCars } from '../src/props/parkedCars';
 import { createGameCamera } from '../src/render/gameCamera';
 import {
   blocksView,
   createOcclusionFade,
+  nearSightLine,
   nextOpacity,
   pointInBox,
   segmentHitsBox,
@@ -110,6 +112,19 @@ describe('擋不擋住鏡頭看車', () => {
     expect(blocksView(CAMERA, targets, car)).toBe(true);
     const farther = sightBox(occluderBox({ x: ftToM(9), y: ftToM(2.3), z: CAMERA.z }, { x: ftToM(6), y: ftToM(4.6), z: ftToM(15) }));
     expect(blocksView(CAMERA, targets, farther)).toBe(false);
+  });
+
+  test('粗篩不會漏：擋住的一定通過粗篩；離視線很遠的被篩掉', () => {
+    const blockers = [pole(0, ftToM(14)), pole(ftToM(0.6), ftToM(15)), pole(ftToM(-1.5), ftToM(9)), pole(ftToM(2), ftToM(8.5))];
+    for (const box of blockers) {
+      expect(nearSightLine(CAMERA, POSE, box)).toBe(true);
+    }
+    // 鏡頭旁邊貼著的東西也要通過。
+    const beside = sightBox(occluderBox({ x: ftToM(4), y: ftToM(2.3), z: CAMERA.z }, { x: ftToM(6), y: ftToM(4.6), z: ftToM(15) }));
+    expect(nearSightLine(CAMERA, POSE, beside)).toBe(true);
+    // 60 ft 外的建築（半徑不大）篩掉。
+    const building = sightBox(occluderBox({ x: ftToM(80), y: ftToM(10), z: 0 }, { x: ftToM(20), y: ftToM(20), z: ftToM(20) }));
+    expect(nearSightLine(CAMERA, POSE, building)).toBe(false);
   });
 
   test('只有兩個跟車鏡頭做遮擋半透明', () => {
@@ -250,6 +265,56 @@ describe('只淡擋住的那一個實例', () => {
     }
     expect(fade.fadedCount()).toBe(0);
     expect(instanceScale(mesh, 0)).toBeGreaterThan(1);
+  });
+});
+
+describe('背景車', () => {
+  test('擋住的那一台整台淡（車殼各分區＋四個輪胎與輪圈），車牌上的字藏起來；旁邊那一台不動', () => {
+    const size = { sizeX: ftToM(6), sizeY: 0, sizeZ: ftToM(15) };
+    // 第 0 台橫在鏡頭與車之間，第 1 台在 30 ft 外。
+    const cars = createParkedCars([
+      { x: 0, z: ftToM(13), y: 0, headingRad: Math.PI / 2, variant: 0.1, ...size },
+      { x: ftToM(30), z: 0, y: 0, headingRad: 0, variant: 0.6, ...size },
+    ]);
+    const root = new Group();
+    root.add(cars);
+    const plateText = cars.getObjectByName('parkedCars:plateText');
+    if (!(plateText instanceof Mesh)) {
+      throw new Error('找不到車牌的字');
+    }
+    const fade = createOcclusionFade(root);
+    expect(fade.count).toBe(2);
+    expect(Array.isArray(plateText.material)).toBe(false);
+
+    fade.update(CAMERA, POSE, true, FRAME_SECONDS);
+    expect(fade.fadedCount()).toBe(1);
+    const instancedMeshes = cars.children.filter(
+      (child): child is InstancedMesh => child instanceof InstancedMesh,
+    );
+    for (const mesh of instancedMeshes) {
+      const perCar = mesh.name === 'parkedCars:tire' || mesh.name === 'parkedCars:rim' ? 4 : 1;
+      expect(standIns(mesh)).toHaveLength(perCar);
+      for (let index = 0; index < perCar; index += 1) {
+        expect(instanceScale(mesh, index)).toBe(0);
+        expect(instanceScale(mesh, perCar + index)).toBeGreaterThan(1);
+      }
+    }
+    // 烤漆的替身帶著這台車自己的車色。
+    const paint = cars.getObjectByName('parkedCars:paint');
+    const paintStandIn = paint instanceof InstancedMesh ? standIns(paint)[0] : undefined;
+    const tint = (paintStandIn?.material as MeshStandardMaterial).color;
+    expect(tint.r + tint.g + tint.b).toBeLessThan(3);
+    // 車牌的字：只畫第 1 台的那一組。
+    expect(Array.isArray(plateText.material)).toBe(true);
+    expect(plateText.geometry.groups).toHaveLength(1);
+    expect(plateText.geometry.groups[0]?.start).toBeGreaterThan(0);
+
+    for (let frame = 0; frame < 40; frame += 1) {
+      fade.update(CAMERA, POSE, false, FRAME_SECONDS);
+    }
+    expect(fade.fadedCount()).toBe(0);
+    expect(Array.isArray(plateText.material)).toBe(false);
+    expect(plateText.geometry.groups).toHaveLength(0);
   });
 });
 

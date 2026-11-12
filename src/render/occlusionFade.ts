@@ -33,12 +33,21 @@ export interface SightBox {
   readonly inverse: Matrix4;
   /** 方塊三個方向的邊長（公尺）：把「公尺的餘裕」換成本地座標用。 */
   readonly size: Point3;
+  /** 方塊的中心（世界座標）與外接球半徑：先用球粗略篩掉離視線很遠的。 */
+  readonly center: Point3;
+  readonly radiusM: number;
 }
 
 /** 把「單位方塊 → 世界」的矩陣換成 SightBox。 */
 export function sightBox(matrix: Matrix4): SightBox {
   const size = new Vector3().setFromMatrixScale(matrix);
-  return { inverse: matrix.clone().invert(), size: { x: size.x, y: size.y, z: size.z } };
+  const center = new Vector3().setFromMatrixPosition(matrix);
+  return {
+    inverse: matrix.clone().invert(),
+    size: { x: size.x, y: size.y, z: size.z },
+    center: { x: center.x, y: center.y, z: center.z },
+    radiusM: size.length() / 2,
+  };
 }
 
 const localFrom = new Vector3();
@@ -122,6 +131,25 @@ export function blocksView(camera: Point3, targets: readonly Point3[], box: Sigh
   return (
     pointInBox(camera, box, CONFIG.cameraClearanceM) ||
     targets.some((target) => segmentHitsBox(camera, target, box, CONFIG.sightMarginM))
+  );
+}
+
+/**
+ * 粗篩：方塊的外接球有沒有碰到「鏡頭到車」這一段路附近。絕大多數的擺設離得很遠，在這裡就篩掉，
+ * 不必一條一條視線去測。
+ * @param reachM 鏡頭到車身中心的距離的一半，加上車身的半長與餘裕
+ */
+export function nearSightLine(camera: Point3, pose: VehiclePose, box: SightBox): boolean {
+  const middleX = (camera.x + pose.x) / 2;
+  const middleY = camera.y / 2;
+  const middleZ = (camera.z + pose.z) / 2;
+  const reachM =
+    Math.hypot(camera.x - pose.x, camera.y, camera.z - pose.z) / 2 +
+    VEHICLE_CONFIG_SI.lengthM / 2 +
+    CONFIG.cameraClearanceM;
+  return (
+    Math.hypot(box.center.x - middleX, box.center.y - middleY, box.center.z - middleZ) <=
+    reachM + box.radiusM
   );
 }
 
@@ -273,7 +301,11 @@ export function createOcclusionFade(root: Object3D): OcclusionFade {
     update(camera, pose, active, dtSeconds) {
       const targets = active ? sightTargets(pose) : [];
       for (const group of groups) {
-        const blocked = active && group.boxes.some((box) => blocksView(camera, targets, box));
+        const blocked =
+          active &&
+          group.boxes.some(
+            (box) => nearSightLine(camera, pose, box) && blocksView(camera, targets, box),
+          );
         // 沒被擋、也已經完全不透明：什麼都不必做（絕大多數的擺設每一幀都走這裡）。
         if (!blocked && group.opacity >= 1) {
           continue;
