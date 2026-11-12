@@ -6,3 +6,6 @@ playwright-report/
 test-results/
 blob-report/
 e2e/output/
+
+# Claude Code 本機 session／工具暫存，不要進版本庫
+.claude/
