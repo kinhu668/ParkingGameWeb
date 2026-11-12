@@ -88,7 +88,8 @@ export function createEnvironment(
   group.name = 'environment';
   // 佈局已經是世界座標：給 createLotProps 一個在原點、不轉向的座標框。
   group.add(
-    createLotProps({ ...spot, x: 0, z: 0, headingRad: 0 }, layout.lot, props, hdr, lampsLit),
+    // 路燈用 braced：桿、臂、燈頭連成一體的那一種。
+    createLotProps({ ...spot, x: 0, z: 0, headingRad: 0 }, layout.lot, props, hdr, lampsLit, 'braced'),
   );
 
   // 立體的方塊與平貼地面的標線：一個 InstancedMesh。

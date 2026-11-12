@@ -157,6 +157,71 @@ export function lampHeadPosition(lamp: PropPlacement): { x: number; y: number; z
   };
 }
 
+/**
+ * 路燈的樣式。
+ * - classic：原型關那座停車場的燈（細燈臂托著燈殼）；原型關的基準畫面靠它，不改。
+ * - braced：有邊界的關卡用的：底座、桿頂的接頭、與燈殼同高的粗燈臂、斜撐。遠看、正對著燈臂看，
+ *   桿、臂、燈頭都連成一體，不會只剩一根細桿頂著一個小方塊。
+ */
+export type LampStyle = 'classic' | 'braced';
+
+/**
+ * 燈桿的零件（本地座標：桿底在原點、燈臂朝 −Z）。順序是從地面往燈頭：每一件都與前面的某一件相接。
+ * 兩種樣式的燈殼位置相同（發光面、光錐、真光源都以它為準，見 lampHeadPosition）。
+ */
+export function createLampPostParts(style: LampStyle): BufferGeometry[] {
+  const heightM = LOT.lampHeightM;
+  const head = LOT.lampHeadSizeM;
+  const armM = LOT.lampArmLengthM;
+  const pole = new CylinderGeometry(LOT.lampPoleRadiusM * 0.75, LOT.lampPoleRadiusM, heightM, 10).translate(
+    0,
+    heightM / 2,
+    0,
+  );
+  const housing = new BoxGeometry(head.x, head.y, head.z).translate(0, heightM, -armM);
+  if (style === 'classic') {
+    const armThicknessM = ftToM(0.35);
+    return [
+      pole,
+      new BoxGeometry(armThicknessM, armThicknessM, armM).translate(0, heightM - armThicknessM, -armM / 2),
+      housing,
+    ];
+  }
+  const baseHeightM = ftToM(1.6);
+  const jointM = { x: ftToM(0.8), y: ftToM(0.9), z: ftToM(0.8) };
+  const armM3 = { x: ftToM(0.55), y: ftToM(0.4) };
+  // 燈臂與燈殼同高，一路伸進燈殼裡。
+  const armReachM = armM - head.z / 2 + ftToM(0.4);
+  // 斜撐：從桿身斜上去托住燈臂的中段。
+  const braceDropM = ftToM(3.2);
+  const braceOutM = ftToM(3.2);
+  const braceLengthM = Math.hypot(braceDropM, braceOutM);
+  const braceThicknessM = ftToM(0.3);
+  const brace = new BoxGeometry(braceThicknessM, braceThicknessM, braceLengthM)
+    .rotateX(Math.atan2(braceDropM, braceOutM))
+    .translate(0, heightM - braceDropM / 2 - armM3.y / 2, -braceOutM / 2);
+  // 燈殼後端的收邊：比燈殼窄、比燈臂寬，燈臂接進燈殼的地方不是直角硬接。
+  const neckLengthM = ftToM(0.9);
+  const neck = new BoxGeometry(head.x * 0.62, head.y * 1.25, neckLengthM).translate(
+    0,
+    heightM,
+    -armM + head.z / 2 + neckLengthM / 2 - ftToM(0.1),
+  );
+  return [
+    new CylinderGeometry(LOT.lampPoleRadiusM * 1.5, LOT.lampPoleRadiusM * 1.9, baseHeightM, 10).translate(
+      0,
+      baseHeightM / 2,
+      0,
+    ),
+    pole,
+    new BoxGeometry(jointM.x, jointM.y, jointM.z).translate(0, heightM - jointM.y / 2 + head.y / 2, 0),
+    new BoxGeometry(armM3.x, armM3.y, armReachM).translate(0, heightM, -armReachM / 2),
+    brace,
+    neck,
+    housing,
+  ];
+}
+
 /** 路燈：燈桿＋燈臂＋燈殼（一個幾何）、發光面、光錐、地上的光暈、少數幾盞真光源。 */
 function addLamps(
   group: Group,
@@ -164,6 +229,7 @@ function addLamps(
   props: PropsQualitySettings,
   hdr: boolean,
   lampsLit: boolean,
+  style: LampStyle,
 ): void {
   if (lamps.length === 0) {
     return;
@@ -171,16 +237,7 @@ function addLamps(
   const heightM = LOT.lampHeightM;
   const head = LOT.lampHeadSizeM;
   const armM = LOT.lampArmLengthM;
-  const armThicknessM = ftToM(0.35);
-  const post = mergeGeometries([
-    new CylinderGeometry(LOT.lampPoleRadiusM * 0.75, LOT.lampPoleRadiusM, heightM, 10).translate(
-      0,
-      heightM / 2,
-      0,
-    ),
-    new BoxGeometry(armThicknessM, armThicknessM, armM).translate(0, heightM - armThicknessM, -armM / 2),
-    new BoxGeometry(head.x, head.y, head.z).translate(0, heightM, -armM),
-  ]);
+  const post = mergeGeometries(createLampPostParts(style));
   const posts = instanced(post, standard(LOT.lampColor, 0.6, 0.5), lamps.map(atPlacement), {
     name: 'lampPosts',
     castShadow: true,
@@ -471,6 +528,7 @@ function createSignGeometry(): BufferGeometry {
  * @param props 這個畫質級別的擺設設定（真光源數、光錐、小細節要不要投影、細分）
  * @param hdr 這個級別是不是走高動態範圍的後製鏈（決定光錐與光暈的亮度）
  * @param lampsLit 路燈亮不亮（白天的天氣不亮）；不給 = 亮
+ * @param lampStyle 路燈的樣式；不給 = 原型關的 classic
  */
 export function createLotProps(
   spot: ParkingSpot,
@@ -478,6 +536,7 @@ export function createLotProps(
   props: PropsQualitySettings,
   hdr: boolean,
   lampsLit = true,
+  lampStyle: LampStyle = 'classic',
 ): Group {
   const frame = createSpotFrame(spot);
   frame.name = 'lotProps';
@@ -489,7 +548,7 @@ export function createLotProps(
   const box = unitBox();
 
   frame.add(createParkedCars(layout.parkedCars, props.meshDetail));
-  addLamps(frame, layout.lamps, props, hdr, lampsLit);
+  addLamps(frame, layout.lamps, props, hdr, lampsLit, lampStyle);
 
   // 混凝土柱與柱頂的橫梁：同一個材質，一個 draw call。
   add(
