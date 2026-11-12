@@ -44,6 +44,13 @@ export interface EnvironmentSlab {
   readonly minY: number;
   readonly maxY: number;
   readonly color: number;
+  /**
+   * 只有 decal 有：薄片朝哪個方向（heading）。畫成只有這一面的平面——鏡頭跑到牆後面時看不到它，
+   * 不會被一扇門擋住整個畫面。
+   */
+  readonly facingRad?: number;
+  /** 牆面上的窗與門燈：亮度（0 = 沒開燈的深色玻璃）。有這個欄位就不吃光，顏色由亮度決定。 */
+  readonly lit?: number;
 }
 
 /** 一個環境的全部擺設。 */
@@ -148,8 +155,10 @@ class Builder {
     minY: number,
     maxY: number,
     color: number,
+    extra: { readonly facingRad?: number; readonly lit?: number } = {},
   ): void {
     this.slabs.push({
+      ...extra,
       kind,
       minX: ftToM(Math.min(a.x, b.x)),
       maxX: ftToM(Math.max(a.x, b.x)),
@@ -173,7 +182,23 @@ class Builder {
     maxY: number,
     color: number,
   ): void {
-    this.slab(kind, frame.point(a0, o0), frame.point(a1, o1), minY, maxY, color);
+    this.slab(
+      kind,
+      frame.point(a0, o0),
+      frame.point(a1, o1),
+      minY,
+      maxY,
+      color,
+      kind === 'decal' ? { facingRad: degToRad(frame.inwardDeg) } : {},
+    );
+  }
+
+  /** 貼在 bounds 牆面（out = 0）上的窗或門燈：單面的薄片，只從牆的正面看得到。 */
+  wallGlass(frame: SideFrame, a0: number, a1: number, y0: number, y1: number, brightness: number): void {
+    this.slab('decal', frame.point(a0, -DECAL_DEPTH_FT), frame.point(a1, 0), y0, y1, 0, {
+      facingRad: degToRad(frame.inwardDeg),
+      lit: brightness,
+    });
   }
 
   /** 交給 createLotProps 的擺設（中心、大小都是英尺；朝向是度）。 */
@@ -677,9 +702,9 @@ function addNarrowAlley(builder: Builder, source: EnvironmentSource, bounds: Bou
       }
       if (slot % 3 === 0) {
         builder.sideSlab('decal', frame, along - 1.8, along + 1.8, -DECAL_DEPTH_FT, 0, 0, 7.2, doorColor);
-        builder.glass(frame, along - 0.6, along + 0.6, 0, 8, 8.6, 1);
+        builder.wallGlass(frame, along - 0.6, along + 0.6, 8, 8.6, 1);
       } else {
-        builder.glass(frame, along - 2.2, along + 2.2, 0, 10.5, 15, lit);
+        builder.wallGlass(frame, along - 2.2, along + 2.2, 10.5, 15, lit);
       }
     }
     // 壁燈：桿子藏在建築裡，燈頭伸到巷子上方。
@@ -752,9 +777,9 @@ function addNarrowAlley(builder: Builder, source: EnvironmentSource, bounds: Bou
         const lit = rng() < 0.45 ? 0.5 + 0.5 * rng() : 0;
         if (slot % 3 === 1) {
           builder.sideSlab('decal', outward, along - 1.8, along + 1.8, -DECAL_DEPTH_FT, 0, 0, 7.2, ALLEY.doors[slot % ALLEY.doors.length] ?? ALLEY.doors[0]);
-          builder.glass(outward, along - 0.6, along + 0.6, 0, 8, 8.6, 1);
+          builder.wallGlass(outward, along - 0.6, along + 0.6, 8, 8.6, 1);
         } else {
-          builder.glass(outward, along - 2.2, along + 2.2, 0, 10.5, 15, lit);
+          builder.wallGlass(outward, along - 2.2, along + 2.2, 10.5, 15, lit);
         }
       }
     }

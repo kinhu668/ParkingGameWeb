@@ -8,15 +8,19 @@ import {
   InstancedMesh,
   Matrix4,
   Mesh,
+  MeshBasicMaterial,
   MeshStandardMaterial,
+  PlaneGeometry,
+  Quaternion,
   Shape,
   ShapeGeometry,
   Vector3,
 } from 'three';
+import { forward, headingToRotationY } from '../core/heading';
 import { ftToM } from '../core/units';
 import type { ParkingSpot } from '../level/parkingJudge';
 import type { PropsQualitySettings } from '../render/quality';
-import { SPOT_MARKING_CONFIG } from '../render/renderConfig';
+import { LOT_PROPS_CONFIG as LOT, SPOT_MARKING_CONFIG } from '../render/renderConfig';
 import type { EnvironmentLayout } from './environmentLayout';
 import { createSpotFrame } from './lotEdges';
 import { createLotProps } from './lotProps';
@@ -87,14 +91,16 @@ export function createEnvironment(
     createLotProps({ ...spot, x: 0, z: 0, headingRad: 0 }, layout.lot, props, hdr, lampsLit),
   );
 
-  if (layout.slabs.length > 0) {
-    const slabs = new InstancedMesh(
+  // 立體的方塊與平貼地面的標線：一個 InstancedMesh。
+  const boxes = layout.slabs.filter((slab) => slab.facingRad === undefined);
+  if (boxes.length > 0) {
+    const mesh = new InstancedMesh(
       new BoxGeometry(1, 1, 1),
       new MeshStandardMaterial({ color: 0xffffff, roughness: SLAB_ROUGHNESS }),
-      layout.slabs.length,
+      boxes.length,
     );
-    layout.slabs.forEach((slab, index) => {
-      slabs.setMatrixAt(
+    boxes.forEach((slab, index) => {
+      mesh.setMatrixAt(
         index,
         new Matrix4()
           .makeTranslation(
@@ -104,14 +110,69 @@ export function createEnvironment(
           )
           .scale(new Vector3(slab.maxX - slab.minX, slab.maxY - slab.minY, slab.maxZ - slab.minZ)),
       );
-      slabs.setColorAt(index, new Color(slab.color));
+      mesh.setColorAt(index, new Color(slab.color));
     });
-    slabs.instanceMatrix.needsUpdate = true;
-    slabs.name = 'environmentSlabs';
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.name = 'environmentSlabs';
     // 主建築不投影：太陽很低，會把整個場地罩進影子裡（與背景建築相同）。
-    slabs.castShadow = false;
-    slabs.receiveShadow = true;
-    group.add(slabs);
+    mesh.castShadow = false;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+  }
+
+  // 貼在牆面上的薄片（門、捲門、窗）：只有朝外那一面的平面。吃光的（門）與不吃光的（窗、門燈）各一個 InstancedMesh。
+  const lit = LOT.buildingWindowLitColor;
+  const dark = LOT.buildingWindowDarkColor;
+  for (const glowing of [false, true]) {
+    const decals = layout.slabs.filter(
+      (slab) => slab.facingRad !== undefined && (slab.lit !== undefined) === glowing,
+    );
+    if (decals.length === 0) {
+      continue;
+    }
+    const mesh = new InstancedMesh(
+      new PlaneGeometry(1, 1),
+      glowing
+        ? new MeshBasicMaterial({ color: 0xffffff })
+        : new MeshStandardMaterial({ color: 0xffffff, roughness: SLAB_ROUGHNESS }),
+      decals.length,
+    );
+    decals.forEach((slab, index) => {
+      const facingRad = slab.facingRad ?? 0;
+      const ahead = forward(facingRad);
+      const sizeX = slab.maxX - slab.minX;
+      const sizeZ = slab.maxZ - slab.minZ;
+      const thicknessM = Math.min(sizeX, sizeZ);
+      mesh.setMatrixAt(
+        index,
+        new Matrix4().compose(
+          new Vector3(
+            (slab.minX + slab.maxX) / 2 + (ahead.x * thicknessM) / 2,
+            (slab.minY + slab.maxY) / 2,
+            (slab.minZ + slab.maxZ) / 2 + (ahead.z * thicknessM) / 2,
+          ),
+          // 平面的正面是本地 +Z；與招牌相同的轉法。
+          new Quaternion().setFromAxisAngle(
+            new Vector3(0, 1, 0),
+            headingToRotationY(facingRad) + Math.PI,
+          ),
+          new Vector3(Math.max(sizeX, sizeZ), slab.maxY - slab.minY, 1),
+        ),
+      );
+      const brightness = slab.lit ?? 0;
+      mesh.setColorAt(
+        index,
+        slab.lit === undefined
+          ? new Color(slab.color)
+          : brightness > 0
+            ? new Color().setRGB(lit.r, lit.g, lit.b).multiplyScalar(brightness)
+            : new Color().setRGB(dark.r, dark.g, dark.b),
+      );
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.name = glowing ? 'environmentGlass' : 'environmentDecals';
+    mesh.receiveShadow = !glowing;
+    group.add(mesh);
   }
 
   for (const sign of layout.signs) {
