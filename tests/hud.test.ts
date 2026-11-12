@@ -119,18 +119,26 @@ describe('formatAngleDeg／formatCollisions', () => {
 });
 
 describe('gearFor：檔位', () => {
-  test('車在動：看行進方向，不管油門', () => {
+  test('踩油門／倒車，車停著或同方向在走 → 踩的那個方向', () => {
+    expect(gearFor(0, 1, 'reverse')).toBe('forward');
+    expect(gearFor(0, -1, 'forward')).toBe('reverse');
     expect(gearFor(3, 1, 'reverse')).toBe('forward');
-    expect(gearFor(3, -1, 'reverse')).toBe('forward');
-    expect(gearFor(-0.2, 1, 'forward')).toBe('reverse');
-    expect(gearFor(-0.2, 0, 'forward')).toBe('reverse');
+    expect(gearFor(-2, -1, 'forward')).toBe('reverse');
   });
 
-  test('停著：踩哪個方向就是哪個檔；沒踩維持原本的檔位', () => {
+  test('反向踩是煞車：車還在往原方向走時不換檔，煞停後才換', () => {
+    expect(gearFor(3, -1, 'forward')).toBe('forward');
+    expect(gearFor(-2, 1, 'reverse')).toBe('reverse');
     expect(gearFor(0, -1, 'forward')).toBe('reverse');
-    expect(gearFor(0, 1, 'reverse')).toBe('forward');
+  });
+
+  test('沒踩油門：滑行、停著、被彈回去都維持原本的檔位', () => {
+    expect(gearFor(3, 0, 'forward')).toBe('forward');
     expect(gearFor(0, 0, 'forward')).toBe('forward');
     expect(gearFor(0, 0, 'reverse')).toBe('reverse');
+    // 往前撞到東西被彈回去（車速為負），不論有沒有繼續踩油門都還是前進檔。
+    expect(gearFor(-1, 0, 'forward')).toBe('forward');
+    expect(gearFor(-1, 1, 'forward')).toBe('forward');
   });
 });
 

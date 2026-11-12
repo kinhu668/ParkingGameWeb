@@ -70,15 +70,15 @@ export function formatSpeedMph(speedMps: number): string {
 }
 
 /**
- * 檔位：車在動就看行進方向；停著就看油門（踩倒車 = 倒車檔）；
- * 停著又沒踩油門，維持上一次的檔位。
+ * 檔位：踩油門（或倒車）而且車沒有往反方向走，就是踩的那個方向。
+ * 其他情況維持上一次的檔位：沒踩油門的滑行、反向踩（那是在煞車，煞停後才換檔）、
+ * 撞到東西被彈回去（玩家沒有換檔）。
  */
 export function gearFor(speedMps: number, throttle: DriveInput['throttle'], previous: Gear): Gear {
-  const direction = speedMps !== 0 ? speedMps : throttle;
-  if (direction === 0) {
+  if (throttle === 0 || speedMps * throttle < 0) {
     return previous;
   }
-  return direction > 0 ? 'forward' : 'reverse';
+  return throttle > 0 ? 'forward' : 'reverse';
 }
 
 /** 角度誤差文字：弧度換成度的絕對值，固定小數位，加度數符號。 */
