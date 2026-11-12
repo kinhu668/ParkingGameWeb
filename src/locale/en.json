@@ -20,6 +20,7 @@
   "level.prototype.name": "Prototype Lot",
   "level.w1_l01.name": "First Spot",
   "level.w1_l03.name": "Between Neighbors",
+  "level.unknown": "Unknown level. Available:",
   "show.unknown": "Unknown showcase object. Available:",
   "bench.running": "Benchmark running…",
   "bench.avgFps": "Average FPS",

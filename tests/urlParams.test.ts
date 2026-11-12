@@ -1,7 +1,7 @@
 // 網址參數 → 啟動模式：各模式、優先順序（show > cam > bench > 一般遊戲）、未知值的處理、與 ?lang= 並用。
 import { describe, expect, test } from 'vitest';
 import { detectLocale } from '../src/core/i18n';
-import { CAMERA_PRESETS, parseUrlMode } from '../src/core/urlParams';
+import { CAMERA_PRESETS, parseLevelParam, parseUrlMode } from '../src/core/urlParams';
 
 describe('parseUrlMode：各模式', () => {
   test.each(['', '?', '?foo=1', '?t=3'])('%j → 一般遊戲', (search) => {
@@ -82,5 +82,46 @@ describe('?lang= 與其他參數並用', () => {
   ])('%j → 模式 %s，語言 en', (search, kind) => {
     expect(parseUrlMode(search).kind).toBe(kind);
     expect(detectLocale(search, 'zh-TW')).toBe('en');
+  });
+});
+
+describe('parseLevelParam：?level=<id>', () => {
+  test.each(['', '?', '?foo=1', '?cam=top&t=2', '?bench', '?view=top&lang=en'])(
+    '%j 沒有指定關卡 → undefined',
+    (search) => {
+      expect(parseLevelParam(search)).toBeUndefined();
+    },
+  );
+
+  test.each(['?level', '?level=', '?level=%20%20'])('%j 空值當作沒給', (search) => {
+    expect(parseLevelParam(search)).toBeUndefined();
+  });
+
+  test('回傳 id（去掉前後空白，其餘原樣保留）', () => {
+    expect(parseLevelParam('?level=w1_l03')).toBe('w1_l03');
+    expect(parseLevelParam('?level=prototype')).toBe('prototype');
+    expect(parseLevelParam('?level=%20w1_l01%20')).toBe('w1_l01');
+    expect(parseLevelParam('?level=W1_L03')).toBe('W1_L03');
+  });
+
+  test('不認得的 id 也原樣回傳：認不認得由關卡目錄決定，這裡不悄悄換成別關', () => {
+    expect(parseLevelParam('?level=nope')).toBe('nope');
+  });
+
+  test('可以與任何模式、其他參數並用，不影響啟動模式', () => {
+    expect(parseLevelParam('?cam=top&t=2&level=w1_l03')).toBe('w1_l03');
+    expect(parseLevelParam('?bench&level=w1_l01&quality=low')).toBe('w1_l01');
+    expect(parseLevelParam('?view=top&level=prototype&lang=zh-TW')).toBe('prototype');
+    expect(parseUrlMode('?level=w1_l03')).toEqual({ kind: 'game' });
+    expect(parseUrlMode('?cam=top&t=2&level=w1_l03')).toEqual({
+      kind: 'cam',
+      preset: 'top',
+      timeSeconds: 2,
+    });
+    expect(parseUrlMode('?bench&level=w1_l03')).toEqual({ kind: 'bench' });
+  });
+
+  test('重複給的時候用第一個', () => {
+    expect(parseLevelParam('?level=w1_l01&level=w1_l03')).toBe('w1_l01');
   });
 });

@@ -16,6 +16,7 @@ import { degToRad } from '../core/units';
 import { parkingSpotFromFt } from '../level/parkingJudge';
 import { PROTOTYPE_LAYOUT_FT } from '../level/prototypeLayout';
 import { createSpotMarkings } from '../props/spotMarkings';
+import { showChoicesNotice } from '../ui/notice';
 import { createCarMesh } from '../vehicle/carMesh';
 import { createCamera } from './followCamera';
 import type { VehicleDetail } from './quality';
@@ -62,26 +63,6 @@ function createFloor(): Mesh {
   return floor;
 }
 
-/** 未知 id：在畫面上列出 `show.unknown` 與可用清單。 */
-function showUnknownNotice(): void {
-  const notice = document.createElement('div');
-  notice.id = 'show-notice';
-  notice.className = 'hud-panel mode-panel';
-  const message = document.createElement('div');
-  message.textContent = t('show.unknown');
-  const list = document.createElement('ul');
-  list.className = 'mode-list';
-  for (const id of SHOWCASE_IDS) {
-    const item = document.createElement('li');
-    const code = document.createElement('code');
-    code.textContent = id;
-    item.append(code);
-    list.append(item);
-  }
-  notice.append(message, list);
-  document.body.append(notice);
-}
-
 /** 啟動展示模式。畫出完整的一幀後在 `<body>` 設 `data-shot-ready="true"`。 */
 export function runShowcase({ renderer, quality, pipeline }: RenderContext, id: string): void {
   const scene = new Scene();
@@ -98,7 +79,8 @@ export function runShowcase({ renderer, quality, pipeline }: RenderContext, id: 
 
   const object = createShowcaseObject(id, quality.vehicleDetail);
   if (object === undefined) {
-    showUnknownNotice();
+    // 未知 id：在畫面上列出可用清單。
+    showChoicesNotice('show-notice', t('show.unknown'), SHOWCASE_IDS);
   } else {
     scene.add(object);
   }

@@ -1,4 +1,4 @@
-// `?bench`：以真實時間沿固定示範路線跑一遍，量幀時間與 draw calls，結束後把統計值
+// `?bench`：以真實時間照固定示範路線的輸入跑一遍，量幀時間與 draw calls，結束後把統計值
 // 寫到畫面上的 #bench-result（文字 + data-result 的 JSON）與 console。沒有 HUD、不接鍵盤。
 // 畫面與一般遊戲走同一條管線（含後製），所以 draw calls 是「整幀」的數字：場景、陰影貼圖，
 // 加上後製鏈每個全螢幕濾鏡各一次（環境光遮蔽還會把場景多畫一遍法線）。
@@ -8,7 +8,7 @@ import { FIXED_STEP_SECONDS } from '../core/gameConfig';
 import { t, type TranslationKey } from '../core/i18n';
 import { msToS } from '../core/units';
 import { DEMO_ROUTE_SECONDS, demoInputAtStep } from '../level/demoRoute';
-import { PROTOTYPE_LAYOUT } from '../level/prototypeLayout';
+import type { LevelDefinition } from '../level/levelSchema';
 import { interpolateVehiclePose, stepVehicle } from '../vehicle/bicycleModel';
 import { computeBenchStats, type BenchSample, type BenchStats } from './benchStats';
 import { createFollowCamera } from './followCamera';
@@ -37,15 +37,16 @@ function showResult(panel: HTMLElement, stats: BenchStats): void {
   panel.dataset.result = JSON.stringify(stats);
 }
 
-/** 啟動效能測試。 */
-export function runBench({ renderer, quality, pipeline }: RenderContext): void {
-  const gameScene = createGameScene(
-    renderer,
-    quality,
-    PROTOTYPE_LAYOUT.spot,
-    PROTOTYPE_LAYOUT.startState,
-  );
-  const start = PROTOTYPE_LAYOUT.startState;
+/**
+ * 啟動效能測試。
+ * 示範路線的輸入是照原型關調的；在別的關只是讓車在那個場景裡動起來（量的是算圖成本，不是玩法）。
+ */
+export function runBench(
+  { renderer, quality, pipeline }: RenderContext,
+  level: LevelDefinition,
+): void {
+  const { spot, startState: start } = level.layout;
+  const gameScene = createGameScene(renderer, quality, spot, start);
   const followCamera = createFollowCamera(start.x, start.z);
 
   const panel = document.createElement('div');

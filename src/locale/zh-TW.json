@@ -20,6 +20,7 @@
   "level.prototype.name": "原型測試場",
   "level.w1_l01.name": "第一個車位",
   "level.w1_l03.name": "左鄰右舍",
+  "level.unknown": "找不到這個關卡，可用的有：",
   "show.unknown": "找不到這個展示物件，可用的有：",
   "bench.running": "效能測試中…",
   "bench.avgFps": "平均 FPS",

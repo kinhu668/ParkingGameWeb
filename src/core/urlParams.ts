@@ -2,6 +2,7 @@
 // 優先順序：show > cam > bench > 一般遊戲。
 // `?lang=` 不在這裡處理（i18n.detectLocale 負責），所以可以與任何模式並用。
 // `?view=`（一般遊戲的初始鏡頭）也不在這裡：它不是啟動模式，由 cameraView.ts 解析。
+// `?level=`（要進哪一關）同樣不是啟動模式：一般遊戲、`?cam`、`?bench` 都可以帶，由 parseLevelParam 解析。
 
 /** `?cam=` 可用的固定鏡頭預設。 */
 export const CAMERA_PRESETS = ['follow', 'top', 'spot_low'] as const;
@@ -24,6 +25,7 @@ const SHOW_PARAM = 'show';
 const CAM_PARAM = 'cam';
 const CAM_TIME_PARAM = 't';
 const BENCH_PARAM = 'bench';
+const LEVEL_PARAM = 'level';
 
 function isCameraPreset(value: string): value is CameraPreset {
   return (CAMERA_PRESETS as readonly string[]).includes(value);
@@ -61,4 +63,13 @@ export function parseUrlMode(urlSearch: string): UrlMode {
   }
 
   return { kind: 'game' };
+}
+
+/**
+ * `?level=<id>`：網址指定的關卡 id（去掉前後空白，其餘原樣保留）。
+ * 沒給或空值回傳 undefined。這裡只解析字串；id 認不認得由關卡目錄決定（levelCatalog.resolveLevelRequest）。
+ */
+export function parseLevelParam(urlSearch: string): string | undefined {
+  const id = new URLSearchParams(urlSearch).get(LEVEL_PARAM)?.trim();
+  return id === undefined || id === '' ? undefined : id;
 }
