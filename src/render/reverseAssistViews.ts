@@ -3,6 +3,7 @@
 // - 緩衝區存的是場景線性亮度；貼到畫面上時才做色調映射與色域轉換，顏色與主畫面是同一套。
 // - 後視鏡與倒後鏡頭左右鏡像（鏡子與真車的倒車顯影都是這樣）：畫面左邊就是車的左邊。
 // - 陰影貼圖沿用主畫面這一幀剛畫好的，不重畫。
+// - 跟車鏡頭的遮擋半透明不套用在這裡：畫這四個畫面時擺設都是不透明的（drawScene，見 occlusionFade.ts）。
 // 引導線與文字不在這裡：那是疊在上面的 SVG／DOM（ui/reverseAssist.ts），這裡只提供投影。
 import {
   HalfFloatType,
@@ -200,10 +201,19 @@ export interface ReverseAssistViews {
   render(scene: Scene, pose: VehiclePose, layout: AssistLayout, opacity: number): void;
 }
 
-/** 建立四個視口的鏡頭與緩衝區。renderer 要用同一個 quality 建立。 */
+/** 把場景畫進小畫面的那一段包在這裡面跑：給場景一個機會先換成「小畫面該看到的樣子」，畫完再換回來。 */
+export type AssistSceneGuard = (draw: () => void) => void;
+
+/**
+ * 建立四個視口的鏡頭與緩衝區。renderer 要用同一個 quality 建立。
+ * @param drawScene 畫小畫面時包在外面的那一層（GameScene.drawUnfaded：不套用遮擋半透明）；不給就直接畫
+ */
 export function createReverseAssistViews(
   renderer: WebGLRenderer,
   quality: QualitySettings,
+  drawScene: AssistSceneGuard = (draw) => {
+    draw();
+  },
 ): ReverseAssistViews {
   const cost = CONFIG.quality[quality.level];
   const cameras = createAssistCameras();
@@ -291,10 +301,12 @@ export function createReverseAssistViews(
       // 陰影貼圖沿用主畫面這一幀的：光與場景都沒變，不必再畫一遍。
       const shadowAutoUpdate = renderer.shadowMap.autoUpdate;
       renderer.shadowMap.autoUpdate = false;
-      for (const id of redraw) {
-        renderer.setRenderTarget(targets[id]);
-        renderer.render(scene, cameras[id]);
-      }
+      drawScene(() => {
+        for (const id of redraw) {
+          renderer.setRenderTarget(targets[id]);
+          renderer.render(scene, cameras[id]);
+        }
+      });
       renderer.setRenderTarget(null);
       renderer.shadowMap.autoUpdate = shadowAutoUpdate;
 

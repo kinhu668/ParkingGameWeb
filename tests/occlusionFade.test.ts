@@ -269,6 +269,110 @@ describe('只淡擋住的那一個實例', () => {
   });
 });
 
+describe('不是跟車鏡頭的畫面（倒車輔助層的四個小畫面）：drawUnfaded', () => {
+  /** 一根燈桿加一片它專用材質的牌面（像招牌柱、回收架的 CART RETURN）。 */
+  function signPoleScene(): {
+    root: Group;
+    mesh: InstancedMesh;
+    sign: Mesh<BoxGeometry, MeshStandardMaterial>;
+    hidden: boolean[];
+  } {
+    const { root, mesh, hidden } = poleScene();
+    const sign = new Mesh(new BoxGeometry(1, 1, 0.01), new MeshStandardMaterial());
+    root.add(sign);
+    registerOccluders(root, [
+      {
+        boxes: [occluderBox({ x: 0, y: 1.2, z: ftToM(10) }, { x: 1.2, y: 2.4, z: 0.4 })],
+        parts: [],
+        meshes: [sign],
+      },
+    ]);
+    return { root, mesh, sign, hidden };
+  }
+
+  test('淡掉的擺設在 draw 期間是不透明的原樣，draw 之後恢復成淡出的樣子，淡入淡出的進度不變', () => {
+    const { root, mesh, sign, hidden } = signPoleScene();
+    const fade = createOcclusionFade(root);
+    const before = Array.from(mesh.instanceMatrix.array);
+    for (let frame = 0; frame < 5; frame += 1) {
+      fade.update(CAMERA, POSE, true, FRAME_SECONDS);
+    }
+    expect(fade.fadedCount()).toBe(2);
+    const [standIn] = standIns(mesh);
+    const standInMaterial = standIn?.material as MeshStandardMaterial;
+    const fadedOpacity = standInMaterial.opacity;
+    expect(fadedOpacity).toBeLessThan(1);
+    expect(sign.material.opacity).toBe(fadedOpacity);
+    const fadedMatrices = Array.from(mesh.instanceMatrix.array);
+
+    let draws = 0;
+    fade.drawUnfaded(() => {
+      draws += 1;
+      // 實例回到原位、替身不畫、併在別處的小東西（車牌字）顯示、牌面不透明。
+      expect(Array.from(mesh.instanceMatrix.array)).toEqual(before);
+      expect(standIn?.visible).toBe(false);
+      expect(hidden).toEqual([false, false, false]);
+      expect(sign.material.opacity).toBe(1);
+      // 共用的材質照舊沒被動過。
+      expect((mesh.material as MeshStandardMaterial).opacity).toBe(1);
+    });
+    expect(draws).toBe(1);
+
+    // 跟車鏡頭的主畫面下一幀看到的仍是淡出的樣子，進度一模一樣。
+    expect(Array.from(mesh.instanceMatrix.array)).toEqual(fadedMatrices);
+    expect(instanceScale(mesh, 0)).toBe(0);
+    expect(standIn?.visible).toBe(true);
+    expect(standInMaterial.opacity).toBe(fadedOpacity);
+    expect(sign.material.opacity).toBe(fadedOpacity);
+    expect(sign.material.transparent).toBe(true);
+    expect(hidden).toEqual([true, false, false]);
+    expect(fade.fadedCount()).toBe(2);
+
+    // 之後照常淡到底、照常淡回來。
+    for (let frame = 0; frame < 30; frame += 1) {
+      fade.update(CAMERA, POSE, true, FRAME_SECONDS);
+      fade.drawUnfaded(() => undefined);
+    }
+    expect(standInMaterial.opacity).toBe(OCCLUSION_FADE_CONFIG.opacity);
+    for (let frame = 0; frame < 30; frame += 1) {
+      fade.update(CAMERA, POSE, false, FRAME_SECONDS);
+      fade.drawUnfaded(() => undefined);
+    }
+    expect(fade.fadedCount()).toBe(0);
+    expect(Array.from(mesh.instanceMatrix.array)).toEqual(before);
+    expect(standIn?.visible).toBe(false);
+    expect(sign.material.opacity).toBe(1);
+    expect(sign.material.transparent).toBe(false);
+  });
+
+  test('沒有東西淡掉：直接跑 draw，實例緩衝區不必重新上傳', () => {
+    const { root, mesh } = poleScene();
+    const fade = createOcclusionFade(root);
+    fade.update(CAMERA, POSE, false, FRAME_SECONDS);
+    const version = mesh.instanceMatrix.version;
+    let draws = 0;
+    fade.drawUnfaded(() => {
+      draws += 1;
+    });
+    expect(draws).toBe(1);
+    expect(mesh.instanceMatrix.version).toBe(version);
+    expect(standIns(mesh)).toHaveLength(0);
+  });
+
+  test('draw 丟例外也會恢復成淡出的樣子', () => {
+    const { root, mesh } = poleScene();
+    const fade = createOcclusionFade(root);
+    fade.update(CAMERA, POSE, true, FRAME_SECONDS);
+    expect(() => {
+      fade.drawUnfaded(() => {
+        throw new Error('畫壞了');
+      });
+    }).toThrow('畫壞了');
+    expect(instanceScale(mesh, 0)).toBe(0);
+    expect(standIns(mesh)[0]?.visible).toBe(true);
+  });
+});
+
 describe('w1_l04：推車回收架', () => {
   const level = levelById('w1_l04');
   if (level === undefined) {

@@ -3,6 +3,8 @@
 // 線段到車身為止，所以車後面（更遠處）的建築不會被淡掉。鏡頭貼在擺設旁邊或裡面時也算。
 // 做法：InstancedMesh 沒辦法只讓一個實例半透明，所以把那個實例縮成零（藏起來），原地放一個
 // 同幾何、半透明材質的替身；恢復時把實例的矩陣放回去、替身藏起來。沒有東西被擋時場景與原本完全相同。
+// 淡出只屬於跟車鏡頭的主畫面：同一個場景還要給倒車輔助層的四個小畫面畫（後視鏡、鳥瞰、倒後鏡頭），
+// 那些鏡頭沒有被擋，要用 drawUnfaded 暫時把擺設放回不透明再畫。
 import {
   Color,
   Matrix4,
@@ -174,6 +176,12 @@ export interface OcclusionFade {
   update(camera: Point3, pose: VehiclePose, active: boolean, dtSeconds: number): void;
   /** 目前不是完全不透明的有幾樣（測試與除錯用）。 */
   fadedCount(): number;
+  /**
+   * 用「沒有淡出」的場景跑 draw：淡掉的擺設暫時放回不透明的原樣，draw 跑完（或丟例外）再恢復成淡出的樣子。
+   * 淡入淡出的進度不受影響。給不是跟車鏡頭的畫面用（倒車輔助層的四個小畫面）。
+   * 沒有東西淡掉時直接跑 draw，什麼都不動。
+   */
+  drawUnfaded(draw: () => void): void;
 }
 
 /** 一個實例的替身。 */
@@ -240,6 +248,25 @@ function setInstanceMatrix(part: OccluderPart, matrix: Matrix4): void {
   part.mesh.instanceMatrix.needsUpdate = true;
 }
 
+/** 實例與替身換手：swapped = 畫替身（實例藏起來），否則畫原本的實例。併在別處的小東西跟著藏／顯示。 */
+function swapStandIns(group: FadeGroup, swapped: boolean): void {
+  for (const standIn of group.standIns ?? []) {
+    setInstanceMatrix(standIn.part, swapped ? HIDDEN_MATRIX : standIn.original);
+    standIn.mesh.visible = swapped;
+  }
+  group.occluder.setHidden?.(swapped);
+}
+
+/** 不是實例的網格（招牌的牌面）：只改它專用材質的不透明度。 */
+function setMeshOpacity(group: FadeGroup, opacity: number): void {
+  for (const mesh of group.occluder.meshes ?? []) {
+    const material = singleMaterial(mesh.material);
+    if (material !== undefined) {
+      material.opacity = opacity;
+    }
+  }
+}
+
 /** 把這樣東西畫成 opacity 的不透明度（1 = 原本的樣子）。 */
 function applyOpacity(group: FadeGroup, opacity: number): void {
   const wasFaded = group.opacity < 1;
@@ -252,10 +279,7 @@ function applyOpacity(group: FadeGroup, opacity: number): void {
   }
   const standIns = group.standIns ?? [];
   if (faded !== wasFaded) {
-    for (const standIn of standIns) {
-      setInstanceMatrix(standIn.part, faded ? HIDDEN_MATRIX : standIn.original);
-      standIn.mesh.visible = faded;
-    }
+    swapStandIns(group, faded);
     for (const mesh of group.occluder.meshes ?? []) {
       const material = singleMaterial(mesh.material);
       if (material !== undefined) {
@@ -263,17 +287,11 @@ function applyOpacity(group: FadeGroup, opacity: number): void {
         material.needsUpdate = true;
       }
     }
-    group.occluder.setHidden?.(faded);
   }
   for (const standIn of standIns) {
     standIn.material.opacity = opacity;
   }
-  for (const mesh of group.occluder.meshes ?? []) {
-    const material = singleMaterial(mesh.material);
-    if (material !== undefined) {
-      material.opacity = opacity;
-    }
-  }
+  setMeshOpacity(group, opacity);
 }
 
 /**
@@ -317,5 +335,21 @@ export function createOcclusionFade(root: Object3D): OcclusionFade {
       }
     },
     fadedCount: () => groups.filter((group) => group.opacity < 1).length,
+    drawUnfaded(draw) {
+      const faded = groups.filter((group) => group.opacity < 1);
+      // 實例放回原位、替身藏起來；牌面的材質留在半透明那一路（不必重編著色器），不透明度先拉回 1。
+      for (const group of faded) {
+        swapStandIns(group, false);
+        setMeshOpacity(group, 1);
+      }
+      try {
+        draw();
+      } finally {
+        for (const group of faded) {
+          swapStandIns(group, true);
+          setMeshOpacity(group, group.opacity);
+        }
+      }
+    },
   };
 }

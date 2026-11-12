@@ -99,6 +99,11 @@ export interface GameScene {
     enabled: boolean,
     frameSeconds: number,
   ): void;
+  /**
+   * 用沒有遮擋淡出的場景跑 draw（淡掉的擺設暫時放回不透明，跑完恢復）。
+   * 倒車輔助層的小畫面用：那些鏡頭不是跟車鏡頭，看到的鄰車與燈柱不該是半透明的。
+   */
+  drawUnfaded(draw: () => void): void;
 }
 
 /** 場景的燈光：半球補光 + 會投影的太陽。 */
@@ -431,6 +436,13 @@ export function createGameScene(
     scene,
     fadeOccluders(cameraPosition, pose, enabled, frameSeconds) {
       occlusion?.update(cameraPosition, pose, enabled, frameSeconds);
+    },
+    drawUnfaded(draw) {
+      if (occlusion === undefined) {
+        draw();
+      } else {
+        occlusion.drawUnfaded(draw);
+      }
     },
     update(pose, frameSeconds = 0) {
       updateCarMesh(car, pose);
