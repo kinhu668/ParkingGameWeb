@@ -127,6 +127,8 @@ export interface Hud {
   showCameraView(view: GameCameraView): void;
   /** 顯示或收起暫停面板（Esc）。 */
   setPaused(paused: boolean): void;
+  /** 儀表上目前顯示的檔位（最近一次 update 的結果）；倒車輔助層看它決定顯示與否。 */
+  gear(): Gear;
 }
 
 /**
@@ -238,9 +240,11 @@ export function createHud(root: HTMLElement, actions: LevelActions, resume: () =
       if (next.angle !== previous?.angle) {
         angleValue.textContent = next.angle;
       }
+      // 新的一局在第一次駕駛輸入之前（ready）是前進檔：重來後不沿用上一局的倒檔。
       // 已經結束（停妥或失敗）就不再換檔位：車不會動了。
+      const baseGear: Gear = session.status === 'ready' ? 'forward' : shownGear;
       const gear =
-        next.outcome === null ? gearFor(session.vehicle.speedMps, input.throttle, shownGear) : shownGear;
+        next.outcome === null ? gearFor(session.vehicle.speedMps, input.throttle, baseGear) : baseGear;
       if (gear !== shownGear) {
         shownGear = gear;
         renderGear();
@@ -256,6 +260,7 @@ export function createHud(root: HTMLElement, actions: LevelActions, resume: () =
     setPaused(paused: boolean): void {
       pausePanel.setVisible(paused);
     },
+    gear: () => shownGear,
     showCameraView(view: GameCameraView): void {
       shownView = view;
       cameraLabel.dataset.view = view;
