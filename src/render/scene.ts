@@ -21,6 +21,7 @@ import {
 } from '../props/lotEdges';
 import { createLotLayout, spotLocalToWorld } from '../props/lotLayout';
 import { createLotProps } from '../props/lotProps';
+import { createObstacleBoxes, type ObstacleSource } from '../props/obstacleMeshes';
 import { createSpotMarkings } from '../props/spotMarkings';
 import type { VehiclePose } from '../vehicle/bicycleModel';
 import { createCarHeadlights } from '../vehicle/carHeadlights';
@@ -187,12 +188,14 @@ export function addLights(
  * @param quality 畫質設定
  * @param spot 要畫標線的車位
  * @param start 車的起點（世界座標）；起點到車位的通路上不放擺設
+ * @param obstacles 關卡的障礙物與邊界（會撞到的東西）；不給就不畫
  */
 export function createGameScene(
   renderer: WebGLRenderer,
   quality: QualitySettings,
   spot: ParkingSpot,
   start: GroundVector,
+  obstacles?: ObstacleSource,
 ): GameScene {
   const scene = new Scene();
   scene.add(addSkyEnvironment(scene, renderer, quality).dome);
@@ -236,6 +239,11 @@ export function createGameScene(
       usesHdrChain(quality),
     ),
   );
+
+  // 關卡的障礙物與邊界：這些才有碰撞。目前是單色方塊，底面就是碰撞盒。
+  if (obstacles !== undefined) {
+    scene.add(createObstacleBoxes(obstacles));
+  }
 
   const car = createCarMesh(quality.vehicleDetail);
   scene.add(car.root);

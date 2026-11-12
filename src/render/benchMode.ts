@@ -46,7 +46,7 @@ export function runBench(
   level: LevelDefinition,
 ): void {
   const { spot, startState: start } = level.layout;
-  const gameScene = createGameScene(renderer, quality, spot, start);
+  const gameScene = createGameScene(renderer, quality, spot, start, level);
   const followCamera = createFollowCamera(start.x, start.z);
 
   const panel = document.createElement('div');

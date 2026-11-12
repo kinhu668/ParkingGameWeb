@@ -71,7 +71,7 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
     throw new Error('找不到 #hud');
   }
 
-  const gameScene = createGameScene(renderer, quality, layout.spot, layout.startState);
+  const gameScene = createGameScene(renderer, quality, layout.spot, layout.startState, level);
   const input = attachKeyboardInput(window);
   const hud = createHud(hudRoot);
 
@@ -159,7 +159,7 @@ function runCameraShot(
       : 0;
   const vehicle = demoVehicleAfterSteps(startState, steps);
 
-  const gameScene = createGameScene(renderer, quality, spot, startState);
+  const gameScene = createGameScene(renderer, quality, spot, startState, level);
   gameScene.update(vehicle);
   const camera = createPresetCamera(preset, vehicle.x, vehicle.z, spot);
 
