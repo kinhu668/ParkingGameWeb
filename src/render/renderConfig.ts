@@ -275,6 +275,53 @@ export const GAME_CAMERA_CONFIG = {
   },
 } as const;
 
+/**
+ * 倒車輔助層的四台鏡頭（左右後視鏡、倒後鏡頭、鳥瞰）與各畫質的成本。
+ * 四個畫面各畫進一張小的離屏緩衝區，再貼到主畫面上；長寬比在 core/assistLayout.ts。
+ */
+export const REVERSE_ASSIST_CONFIG = {
+  farM: ftToM(600),
+  /** 左右後視鏡：鏡頭在鏡殼外緣的上方、鏡面後面一點，朝車尾看，略往外、略往下。畫面左右鏡像。 */
+  mirror: {
+    fovDeg: 42,
+    nearM: 0.05,
+    /** 比車寬的一半再往外多少。 */
+    outboardM: 0.04,
+    heightM: ftToM(3.25),
+    /** 相對車身中心往車頭的距離（後視鏡在前擋下緣附近）。 */
+    aheadM: ftToM(1.45),
+    yawOutRad: degToRad(12),
+    pitchDownRad: degToRad(7),
+  },
+  /** 倒後鏡頭：車尾中央、行李廂蓋的高度，廣角、往下俯。畫面左右鏡像（與真車的倒車顯影一樣）。 */
+  rear: {
+    fovDeg: 96,
+    nearM: 0.05,
+    /** 鏡頭在後保險桿後面多少。 */
+    behindRearM: 0.03,
+    heightM: ftToM(3),
+    pitchDownRad: degToRad(32),
+  },
+  /** 鳥瞰：車正上方垂直往下的正交鏡頭，車頭朝畫面上方、車在正中央。 */
+  bird: {
+    heightM: 20,
+    /** 畫面上下各看多遠（公尺）；左右依長寬比。 */
+    halfDepthM: ftToM(19),
+    /** 離地這個高度以上的東西切掉不畫（燈頭、樹冠、雨遮不會蓋住車）。 */
+    clipAboveGroundM: ftToM(10.5),
+  },
+  /**
+   * 各畫質的成本：緩衝區解析度的倍率、多重取樣數、每幀最多重畫幾個視口（其餘沿用上一張，輪流更新）。
+   * low、medium 沒有顯示卡也要跑得動：解析度減半或每幀只重畫一半。
+   */
+  quality: {
+    low: { resolutionScale: 0.5, msaaSamples: 0, viewsPerFrame: 2 },
+    medium: { resolutionScale: 1, msaaSamples: 0, viewsPerFrame: 2 },
+    high: { resolutionScale: 1, msaaSamples: 4, viewsPerFrame: 4 },
+    ultra: { resolutionScale: 1, msaaSamples: 4, viewsPerFrame: 4 },
+  },
+} as const;
+
 /** `?show=` 展示台：深色背景、圓形地台、固定主光與 3/4 視角。 */
 export const SHOWCASE_CONFIG = {
   backgroundColor: 0x1b1e23,

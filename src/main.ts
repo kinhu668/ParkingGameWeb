@@ -17,6 +17,7 @@ import { resolveWeather } from './core/weather';
 import { loadSave, updateSave, withLocale, type SaveStorage } from './core/save';
 import {
   navigationSearch,
+  parseAssistOffParam,
   parseFxOffParam,
   parseLevelParam,
   parseUnlockAllParam,
@@ -58,6 +59,7 @@ import { runShowcase } from './render/showcase';
 import { createHud } from './ui/hud';
 import { createLevelSelect, levelCards } from './ui/levelSelect';
 import { showChoicesNotice } from './ui/notice';
+import { createReverseAssist } from './ui/reverseAssist';
 import './ui/style.css';
 import { interpolateVehiclePose, type DriveInput } from './vehicle/bicycleModel';
 import { carLightsFor } from './vehicle/carMesh';
@@ -125,7 +127,7 @@ function createLevelScene(
 
 /**
  * 一般遊戲：固定步長物理迴圈 + 算圖內插 + 鍵盤開車 + 碰撞／計時／停車判定 + 可切換的鏡頭（V）+ HUD
- * + 暫停（Esc）+ 過關寫存檔。
+ * + 暫停（Esc）+ 過關寫存檔 + 倒車輔助層。
  */
 function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDefinition): void {
   const { layout } = level;
@@ -173,6 +175,11 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
     layout.startState,
   );
   hud.showCameraView(gameCamera.view());
+
+  // 倒車輔助層（左右後視鏡、鳥瞰、倒後鏡頭）：預設開；`?assist=off`、`?fx=off` 不建立。
+  const reverseAssist = parseAssistOffParam(window.location.search)
+    ? undefined
+    : createReverseAssist(renderer, quality, hudRoot, gameScene.scene);
 
   // 內插需要相鄰兩步的車輛狀態：previousVehicle = 上一步、session.vehicle = 最新一步。
   let session = startSession(layout);
@@ -257,6 +264,17 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
     );
     pipeline.render(gameScene.scene, gameCamera.camera);
     hud.update(session, driveInput);
+    // 倒車輔助層疊在剛畫好的主畫面上；看的是 HUD 剛更新的檔位。
+    reverseAssist?.frame(
+      gameScene.scene,
+      pose,
+      {
+        reverseGear: hud.gear() === 'reverse',
+        speedMps: session.vehicle.speedMps,
+        running: session.status === 'ready' || session.status === 'driving',
+      },
+      frameSeconds,
+    );
 
     requestAnimationFrame(frame);
   }

@@ -58,5 +58,10 @@
   "bench.avgFps": "Average FPS",
   "bench.low1": "1% low FPS",
   "bench.drawCalls": "Draw calls (avg)",
-  "bench.drawCallsMax": "Draw calls (max)"
+  "bench.drawCallsMax": "Draw calls (max)",
+  "assist.bird": "Bird view",
+  "assist.rear": "Rear camera",
+  "assist.mirrorLeft": "Left mirror",
+  "assist.mirrorRight": "Right mirror",
+  "assist.warning": "Check surroundings for safety."
 }

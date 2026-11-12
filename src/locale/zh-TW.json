@@ -58,5 +58,10 @@
   "bench.avgFps": "平均 FPS",
   "bench.low1": "最低 1% FPS",
   "bench.drawCalls": "繪製呼叫數（平均）",
-  "bench.drawCallsMax": "繪製呼叫數（最大）"
+  "bench.drawCallsMax": "繪製呼叫數（最大）",
+  "assist.bird": "鳥瞰",
+  "assist.rear": "倒車鏡頭",
+  "assist.mirrorLeft": "左後視鏡",
+  "assist.mirrorRight": "右後視鏡",
+  "assist.warning": "請注意周圍安全。"
 }
