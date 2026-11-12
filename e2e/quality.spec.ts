@@ -50,11 +50,11 @@ async function captureShot(page: Page, url: string, fileName: string): Promise<s
 }
 
 test('沒有 ?quality=：軟體算圖自動選 medium；不認得的值當作沒給', async ({ page }) => {
-  await page.goto('/?lang=zh-TW');
+  await page.goto('/?level=prototype&lang=zh-TW');
   await expect(page.locator('#game-canvas')).toBeVisible();
   await expectQuality(page, 'medium', 'auto');
 
-  await page.goto('/?quality=nope&lang=zh-TW');
+  await page.goto('/?level=prototype&quality=nope&lang=zh-TW');
   await expect(page.locator('#hud-camera')).toBeVisible();
   await expectQuality(page, 'medium', 'auto');
   await expectCanvasDrawn(page, 'quality=nope');
@@ -92,7 +92,7 @@ for (const level of ['high', 'ultra'] as const) {
 }
 
 test('?quality=high 的一般遊戲：後製鏈跟著鏡頭切換與視窗縮放', async ({ page }) => {
-  await page.goto('/?quality=high&view=chase_far&lang=zh-TW');
+  await page.goto('/?level=prototype&quality=high&view=chase_far&lang=zh-TW');
   const label = page.locator('#hud-camera');
   await expect(label).toHaveAttribute('data-view', 'chase_far', { timeout: SLOW_READY_MS });
   await expectQuality(page, 'high', 'url');

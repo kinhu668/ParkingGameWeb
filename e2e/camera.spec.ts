@@ -43,7 +43,7 @@ async function checkView(page: Page, view: GameCameraView): Promise<string> {
 
 test('按 V 依序切過五個鏡頭，每個都畫得出來，第五次回到近距離跟車', async ({ page }) => {
   // 指定 ?view= 當起點，不受之前存過的鏡頭影響。
-  await page.goto('/?view=chase_near&lang=zh-TW');
+  await page.goto('/?level=prototype&view=chase_near&lang=zh-TW');
   await expect(page.locator('#game-canvas')).toBeVisible();
   // 操作說明有「V 切換鏡頭」這一列。
   await expect(page.locator('.hud-controls')).toContainText('切換鏡頭');
@@ -66,7 +66,7 @@ test('按 V 依序切過五個鏡頭，每個都畫得出來，第五次回到�
 });
 
 test('?view=cockpit 一進場就是駕駛座；切換語言時鏡頭名稱與操作說明一起換', async ({ page }) => {
-  await page.goto('/?view=cockpit&lang=zh-TW');
+  await page.goto('/?level=prototype&view=cockpit&lang=zh-TW');
   const label = page.locator('#hud-camera');
   const controls = page.locator('.hud-controls');
   await expect(page.locator('#game-canvas')).toBeVisible();
@@ -89,7 +89,7 @@ test('記住上次的鏡頭：重新進場沿用，?view= 優先，不認得的 
   const label = page.locator('#hud-camera');
 
   // 全新的瀏覽器環境、沒有 ?view=：預設是近距離跟車。
-  await page.goto('/?lang=zh-TW');
+  await page.goto('/?level=prototype&lang=zh-TW');
   await expect(label).toHaveAttribute('data-view', 'chase_near');
 
   // 切兩次到引擎蓋，重新整理後還是引擎蓋。
@@ -101,11 +101,11 @@ test('記住上次的鏡頭：重新進場沿用，?view= 優先，不認得的 
   await expect(label).toHaveAttribute('data-view', 'hood');
 
   // 有效的 ?view= 蓋過存的。
-  await page.goto('/?view=top&lang=zh-TW');
+  await page.goto('/?level=prototype&view=top&lang=zh-TW');
   await expect(label).toHaveAttribute('data-view', 'top');
 
   // 不認得的 ?view= 不是錯誤：照常進遊戲，用存的鏡頭。
-  await page.goto('/?view=nope&lang=zh-TW');
+  await page.goto('/?level=prototype&view=nope&lang=zh-TW');
   await expect(page.locator('#game-canvas')).toBeVisible();
   await expect(label).toHaveAttribute('data-view', 'hood');
 });

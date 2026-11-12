@@ -103,7 +103,7 @@ async function driveIntoSpot(page: Page): Promise<SessionSnapshot> {
 }
 
 test('用鍵盤把車停進車位、切換語言、按 R 重來', async ({ page }) => {
-  await page.goto('/?lang=zh-TW');
+  await page.goto('/?level=prototype&lang=zh-TW');
 
   const status = page.locator('#hud-status');
   const statusTitle = status.locator('.hud-status-title');
