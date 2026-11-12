@@ -184,7 +184,10 @@ export function createEnvironment(
   }
 
   const signMeshes = layout.signs.map((sign) => createSignMesh(lampsLit ? sign : { ...sign, glow: 0 }));
-  group.add(...signMeshes);
+  // 一塊一塊加：沒有招牌的環境（空曠的停車場）不能呼叫沒有引數的 add（three 會當成錯誤印出來）。
+  for (const signMesh of signMeshes) {
+    group.add(signMesh);
+  }
 
   // 擋到跟車鏡頭時淡掉的方塊：立體、夠高的每一塊各自淡（人行道、路緣、地上的標線不淡）。
   // 招牌柱：桿子與牌面一起淡。

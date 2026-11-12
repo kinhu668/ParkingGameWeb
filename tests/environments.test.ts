@@ -1,7 +1,7 @@
 // 關卡四周的環境：bounds 裡沒有「看得見、穿得過」的東西（計畫 §6.2）；四個環境各有自己的建築與招牌；
 // 招牌文字只來自 environmentSigns 的表；原型關不走這裡。不開 WebGL。
 import { InstancedMesh } from 'three';
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import { ftToM } from '../src/core/units';
 import { ENVIRONMENT_SIGNS, signText, signTextsFor } from '../src/level/environmentSigns';
 import { LEVELS, levelById } from '../src/level/levelCatalog';
@@ -126,6 +126,20 @@ describe.each(BOUNDED.map((level) => [level.id, level] as const))('%s 的環境'
     expect(names).toContain('lotProps');
     expect(names).toContain('spotArrow');
     expect(names.filter((name) => name === 'sign')).toHaveLength(layout.signs.length);
+  });
+
+  test('建立網格時 three 沒有印出錯誤（沒有招牌的環境也一樣）', () => {
+    const layout = createEnvironmentLayout(level, ULTRA);
+    if (layout === undefined) {
+      throw new Error('沒有佈局');
+    }
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      createEnvironment(level.layout.spot, layout, ULTRA, true);
+      expect(errors).not.toHaveBeenCalled();
+    } finally {
+      errors.mockRestore();
+    }
   });
 });
 
