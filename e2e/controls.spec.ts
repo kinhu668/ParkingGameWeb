@@ -326,3 +326,91 @@ test('掛 R／D 檔進入手排、逗號腳剎、Backspace 重來後回到自排
   const end = await holdUntil(page, 'Slash', (snapshot) => snapshot.speedMph === 0);
   expect(end.status).toBe('driving');
 });
+
+test('重來一律回到自排 D 檔：按著轉向或油門重來、T、暫停面板的重來按鈕', async ({ page }) => {
+  await page.goto('/?level=w1_l05&view=chase_near&lang=zh-TW');
+  const gear = page.locator('#hud-gear');
+  const assist = page.locator('#reverse-assist');
+  await expect(gear).toHaveAttribute('data-gear', 'forward');
+  const start = await nextSnapshot(page);
+
+  /** 接下來幾幀都還是自排 D 檔、輔助層收著（重設過的檔位不會被仍按著的鍵變回 R）。 */
+  async function staysInDrive(): Promise<void> {
+    for (let frame = 0; frame < 8; frame += 1) {
+      await nextSnapshot(page);
+      expect(await gear.getAttribute('data-gear')).toBe('forward');
+      expect(await gear.getAttribute('data-mode')).toBe('auto');
+      expect(await assist.getAttribute('data-visible')).toBe('false');
+    }
+  }
+
+  // 手排 R、按著左轉不放時按 Backspace：回到自排 D，輔助層收起；左轉仍按著也不會變回 R。
+  await page.keyboard.press('KeyR');
+  await expect(gear).toHaveAttribute('data-gear', 'reverse');
+  await expect(gear).toHaveAttribute('data-mode', 'manual');
+  await expect(assist).toHaveAttribute('data-visible', 'true');
+  await page.keyboard.down('KeyA');
+  await nextSnapshot(page);
+  await page.keyboard.press('Backspace');
+  await expect(gear).toHaveAttribute('data-gear', 'forward');
+  await expect(gear).toHaveAttribute('data-mode', 'auto');
+  await expect(assist).toHaveAttribute('data-visible', 'false');
+  await staysInDrive();
+  await page.keyboard.up('KeyA');
+
+  // 自排倒車（按 S）後停住，檔位留在 R；按著右轉不放時按 T（備用的重來鍵）：同樣回到 D。
+  const reversing = await holdUntil(page, 'KeyS', (snapshot) => snapshot.speedMph < -0.5);
+  expect(reversing.status).toBe('driving');
+  const stopped = await holdUntil(page, 'Space', (snapshot) => snapshot.speedMph === 0);
+  expect(stopped.status).toBe('driving');
+  await expect(gear).toHaveAttribute('data-gear', 'reverse');
+  await expect(gear).toHaveAttribute('data-mode', 'auto');
+  await expect(assist).toHaveAttribute('data-visible', 'true');
+  await page.keyboard.down('KeyD');
+  await nextSnapshot(page);
+  await page.keyboard.press('KeyT');
+  await expect(gear).toHaveAttribute('data-gear', 'forward');
+  await expect(assist).toHaveAttribute('data-visible', 'false');
+  await staysInDrive();
+  await page.keyboard.up('KeyD');
+  expect(Math.abs((await nextSnapshot(page)).zFt - start.zFt)).toBeLessThan(POSITION_TOLERANCE_FT);
+
+  // 手排 R、按著油門（R 檔下只是腳剎，車不動）時重來：回到自排，仍按著的油門讓車往前走，檔位是 D。
+  await page.keyboard.press('KeyR');
+  await expect(gear).toHaveAttribute('data-mode', 'manual');
+  await page.keyboard.down('KeyW');
+  await nextSnapshot(page);
+  expect((await nextSnapshot(page)).speedMph).toBe(0);
+  await page.keyboard.press('Backspace');
+  await expect(gear).toHaveAttribute('data-gear', 'forward');
+  await expect(gear).toHaveAttribute('data-mode', 'auto');
+  await expect.poll(async () => (await nextSnapshot(page)).speedMph).toBeGreaterThan(0.5);
+  expect(await gear.getAttribute('data-gear')).toBe('forward');
+  await page.keyboard.up('KeyW');
+  const rolled = await holdUntil(page, 'Space', (snapshot) => snapshot.speedMph === 0);
+  expect(rolled.status).toBe('driving');
+  expect(rolled.zFt).toBeLessThan(start.zFt);
+  await staysInDrive();
+
+  // 手排 R → 暫停 → 面板上的「重來」按鈕：解除暫停、車回起點、自排 D、輔助層收起。
+  await page.keyboard.press('KeyR');
+  await expect(gear).toHaveAttribute('data-gear', 'reverse');
+  await expect(assist).toHaveAttribute('data-visible', 'true');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#hud-pause')).toBeVisible();
+  await page.locator('#pause-retry').click();
+  await expect(page.locator('#hud-pause')).toBeHidden();
+  await expect(gear).toHaveAttribute('data-gear', 'forward');
+  await expect(gear).toHaveAttribute('data-mode', 'auto');
+  await expect(assist).toHaveAttribute('data-visible', 'false');
+  await staysInDrive();
+  const restarted = await nextSnapshot(page);
+  expect(restarted.status).toBe('ready');
+  expect(Math.abs(restarted.zFt - start.zFt)).toBeLessThan(POSITION_TOLERANCE_FT);
+
+  // 重來之後再按一次掛 R：這才會是 R 檔（玩家新下的指令）。
+  await page.keyboard.press('KeyR');
+  await expect(gear).toHaveAttribute('data-gear', 'reverse');
+  await expect(gear).toHaveAttribute('data-mode', 'manual');
+  await expect(assist).toHaveAttribute('data-visible', 'true');
+});
