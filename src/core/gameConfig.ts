@@ -21,3 +21,19 @@ export const PARKING_RULES = {
   /** 車頭與車位 heading 夾角的預設容許值（含邊界）；每個車位可以另外指定。 */
   defaultAngleToleranceDeg: 8,
 } as const;
+
+/** 碰撞規則（計畫 5.2、7.2）。 */
+export const COLLISION_RULES = {
+  /** 同一個物件撞到之後多久內不重複計次。 */
+  cooldownSeconds: 0.5,
+  /** 反彈係數：撞到後車速 = −撞上去的車速 × 這個值。 */
+  restitution: 0.3,
+  /** 反彈車速（絕對值）的上限。 */
+  maxBounceSpeedMph: 3,
+} as const;
+
+/** 評分規則（計畫 7.2）。 */
+export const SCORING_RULES = {
+  /** 3 星：停妥當下的角度誤差要嚴格小於這個值。 */
+  threeStarMaxAngleDeg: 3,
+} as const;
