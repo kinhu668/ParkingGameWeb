@@ -25,6 +25,7 @@ import { degToRad } from '../core/units';
 import { SKIP_AMBIENT_OCCLUSION } from './ambientOcclusionFlag';
 import type { QualitySettings } from './quality';
 import { FOG_CONFIG, SKY_CONFIG, SUN_CONFIG } from './renderConfig';
+import type { FogPreset, SkyPreset } from './weatherPresets';
 
 /** 單位向量（世界座標）。 */
 export interface Direction3 {
@@ -52,13 +53,15 @@ export const SUN_DIRECTION: Direction3 = directionToSun(
 /**
  * 地平線的霾在某個仰角的不透明度：地平線以下全不透明，往上以平方曲線淡到 hazeTopDeg 歸零。
  * 地平線那一圈因此剛好是霧的顏色，遠處的地面（被霧染成同色）與天空接得起來。
+ * @param overcast 陰天雲層的不透明度（SkyPreset.overcast）；不給 = 0
  */
-export function hazeOpacityAt(elevationDeg: number): number {
+export function hazeOpacityAt(elevationDeg: number, overcast = 0): number {
   if (elevationDeg <= 0) {
     return 1;
   }
   const remaining = Math.max(1 - elevationDeg / FOG_CONFIG.hazeTopDeg, 0);
-  return remaining * remaining;
+  // 陰天：整片天空至少蓋上這麼厚的霧色（雲層）；0 = 只有地平線的霾。
+  return Math.max(remaining * remaining, overcast);
 }
 
 /** 地平線以下，霾色往地面反彈色過渡的比例（0 = 霾色，1 = 地面色）。 */
@@ -88,19 +91,22 @@ const SKY_BOX_SCALE = 8;
 const COLOR_ITEM_SIZE = 4;
 
 /** 包在鏡頭外面的一顆球：地平線以上是往上漸淡的霾，以下是不透明的地面反彈色。 */
-function createHazeDome(material: MeshBasicMaterial): Mesh {
+function createHazeDome(material: MeshBasicMaterial, sky: SkyPreset, fog: FogPreset): Mesh {
   const geometry = new SphereGeometry(1, SPHERE_WIDTH_SEGMENTS, SPHERE_HEIGHT_SEGMENTS);
   const positions = geometry.getAttribute('position');
   // 穹頂畫出來時會整張乘上 SKY_CONFIG.intensity；先除回來，地平線那一圈才剛好是霧色。
-  const haze = new Color(FOG_CONFIG.color).multiplyScalar(1 / SKY_CONFIG.intensity);
-  const ground = new Color(FOG_CONFIG.groundColor).multiplyScalar(1 / SKY_CONFIG.intensity);
+  const haze = new Color(fog.color).multiplyScalar(1 / sky.intensity);
+  const ground = new Color(fog.groundColor).multiplyScalar(1 / sky.intensity);
   const mixed = new Color();
   const colors = new Float32Array(positions.count * COLOR_ITEM_SIZE);
   for (let index = 0; index < positions.count; index += 1) {
     // 球半徑是 1，所以 y 就是仰角的正弦。
     const elevationDeg = (Math.asin(Math.min(Math.max(positions.getY(index), -1), 1)) * 180) / Math.PI;
     mixed.copy(haze).lerp(ground, groundBlendAt(elevationDeg));
-    colors.set([mixed.r, mixed.g, mixed.b, hazeOpacityAt(elevationDeg)], index * COLOR_ITEM_SIZE);
+    colors.set(
+      [mixed.r, mixed.g, mixed.b, hazeOpacityAt(elevationDeg, sky.overcast)],
+      index * COLOR_ITEM_SIZE,
+    );
   }
   geometry.setAttribute('color', new BufferAttribute(colors, COLOR_ITEM_SIZE));
 
@@ -146,14 +152,14 @@ const DOME_FRAGMENT_SHADER = /* glsl */ `
 `;
 
 /** 用烘好的立方體貼圖畫天空的穹頂。 */
-function createSkyDome(skyTexture: Texture): Mesh {
+function createSkyDome(skyTexture: Texture, intensity: number): Mesh {
   const dome = new Mesh(
     new BoxGeometry(1, 1, 1),
     new ShaderMaterial({
       name: 'SkyDomeShader',
       uniforms: {
         tSky: { value: skyTexture },
-        intensity: { value: SKY_CONFIG.intensity },
+        intensity: { value: intensity },
       },
       vertexShader: DOME_VERTEX_SHADER,
       fragmentShader: DOME_FRAGMENT_SHADER,
@@ -181,13 +187,35 @@ function bakeCube(renderer: WebGLRenderer, scene: Scene, sizePx: number): WebGLC
   return target;
 }
 
+/** 沒有指定天氣時的天空：黃昏（展示台也用這個當環境光）。 */
+const DUSK_SKY: SkyPreset = { ...SKY_CONFIG, overcast: 0 };
+
 /**
- * 烘出黃昏的天空背景與環境貼圖。要先有 renderer（會用它畫幾張離屏貼圖），每個場景呼叫一次。
+ * 設定天空穹頂的亮度倍率（閃電的閃光用）。
+ */
+export function setSkyDomeIntensity(dome: Mesh, intensity: number): void {
+  const material = dome.material;
+  if (material instanceof ShaderMaterial) {
+    const uniform = material.uniforms['intensity'];
+    if (uniform !== undefined) {
+      uniform.value = intensity;
+    }
+  }
+}
+
+/**
+ * 烘出天空背景與環境貼圖（預設是黃昏）。要先有 renderer（會用它畫幾張離屏貼圖），每個場景呼叫一次。
  * 畫到離屏貼圖時 three 不做色調映射，所以貼圖裡是場景線性亮度，與場景其他東西一起在最後才映射。
+ * @param skyPreset 天空的參數（依天氣）；不給 = 黃昏
+ * @param fogPreset 霧色與地面反彈色（地平線的霾用）；不給 = 黃昏
+ * @param sunDirection 太陽（夜晚是月亮）的方向；不給 = 黃昏的太陽
  */
 export function createSkyEnvironment(
   renderer: WebGLRenderer,
   quality: QualitySettings,
+  skyPreset: SkyPreset = DUSK_SKY,
+  fogPreset: FogPreset = FOG_CONFIG,
+  sunDirection: Direction3 = SUN_DIRECTION,
 ): SkyEnvironment {
   const sky = new Sky();
   sky.scale.setScalar(SKY_BOX_SCALE);
@@ -199,31 +227,31 @@ export function createSkyEnvironment(
     }
     uniform.value = value;
   };
-  set('turbidity', SKY_CONFIG.turbidity);
-  set('rayleigh', SKY_CONFIG.rayleigh);
-  set('mieCoefficient', SKY_CONFIG.mieCoefficient);
-  set('mieDirectionalG', SKY_CONFIG.mieDirectionalG);
-  set('cloudScale', SKY_CONFIG.cloudScale);
-  set('cloudDensity', SKY_CONFIG.cloudDensity);
-  set('cloudElevation', SKY_CONFIG.cloudElevation);
-  set('cloudCoverage', SKY_CONFIG.cloudCoverage);
+  set('turbidity', skyPreset.turbidity);
+  set('rayleigh', skyPreset.rayleigh);
+  set('mieCoefficient', skyPreset.mieCoefficient);
+  set('mieDirectionalG', skyPreset.mieDirectionalG);
+  set('cloudScale', skyPreset.cloudScale);
+  set('cloudDensity', skyPreset.cloudDensity);
+  set('cloudElevation', skyPreset.cloudElevation);
+  set('cloudCoverage', skyPreset.cloudCoverage);
   // 時間固定在 0：雲不飄，截圖才能重現。
   set('time', 0);
   const sunPosition = uniforms['sunPosition']?.value;
   if (!(sunPosition instanceof Vector3)) {
     throw new Error('Sky 沒有 sunPosition');
   }
-  sunPosition.set(SUN_DIRECTION.x, SUN_DIRECTION.y, SUN_DIRECTION.z);
+  sunPosition.set(sunDirection.x, sunDirection.y, sunDirection.z);
 
   const bakeScene = new Scene();
   // 霾要畫在天空之後（兩者都不寫深度，靠 renderOrder 決定先後）。
   const hazeMaterial = createHazeMaterial();
-  const haze = createHazeDome(hazeMaterial);
+  const haze = createHazeDome(hazeMaterial, skyPreset, fogPreset);
   haze.renderOrder = 1;
   bakeScene.add(sky, haze);
 
   // 背景：含（壓暗過的）太陽圓盤。
-  set('showSunDisc', SKY_CONFIG.sunDiscIntensity);
+  set('showSunDisc', skyPreset.sunDiscIntensity);
   const backgroundTarget = bakeCube(renderer, bakeScene, quality.skyCubeSizePx);
 
   // 環境貼圖的來源：不畫太陽圓盤，烘小張；轉成 PMREM 之後來源就可以丟掉。
@@ -240,5 +268,5 @@ export function createSkyEnvironment(
   haze.geometry.dispose();
   hazeMaterial.dispose();
 
-  return { dome: createSkyDome(backgroundTarget.texture), environment };
+  return { dome: createSkyDome(backgroundTarget.texture, skyPreset.intensity), environment };
 }

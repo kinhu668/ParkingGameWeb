@@ -36,6 +36,9 @@ import { createParkedCars } from './parkedCars';
 /** 光暈離地的高度：高過標線，又低到看不出浮起來。 */
 const LAMP_POOL_LIFT_M = ftToM(0.08);
 
+/** 路燈沒亮時燈罩的顏色。 */
+const LAMP_OFF_LENS_COLOR = 0xd8d4c8;
+
 /** 一個實例的位置、繞 Y 的旋轉、縮放。 */
 interface InstanceTransform {
   readonly x: number;
@@ -160,6 +163,7 @@ function addLamps(
   lamps: readonly PropPlacement[],
   props: PropsQualitySettings,
   hdr: boolean,
+  lampsLit: boolean,
 ): void {
   if (lamps.length === 0) {
     return;
@@ -189,12 +193,15 @@ function addLamps(
   );
   const lenses = instanced(
     lens,
-    new MeshStandardMaterial({
-      color: LOT.lampGlowColor,
-      emissive: LOT.lampGlowColor,
-      emissiveIntensity: LOT.lampGlowIntensity,
-      roughness: 0.4,
-    }),
+    lampsLit
+      ? new MeshStandardMaterial({
+          color: LOT.lampGlowColor,
+          emissive: LOT.lampGlowColor,
+          emissiveIntensity: LOT.lampGlowIntensity,
+          roughness: 0.4,
+        })
+      : // 白天不亮：只是一片乳白的燈罩。
+        new MeshStandardMaterial({ color: LAMP_OFF_LENS_COLOR, roughness: 0.4 }),
     lamps.map(atPlacement),
     { name: 'lampLenses', receiveShadow: false },
   );
@@ -202,6 +209,11 @@ function addLamps(
     if (mesh !== undefined) {
       group.add(mesh);
     }
+  }
+
+  // 沒亮的燈到這裡為止：沒有光錐、沒有地上的光暈、沒有真光源。
+  if (!lampsLit) {
+    return;
   }
 
   const heads = lamps.map(lampHeadPosition);
@@ -458,12 +470,14 @@ function createSignGeometry(): BufferGeometry {
  * @param layout createLotLayout 算出來的佈局
  * @param props 這個畫質級別的擺設設定（真光源數、光錐、小細節要不要投影、細分）
  * @param hdr 這個級別是不是走高動態範圍的後製鏈（決定光錐與光暈的亮度）
+ * @param lampsLit 路燈亮不亮（白天的天氣不亮）；不給 = 亮
  */
 export function createLotProps(
   spot: ParkingSpot,
   layout: LotLayout,
   props: PropsQualitySettings,
   hdr: boolean,
+  lampsLit = true,
 ): Group {
   const frame = createSpotFrame(spot);
   frame.name = 'lotProps';
@@ -475,7 +489,7 @@ export function createLotProps(
   const box = unitBox();
 
   frame.add(createParkedCars(layout.parkedCars, props.meshDetail));
-  addLamps(frame, layout.lamps, props, hdr);
+  addLamps(frame, layout.lamps, props, hdr, lampsLit);
 
   // 混凝土柱與柱頂的橫梁：同一個材質，一個 draw call。
   add(
