@@ -999,7 +999,7 @@ export const TIRE_MARK_CONFIG = {
   fadeStartFraction: 0.5,
   /** 一次更新裡沿車頭方向倒退超過這麼遠才算在倒車（濾掉浮點誤差）。 */
   minReverseStepM: 1e-5,
-  /** 一次更新的位移超過這麼遠當作瞬移（按 R 重來），不留痕。 */
+  /** 一次更新的位移超過這麼遠當作瞬移（重來），不留痕。 */
   teleportStepM: ftToM(6.5),
 } as const;
 

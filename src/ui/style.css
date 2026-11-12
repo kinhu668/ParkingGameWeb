@@ -118,6 +118,13 @@ body {
   color: #ffd76a;
 }
 
+/* 手排（玩家按過掛檔鍵）：檔位下面畫一條線，與自排區分。 */
+.hud-stat-value[data-mode='manual'] {
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
+}
+
 /* 右上角的按鈕：語言、關卡選擇，由上往下排。 */
 .hud-corner {
   grid-column: 2;
@@ -148,17 +155,17 @@ body {
   outline-offset: 2px;
 }
 
-/* 操作說明：左下 */
+/* 操作說明：左下。列數多（八列＋按鈕），排得緊一點，上緣才不會壓到倒車輔助的左後視鏡。 */
 .hud-controls {
   grid-column: 1;
   grid-row: 2;
   align-self: end;
   justify-self: start;
-  padding: 12px 18px 14px;
+  padding: 10px 16px 12px;
 }
 
 .hud-controls-title {
-  margin-bottom: 8px;
+  margin-bottom: 6px;
   color: var(--ui-text-dim);
   font-size: 13px;
   letter-spacing: 0.08em;
@@ -168,8 +175,16 @@ body {
   display: grid;
   grid-template-columns: auto auto;
   align-items: center;
-  gap: 7px 14px;
+  gap: 4px 14px;
   margin: 0;
+  font-size: 14px;
+}
+
+/* 視窗很矮：改成兩組並排（四列），高度減半。 */
+@media (max-height: 660px) {
+  .hud-controls-list {
+    grid-template-columns: repeat(2, auto auto);
+  }
 }
 
 .hud-controls-keys {
@@ -184,15 +199,37 @@ body {
 .hud-key {
   display: inline-block;
   min-width: 1.5em;
-  padding: 1px 6px;
+  padding: 0 6px;
   border: 1px solid var(--ui-border);
   border-bottom-width: 2px;
   border-radius: 6px;
   background: rgb(255 255 255 / 0.1);
   font: inherit;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   text-align: center;
+}
+
+/* 操作說明下面的「自訂按鍵」按鈕。HUD 整體不接滑鼠，按鈕自己開。 */
+.hud-controls-edit {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 3px 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.08);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: background-color 0.15s ease;
+}
+
+.hud-controls-edit:hover {
+  background: rgb(255 255 255 / 0.18);
 }
 
 /* 鏡頭名稱：下方置中。切換鏡頭時出現，之後由 hud.ts 的動畫淡出；還沒有內容時不顯示空框。 */
@@ -337,6 +374,146 @@ body {
 /* 暫停：整個畫面壓暗一點，面板放在同樣的位置。 */
 .hud-pause {
   background: rgb(8 11 16 / 0.45);
+}
+
+/* 按鍵設定：蓋在暫停或結算面板上面，背景壓得更暗；視窗太矮時面板自己捲動。 */
+.controls-overlay {
+  padding-top: 6vh;
+  background: rgb(8 11 16 / 0.72);
+}
+
+.controls-panel {
+  box-sizing: border-box;
+  max-width: min(760px, calc(100vw - 2 * var(--ui-gap)));
+  max-height: 88vh;
+  overflow-y: auto;
+  padding: 20px 28px 22px;
+  pointer-events: auto;
+}
+
+.controls-title {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.controls-hint {
+  margin-top: 6px;
+  color: var(--ui-text-dim);
+  font-size: 14px;
+  text-align: center;
+}
+
+/* 兩欄，由上往下排完第一欄再排第二欄。 */
+.controls-rows {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(6, auto);
+  grid-auto-flow: column;
+  gap: 8px 36px;
+  margin-top: 16px;
+}
+
+@media (max-width: 760px) {
+  .controls-rows {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+    grid-auto-flow: row;
+  }
+}
+
+/* 一列：動作名稱、主要鍵、備用鍵、拿掉備用鍵。 */
+.controls-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 6.5em 6.5em 24px;
+  align-items: center;
+  gap: 6px;
+}
+
+.controls-key {
+  padding: 4px 6px;
+  border: 1px solid var(--ui-border);
+  border-bottom-width: 2px;
+  border-radius: 7px;
+  background: rgb(255 255 255 / 0.1);
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.controls-key:hover {
+  background: rgb(255 255 255 / 0.2);
+}
+
+/* 還沒有備用鍵的那一格（＋）淡一點。 */
+.controls-key[data-code=''] {
+  color: var(--ui-text-dim);
+  background: transparent;
+  border-style: dashed;
+}
+
+/* 正在等玩家按鍵的那一格。 */
+.controls-key[data-listening='true'] {
+  border-color: rgb(255 212 94 / 0.9);
+  border-style: solid;
+  background: rgb(255 212 94 / 0.28);
+  color: inherit;
+}
+
+.controls-clear {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.08);
+  color: var(--ui-text-dim);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.controls-clear:hover {
+  background: rgb(255 255 255 / 0.2);
+  color: inherit;
+}
+
+/* 沒有備用鍵可以拿掉：留著位置，各列才對得齊。 */
+.controls-clear[data-available='false'] {
+  visibility: hidden;
+}
+
+.controls-key:focus-visible,
+.controls-clear:focus-visible,
+.hud-controls-edit:focus-visible {
+  outline: 2px solid var(--ui-text);
+  outline-offset: 2px;
+}
+
+/* 訊息那一行固定留一行的高度，出現訊息時下面的東西不會跳。 */
+.controls-message {
+  min-height: 1.4em;
+  margin-top: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.controls-message[data-kind='warning'] {
+  color: #ffb24a;
+}
+
+.controls-note {
+  margin-top: 6px;
+  color: var(--ui-text-dim);
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 /* 關卡選擇（首頁）：蓋在定格的場景上，整片壓暗；內容置中，視窗太矮時可以捲動。 */

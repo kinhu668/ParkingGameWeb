@@ -145,7 +145,7 @@ export function createDustCloud(capacity: number, seed: number): DustCloud {
       const dz = pose.z - previous.z;
       const stepM = Math.hypot(dx, dz);
       const speedMps = stepM / frameSeconds;
-      // 瞬移（按 R 重來）不算在動。
+      // 瞬移（重來）不算在動。
       if (stepM <= DUST.teleportStepM && speedMps >= DUST.minSpeedMps) {
         const launch = Math.max(1 - speedMps / DUST.launchSpeedMps, 0);
         const steer = Math.min(Math.abs(pose.steerRad) / VEHICLE_CONFIG_SI.maxSteerRad, 1);

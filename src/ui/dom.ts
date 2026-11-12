@@ -10,13 +10,19 @@ export function otherLocale(locale: Locale): Locale {
 export interface UiBuilder {
   /** 建立元素並接到 parent 後面。 */
   element(tag: string, className: string, parent: HTMLElement): HTMLElement;
-  /** 內容是翻譯文字的元素；refreshTexts 時會重填。 */
+  /**
+   * 內容是翻譯文字的元素；refreshTexts 時會重填。
+   * @param fill 翻譯文字裡有要代換的部分（例如 `{key}` 換成目前綁的鍵）時，由它把文字補完
+   */
   translatedElement(
     tag: string,
     className: string,
     parent: HTMLElement,
     key: TranslationKey,
+    fill?: (text: string) => string,
   ): HTMLElement;
+  /** 沒有固定文字的按鈕（文字由呼叫端自己填，例如按鍵設定裡的鍵帽）。 */
+  plainButton(id: string, className: string, parent: HTMLElement): HTMLButtonElement;
   /** 按鈕：文字走翻譯鍵。HUD 整體不接滑鼠，按鈕的樣式要自己開 `pointer-events: auto`。 */
   button(
     id: string,
@@ -32,7 +38,11 @@ export interface UiBuilder {
 }
 
 export function createUiBuilder(): UiBuilder {
-  const translated: { readonly element: HTMLElement; readonly key: TranslationKey }[] = [];
+  const translated: {
+    readonly element: HTMLElement;
+    readonly key: TranslationKey;
+    readonly fill?: (text: string) => string;
+  }[] = [];
   const languageButtons: HTMLButtonElement[] = [];
 
   function element(tag: string, className: string, parent: HTMLElement): HTMLElement {
@@ -47,9 +57,10 @@ export function createUiBuilder(): UiBuilder {
     className: string,
     parent: HTMLElement,
     key: TranslationKey,
+    fill?: (text: string) => string,
   ): HTMLElement {
     const created = element(tag, className, parent);
-    translated.push({ element: created, key });
+    translated.push(fill === undefined ? { element: created, key } : { element: created, key, fill });
     return created;
   }
 
@@ -69,6 +80,7 @@ export function createUiBuilder(): UiBuilder {
   return {
     element,
     translatedElement,
+    plainButton,
     button(id, className, parent, key, onClick): HTMLButtonElement {
       const created = plainButton(id, className, parent);
       translated.push({ element: created, key });
@@ -86,7 +98,8 @@ export function createUiBuilder(): UiBuilder {
     },
     refreshTexts(): void {
       for (const entry of translated) {
-        entry.element.textContent = t(entry.key);
+        const text = t(entry.key);
+        entry.element.textContent = entry.fill === undefined ? text : entry.fill(text);
       }
       for (const button of languageButtons) {
         // 按鈕上的字是另一種語言寫的，標上 lang 讓字型與螢幕報讀正確。

@@ -4,6 +4,7 @@ import { onLocaleChange, t, type TranslationKey } from '../core/i18n';
 import { angleErrorRad } from '../level/parkingJudge';
 import { UNLIMITED_RULES, stepsToSeconds, type FailReason } from '../level/scoring';
 import type { Session } from '../level/session';
+import { fillTemplate } from './controlsPanel';
 import type { UiBuilder } from './dom';
 import { formatAngleDeg, formatCollisions, formatStars, formatTime } from './format';
 
@@ -62,8 +63,14 @@ export interface ResultsPanel {
 /**
  * 在 root 裡建立結算面板（一開始隱藏），並訂閱語言切換。
  * `#hud-status[data-status]` 是 parked 或 failed；成功時 `#result-stars[data-stars]` 是星數。
+ * @param restartKeys 目前綁在「重來」上的鍵（提示文字用）
  */
-export function createResultsPanel(ui: UiBuilder, root: HTMLElement, actions: LevelActions): ResultsPanel {
+export function createResultsPanel(
+  ui: UiBuilder,
+  root: HTMLElement,
+  actions: LevelActions,
+  restartKeys: () => string,
+): ResultsPanel {
   const overlay = ui.element('div', 'hud-status', root);
   overlay.id = 'hud-status';
   overlay.setAttribute('role', 'status');
@@ -97,7 +104,9 @@ export function createResultsPanel(ui: UiBuilder, root: HTMLElement, actions: Le
       : ui.button('result-next', 'panel-button panel-button-primary', buttons, 'result.next', nextLevel);
   ui.button('result-retry', 'panel-button', buttons, 'result.retry', actions.restart);
   ui.button('result-select', 'panel-button', buttons, 'result.levelSelect', actions.levelSelect);
-  ui.translatedElement('div', 'hud-status-hint', panel, 'status.restartHint');
+  ui.translatedElement('div', 'hud-status-hint', panel, 'status.restartHint', (text) =>
+    fillTemplate(text, { key: restartKeys() }),
+  );
 
   let shown: ResultReadout | null = null;
 

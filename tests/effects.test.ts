@@ -105,7 +105,7 @@ describe('倒車輪胎痕 tireMarks', () => {
       expect(trail.advance(stopped, DT)).toBe(0);
       expect(trail.advance({ ...stopped, steerRad: degToRad(step) }, DT)).toBe(0);
     }
-    // 按 R 重來：一步之內回到起點（往車尾方向 12 m）。
+    // 重來：一步之內回到起點（往車尾方向 12 m）。
     expect(trail.advance(start, DT)).toBe(0);
     expect(trail.liveCount()).toBe(0);
   });

@@ -137,7 +137,7 @@ export function createTireMarkTrail(settings: TireMarkQualitySettings): TireMark
       const dz = pose.z - previous.z;
       const ahead = forward(pose.headingRad);
       const alongM = dx * ahead.x + dz * ahead.z;
-      // 瞬移（按 R 重來）或往前開：提筆，不留痕。
+      // 瞬移（重來）或往前開：提筆，不留痕。
       if (Math.hypot(dx, dz) > CONFIG.teleportStepM || alongM > CONFIG.minReverseStepM) {
         pen = undefined;
         return 0;

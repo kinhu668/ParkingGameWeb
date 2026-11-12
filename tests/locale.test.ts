@@ -64,6 +64,31 @@ const PLANNED_KEYS = [
   'bench.avgFps',
   'bench.low1',
   'bench.drawCalls',
+  // 自訂按鍵：操作說明的新列、按鍵設定面板。
+  'hud.controlBrake',
+  'hud.controlGears',
+  'hud.controlsEdit',
+  'hud.gearManual',
+  'pause.controls',
+  'controls.title',
+  'controls.hint',
+  'controls.action.throttle',
+  'controls.action.reverse',
+  'controls.action.steerLeft',
+  'controls.action.steerRight',
+  'controls.action.brake',
+  'controls.action.handbrake',
+  'controls.action.gearDrive',
+  'controls.action.gearReverse',
+  'controls.action.restart',
+  'controls.action.toggleCamera',
+  'controls.action.pause',
+  'controls.listening',
+  'controls.conflict',
+  'controls.unsupported',
+  'controls.gearNote',
+  'controls.reset',
+  'controls.done',
 ];
 
 describe('翻譯檔', () => {
@@ -96,6 +121,16 @@ describe('翻譯檔', () => {
       expect(cameraKeys.sort(), locale).toEqual(
         ['camera.chase_far', 'camera.chase_near', 'camera.cockpit', 'camera.hood', 'camera.top'],
       );
+    }
+  });
+
+  test('提示文字不寫死按鍵：重來與繼續的提示用 {key}，由目前的綁定代入', () => {
+    for (const locale of Object.keys(MESSAGES)) {
+      const messages = MESSAGES[locale] ?? {};
+      expect(String(messages['status.restartHint']), locale).toContain('{key}');
+      expect(String(messages['pause.hint']), locale).toContain('{key}');
+      expect(String(messages['controls.conflict']), locale).toContain('{key}');
+      expect(String(messages['controls.conflict']), locale).toContain('{action}');
     }
   });
 

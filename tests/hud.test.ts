@@ -2,6 +2,7 @@
 // 倒數／碰撞／檔位／角度誤差的文字，以及由一局的現況算出的顯示內容。
 import { beforeEach, describe, expect, test } from 'vitest';
 import { GAME_CAMERA_VIEWS } from '../src/core/cameraView';
+import { DEFAULT_BINDINGS, type ControlBindings } from '../src/core/controls';
 import { LOCALES, setLocale, t } from '../src/core/i18n';
 import { mphToMps } from '../src/core/units';
 import { degToRad, ftToM } from '../src/core/units';
@@ -10,9 +11,11 @@ import { REQUIRED_HOLD_STEPS } from '../src/level/parkingJudge';
 import { PROTOTYPE_LAYOUT } from '../src/level/prototypeLayout';
 import { startSession, stepSession, type Session, type SessionLayout } from '../src/level/session';
 import type { DriveInput } from '../src/vehicle/bicycleModel';
+import { fillTemplate, keyText, keysText } from '../src/ui/controlsPanel';
 import { formatStars, formatTime } from '../src/ui/format';
 import {
   cameraViewLabelKey,
+  controlRowKeys,
   formatAngleDeg,
   formatCollisions,
   formatSpeedMph,
@@ -241,5 +244,63 @@ describe('hudReadout：由一局的現況算出顯示內容', () => {
     expect(readout.time).toBe('–:––.–');
     expect(readout.collisions).toBe('0');
     expect(readout.lowTime).toBe(false);
+  });
+});
+
+describe('controlRowKeys：HUD 操作說明要畫的鍵帽', () => {
+  test('兩個動作一列：各列主要鍵（預設是 W S、A D、Q R）', () => {
+    expect(controlRowKeys(DEFAULT_BINDINGS, ['throttle', 'reverse'])).toEqual([
+      { action: 'throttle', code: 'KeyW' },
+      { action: 'reverse', code: 'KeyS' },
+    ]);
+    expect(
+      controlRowKeys(DEFAULT_BINDINGS, ['gearDrive', 'gearReverse']).map((cap) => cap.code),
+    ).toEqual(['KeyQ', 'KeyR']);
+  });
+
+  test('一個動作一列：列出它全部的鍵（重來是 Backspace 與 T，不再是 R）', () => {
+    expect(controlRowKeys(DEFAULT_BINDINGS, ['restart']).map((cap) => cap.code)).toEqual([
+      'Backspace',
+      'KeyT',
+    ]);
+    expect(controlRowKeys(DEFAULT_BINDINGS, ['handbrake']).map((cap) => cap.code)).toEqual([
+      'Slash',
+      'Space',
+    ]);
+    expect(controlRowKeys(DEFAULT_BINDINGS, ['brake']).map((cap) => cap.code)).toEqual(['Comma']);
+  });
+
+  test('照目前的綁定畫，不寫死', () => {
+    const custom: ControlBindings = {
+      ...DEFAULT_BINDINGS,
+      throttle: ['KeyI', 'ArrowUp'],
+      restart: ['Enter', 'KeyT'],
+    };
+    expect(controlRowKeys(custom, ['throttle', 'reverse']).map((cap) => cap.code)).toEqual([
+      'KeyI',
+      'KeyS',
+    ]);
+    expect(controlRowKeys(custom, ['restart']).map((cap) => cap.code)).toEqual(['Enter', 'KeyT']);
+  });
+});
+
+describe('按鍵提示文字：keyText／keysText／fillTemplate', () => {
+  test('鍵帽文字跟著語言走（空白鍵有翻譯，其餘照寫）', () => {
+    setLocale('zh-TW');
+    expect(keyText('Space')).toBe('空白鍵');
+    expect(keyText('Comma')).toBe(',');
+    setLocale('en');
+    expect(keyText('Space')).toBe('Space');
+    expect(keysText(DEFAULT_BINDINGS.restart)).toBe('Backspace / T');
+    expect(keysText(DEFAULT_BINDINGS.handbrake)).toBe('/ / Space');
+    expect(keysText(DEFAULT_BINDINGS.pause)).toBe('Esc');
+  });
+
+  test('fillTemplate 把 {名稱} 換成值；沒給的名稱原樣留著', () => {
+    expect(fillTemplate('Press {key} to restart', { key: 'Backspace / T' })).toBe(
+      'Press Backspace / T to restart',
+    );
+    expect(fillTemplate('{key} → {action}', { key: 'R' })).toBe('R → {action}');
+    expect(fillTemplate('沒有要換的', { key: 'R' })).toBe('沒有要換的');
   });
 });

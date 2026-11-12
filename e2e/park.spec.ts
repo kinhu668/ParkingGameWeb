@@ -1,4 +1,4 @@
-// 一般遊戲的 e2e：用真實鍵盤事件把車開進車位，確認成功訊息、語言切換、R 重來。
+// 一般遊戲的 e2e：用真實鍵盤事件把車開進車位，確認成功訊息、語言切換、Backspace 重來。
 // 車的狀態只透過 window.__parkingGame.snapshot() 讀取（唯讀）；操作一律送鍵盤事件。
 import { driveIntoSpot, nextSnapshot } from './driving';
 import { expect, OUTPUT_DIR, test } from './fixtures';
@@ -13,7 +13,7 @@ const SPOT_LENGTHWISE_MARGIN_FT = 1.5;
 /** 位置比對的容許誤差（ft）。 */
 const POSITION_TOLERANCE_FT = 0.01;
 
-test('用鍵盤把車停進車位、切換語言、按 R 重來', async ({ page }) => {
+test('用鍵盤把車停進車位、切換語言、按 Backspace 重來', async ({ page }) => {
   await page.goto('/?level=prototype&lang=zh-TW');
 
   const status = page.locator('#hud-status');
@@ -57,8 +57,15 @@ test('用鍵盤把車停進車位、切換語言、按 R 重來', async ({ page 
   await expect(html).toHaveAttribute('lang', 'en');
   await page.screenshot({ path: `${OUTPUT_DIR}/park-success-en.png` });
 
-  // 按 R：成功畫面消失，車回到起點。
+  // 提示寫的是目前綁在「重來」上的鍵。R 現在是掛 R 檔：按了不會重來，成功畫面還在。
+  await expect(status.locator('.hud-status-hint')).toHaveText('Press Backspace / T to restart');
   await page.keyboard.press('KeyR');
+  await nextSnapshot(page);
+  await expect(status).toBeVisible();
+  expect((await nextSnapshot(page)).parked).toBe(true);
+
+  // 按 Backspace：成功畫面消失，車回到起點。
+  await page.keyboard.press('Backspace');
   await expect(status).toBeHidden();
   const afterRestart = await nextSnapshot(page);
   expect(afterRestart.parked).toBe(false);

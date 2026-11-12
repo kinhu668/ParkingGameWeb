@@ -1,5 +1,5 @@
 // 碰撞的 e2e：在 w1_l03 用真實鍵盤事件倒車去撞北側邊界，確認車被擋住、HUD 碰撞數 +1；
-// 一直頂到超過上限 → 失敗面板；按 R 全部歸零。
+// 一直頂到超過上限 → 失敗面板；按重來鍵（T）全部歸零。
 // 車的狀態只透過 window.__parkingGame.snapshot() 讀取（唯讀）。
 import type { Page } from '@playwright/test';
 import type { SessionSnapshot } from '../src/level/session';
@@ -48,7 +48,7 @@ async function watchUntil(
   return snapshot;
 }
 
-test('w1_l03：倒車撞邊界會被擋住並計數，超過上限失敗，按 R 歸零', async ({ page }) => {
+test('w1_l03：倒車撞邊界會被擋住並計數，超過上限失敗，按 T 重來歸零', async ({ page }) => {
   await page.goto('/?level=w1_l03&lang=zh-TW&view=top');
 
   const status = page.locator('#hud-status');
@@ -101,8 +101,8 @@ test('w1_l03：倒車撞邊界會被擋住並計數，超過上限失敗，按 R
   expect(stillFailed.zFt).toBe(failed.zFt);
   expect(stillFailed.status).toBe('failed');
 
-  // 按 R：面板消失，車回起點，計時與碰撞歸零。
-  await page.keyboard.press('KeyR');
+  // 按 T（重來的備用鍵；R 現在是掛 R 檔）：面板消失，車回起點，計時與碰撞歸零。
+  await page.keyboard.press('KeyT');
   await expect(status).toBeHidden();
   await expect(collisions).toHaveText(`0 / ${MAX_COLLISIONS}`);
   await expect(page.locator('#hud-time')).toHaveText('1:15.0');

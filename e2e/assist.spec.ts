@@ -75,13 +75,13 @@ test('倒車時顯示輔助層，回到前進檔收起，重來後回到 D 檔',
   await expect(assist).toBeHidden();
   await page.screenshot({ path: `${OUTPUT_DIR}/assist-forward-hidden.png` });
 
-  // 再掛倒檔後按 R 重來：新的一局從 D 檔開始，輔助層收起。
+  // 再掛倒檔後按 Backspace 重來：新的一局從 D 檔開始，輔助層收起。
   await page.keyboard.down('KeyS');
   await expect(gear).toHaveAttribute('data-gear', 'reverse');
   await page.keyboard.up('KeyS');
   await stop(page);
   await expect(assist).toHaveAttribute('data-visible', 'true');
-  await page.keyboard.press('KeyR');
+  await page.keyboard.press('Backspace');
   await expect(gear).toHaveAttribute('data-gear', 'forward');
   await expect(assist).toHaveAttribute('data-visible', 'false');
 });
