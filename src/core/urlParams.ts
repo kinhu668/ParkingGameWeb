@@ -128,3 +128,15 @@ export function navigationSearch(
   const text = next.toString();
   return text === '' ? '' : `?${text}`;
 }
+
+const ASSIST_PARAM = 'assist';
+const ASSIST_OFF_VALUE = 'off';
+
+/**
+ * `?assist=off`：不建立倒車輔助層（左右後視鏡、鳥瞰、倒後鏡頭）。`?fx=off` 也一併關掉：
+ * 輔助層會蓋住畫面的一部分，逐像素比對的 e2e 不能被它影響。其他的值當作沒給；預設是開。
+ */
+export function parseAssistOffParam(urlSearch: string): boolean {
+  const params = new URLSearchParams(urlSearch);
+  return params.get(ASSIST_PARAM) === ASSIST_OFF_VALUE || params.get(FX_PARAM) === FX_OFF_VALUE;
+}
