@@ -28,6 +28,7 @@ import {
   worldLevels,
   worldSlots,
 } from './level/levelCatalog';
+import { vehicleOnRouteAt } from './level/levelRoutes';
 import { PROTOTYPE_WORLD, type LevelDefinition } from './level/levelSchema';
 import { recordResult } from './level/progress';
 import { PROTOTYPE_LEVEL } from './level/prototypeLayout';
@@ -234,9 +235,10 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
 }
 
 /**
- * 固定鏡頭截圖：沿示範路線同步跑 round(t × 60) 步物理（不等真實時間），
+ * 固定鏡頭截圖：同步跑 round(t × 60) 步物理（不等真實時間），
  * 用指定鏡頭畫一幀後定格，並在 `<body>` 設 `data-shot-ready="true"`。沒有 HUD、不接鍵盤。
- * 示範路線只適用原型關；其他關在有各自的參考路線之前，不論 t 是多少都定格在起點。
+ * 有參考路線的關卡（第 1 世界）沿參考路線跑，很大的 t = 停在車位裡；原型關沿示範路線跑；
+ * 兩者都沒有的關卡不論 t 是多少都定格在起點。
  */
 function runCameraShot(
   { renderer, quality, pipeline }: RenderContext,
@@ -245,12 +247,13 @@ function runCameraShot(
   timeSeconds: number,
 ): void {
   const { spot, startState } = level.layout;
-  // 路線結束後車已停住，再跑也不會變；超過的時間夾在路線長度，免得很大的 t 把分頁卡死。
-  const steps =
+  // 示範路線結束後車已停住，再跑也不會變；超過的時間夾在路線長度，免得很大的 t 把分頁卡死。
+  const demoSteps =
     level.id === PROTOTYPE_LEVEL.id
       ? Math.min(Math.round(timeSeconds * PHYSICS_HZ), DEMO_ROUTE_STEPS)
       : 0;
-  const vehicle = demoVehicleAfterSteps(startState, steps);
+  const vehicle =
+    vehicleOnRouteAt(level, timeSeconds) ?? demoVehicleAfterSteps(startState, demoSteps);
 
   const gameScene = createGameScene(renderer, quality, spot, startState, level);
   gameScene.update(vehicle);
