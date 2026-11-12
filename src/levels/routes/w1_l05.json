@@ -1,0 +1,11 @@
+{
+  "level": "w1_l05",
+  "segments": [
+    {
+      "type": "path", "gear": "reverse", "speed_mph": 6,
+      "points": [
+        [0, 0], [0, 35]
+      ]
+    }
+  ]
+}

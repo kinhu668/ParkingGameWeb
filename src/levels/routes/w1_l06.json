@@ -1,0 +1,18 @@
+{
+  "level": "w1_l06",
+  "segments": [
+    {
+      "type": "path", "gear": "forward", "speed_mph": 10,
+      "points": [
+        [-32, 1], [17.35, 1]
+      ]
+    },
+    { "type": "arc", "gear": "reverse", "steer": 1, "distance_ft": 20.19, "speed_mph": 4 },
+    {
+      "type": "path", "gear": "reverse", "speed_mph": 4,
+      "points": [
+        [0, 9.35], [0, 22.25]
+      ]
+    }
+  ]
+}
