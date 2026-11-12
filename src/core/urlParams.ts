@@ -29,6 +29,8 @@ const CAM_TIME_PARAM = 't';
 const BENCH_PARAM = 'bench';
 const LEVEL_PARAM = 'level';
 const UNLOCK_PARAM = 'unlock';
+const FX_PARAM = 'fx';
+const FX_OFF_VALUE = 'off';
 /** `?unlock=` 只認這個值。 */
 const UNLOCK_ALL_VALUE = 'all';
 
@@ -85,6 +87,14 @@ export function parseLevelParam(urlSearch: string): string | undefined {
  */
 export function parseUnlockAllParam(urlSearch: string): boolean {
   return new URLSearchParams(urlSearch).get(UNLOCK_PARAM) === UNLOCK_ALL_VALUE;
+}
+
+/**
+ * `?fx=off`：不建立會自己動的環境效果（落葉、雨絲、閃電），畫面在車不動時每一幀都相同（e2e 逐像素比對用）。
+ * 其他的值當作沒給。不是啟動模式，不影響 parseUrlMode。
+ */
+export function parseFxOffParam(urlSearch: string): boolean {
+  return new URLSearchParams(urlSearch).get(FX_PARAM) === FX_OFF_VALUE;
 }
 
 /**

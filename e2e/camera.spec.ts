@@ -42,8 +42,8 @@ async function checkView(page: Page, view: GameCameraView): Promise<string> {
 }
 
 test('按 V 依序切過五個鏡頭，每個都畫得出來，第五次回到近距離跟車', async ({ page }) => {
-  // 指定 ?view= 當起點，不受之前存過的鏡頭影響。
-  await page.goto('/?level=prototype&view=chase_near&lang=zh-TW');
+  // 指定 ?view= 當起點，不受之前存過的鏡頭影響。fx=off：落葉不飄，繞一圈回來的畫面才能逐像素比較。
+  await page.goto('/?level=prototype&view=chase_near&lang=zh-TW&fx=off');
   await expect(page.locator('#game-canvas')).toBeVisible();
   // 操作說明有「V 切換鏡頭」這一列。
   await expect(page.locator('.hud-controls')).toContainText('切換鏡頭');

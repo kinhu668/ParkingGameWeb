@@ -1,5 +1,6 @@
-// 組裝場景：黃昏的天空與環境光、霧、半球補光、太陽與陰影、地面、車位標線、路緣石與車擋、場地擺設、車。
+// 組裝場景：依天氣的天空與環境光、霧、半球補光、太陽與陰影、地面、車位標線、路緣石與車擋、場地擺設、車。
 import {
+  Color,
   DirectionalLight,
   Fog,
   HemisphereLight,
@@ -9,6 +10,9 @@ import {
 } from 'three';
 import { DEFAULT_SEED } from '../core/gameConfig';
 import type { GroundVector } from '../core/heading';
+import { degToRad } from '../core/units';
+import type { WeatherId } from '../core/weather';
+import { createLightning } from '../effects/lightning';
 import { createSceneEffects } from '../effects/sceneEffects';
 import type { ParkingSpot } from '../level/parkingJudge';
 import { createGround } from '../props/ground';
@@ -45,13 +49,28 @@ import {
 } from '../vehicle/carMesh';
 import { usesHdrChain, type QualitySettings } from './quality';
 import {
-  FOG_CONFIG,
   HEMISPHERE_LIGHT_CONFIG,
   SKY_CONFIG,
   SUN_CONFIG,
 } from './renderConfig';
 import { fitShadowBox, type ShadowBox } from './shadowArea';
-import { SUN_DIRECTION, createSkyEnvironment, type Direction3 } from './sky';
+import {
+  SUN_DIRECTION,
+  createSkyEnvironment,
+  directionToSun,
+  setSkyDomeIntensity,
+  type Direction3,
+} from './sky';
+import {
+  LIGHTNING_CONFIG,
+  RAIN_CONFIG,
+  weatherPreset,
+  type HemispherePreset,
+  type WeatherPreset,
+} from './weatherPresets';
+
+/** 閃電用自己的亂數序列（種子加上這個位移）。 */
+const LIGHTNING_SEED_OFFSET = 0x1f3;
 
 export interface GameScene {
   readonly scene: Scene;
@@ -72,6 +91,8 @@ export interface GameScene {
 export interface SceneLights {
   /** 讓太陽照向 (x, z)：光線方向不變，陰影貼圖的範圍跟著移到這一點附近。 */
   aimAt(x: number, z: number): void;
+  /** 半球補光的強度乘上 scale（閃電的閃光用；1 = 原本的強度）。 */
+  scaleFill(scale: number): void;
 }
 
 /** 主光的顏色與強度。 */
@@ -122,8 +143,9 @@ function createSun(keyLight: KeyLight, shadowMapSize: number, box: ShadowBox): D
 /**
  * 場地的陰影範圍：蓋住路緣圍成的整塊場地（加上路緣外的圍欄、路燈與樹）。
  * 範圍是固定的，所以遠處的路緣與擺設都有影子，車移動時影子的邊緣也不會跟著抖。
+ * @param sunDirection 太陽的方向；不給 = 黃昏的太陽
  */
-export function lotShadowBox(spot: ParkingSpot): ShadowBox {
+export function lotShadowBox(spot: ParkingSpot, sunDirection: Direction3 = SUN_DIRECTION): ShadowBox {
   const inner = curbInnerBounds(spot);
   const margin = SUN_CONFIG.lotShadowMarginM;
   const corners = [
@@ -133,7 +155,7 @@ export function lotShadowBox(spot: ParkingSpot): ShadowBox {
     spotLocalToWorld(spot, inner.minX - margin, inner.maxZ + margin),
   ];
   return fitShadowBox(
-    SUN_DIRECTION,
+    sunDirection,
     corners,
     SUN_CONFIG.lotShadowMaxHeightM,
     SUN_CONFIG.distanceM,
@@ -156,9 +178,12 @@ function boundsCorners(bounds: BoundsFt, marginM: number): GroundVector[] {
 }
 
 /** 有邊界的關卡的陰影範圍：蓋住整個可行駛範圍，加上邊界外的路燈、樹與背景車。 */
-export function boundsShadowBox(bounds: BoundsFt): ShadowBox {
+export function boundsShadowBox(
+  bounds: BoundsFt,
+  sunDirection: Direction3 = SUN_DIRECTION,
+): ShadowBox {
   return fitShadowBox(
-    SUN_DIRECTION,
+    sunDirection,
     boundsCorners(bounds, SUN_CONFIG.lotShadowMarginM),
     SUN_CONFIG.lotShadowMaxHeightM,
     SUN_CONFIG.distanceM,
@@ -182,17 +207,23 @@ function boundsEdgeBoxes(bounds: BoundsFt, level: ObstacleSource): GroundEdgeBox
 }
 
 /**
- * 把黃昏的環境貼圖（反射＋補光）設到 scene 上，回傳整組天空（穹頂要不要加進場景由呼叫端決定）。
- * 遊戲場景與展示台共用同一片天空的環境光；展示台不用天空當背景。
+ * 把環境貼圖（反射＋補光）設到 scene 上，回傳整組天空（穹頂要不要加進場景由呼叫端決定）。
+ * 遊戲場景與展示台共用同一套做法；展示台不給天氣（＝黃昏），也不用天空當背景。
+ * @param weather 這種天氣的天空、霧色與太陽方向；不給 = 黃昏
  */
 export function addSkyEnvironment(
   scene: Scene,
   renderer: WebGLRenderer,
   quality: QualitySettings,
+  weather?: Pick<WeatherPreset, 'sky' | 'fog'> & { readonly sunDirection: Direction3 },
 ): ReturnType<typeof createSkyEnvironment> {
-  const sky = createSkyEnvironment(renderer, quality);
+  const sky =
+    weather === undefined
+      ? createSkyEnvironment(renderer, quality)
+      : createSkyEnvironment(renderer, quality, weather.sky, weather.fog, weather.sunDirection);
   scene.environment = sky.environment;
-  scene.environmentIntensity = SKY_CONFIG.environmentIntensity;
+  scene.environmentIntensity =
+    weather === undefined ? SKY_CONFIG.environmentIntensity : weather.sky.environmentIntensity;
   return sky;
 }
 
@@ -202,6 +233,7 @@ export function addSkyEnvironment(
  * @param quality 畫質設定（決定陰影貼圖的解析度）
  * @param keyLight 主光的顏色與強度；不給就是遊戲場景的夕陽
  * @param shadowBox 陰影相機的範圍；不給就是以目標點為中心的正方形
+ * @param hemisphere 半球補光的顏色與強度；不給就是黃昏的
  */
 export function addLights(
   scene: Scene,
@@ -209,14 +241,14 @@ export function addLights(
   quality: QualitySettings,
   keyLight: KeyLight = SUN_CONFIG,
   shadowBox: ShadowBox = DEFAULT_SHADOW_BOX,
+  hemisphere: HemispherePreset = HEMISPHERE_LIGHT_CONFIG,
 ): SceneLights {
-  scene.add(
-    new HemisphereLight(
-      HEMISPHERE_LIGHT_CONFIG.skyColor,
-      HEMISPHERE_LIGHT_CONFIG.groundColor,
-      HEMISPHERE_LIGHT_CONFIG.intensity,
-    ),
+  const fill = new HemisphereLight(
+    hemisphere.skyColor,
+    hemisphere.groundColor,
+    hemisphere.intensity,
   );
+  scene.add(fill);
 
   // 太陽照向 sun.target；兩者一起平移，光線方向不變，陰影貼圖的解析度都用在目標點附近。
   const sun = createSun(keyLight, quality.shadowMapSize, shadowBox);
@@ -230,7 +262,12 @@ export function addLights(
     sun.position.copy(sun.target.position).add(sunOffset);
   };
   aimAt(shadowBox.targetX, shadowBox.targetZ);
-  return { aimAt };
+  return {
+    aimAt,
+    scaleFill(scale) {
+      fill.intensity = hemisphere.intensity * scale;
+    },
+  };
 }
 
 /**
@@ -239,6 +276,8 @@ export function addLights(
  * @param spot 要畫標線的車位
  * @param start 車的起點（世界座標）；起點到車位的通路上不放擺設
  * @param level 關卡的障礙物、邊界與環境；不給就只有原型關的停車場
+ * @param weather 天氣（core/weather.ts 的 resolveWeather）；不給 = 黃昏（基準畫面）
+ * @param ambientFx 會自己動的環境效果（落葉、雨絲、閃電）要不要建立；`?fx=off` 傳 false
  */
 export function createGameScene(
   renderer: WebGLRenderer,
@@ -246,11 +285,22 @@ export function createGameScene(
   spot: ParkingSpot,
   start: GroundVector,
   level?: ObstacleSource & EnvironmentSource,
+  weather: WeatherId = 'dusk',
+  ambientFx = true,
 ): GameScene {
+  // 這種天氣的全部數值；太陽（夜晚是月亮）的方向與天空裡的圓盤位置是同一個向量。
+  const preset = weatherPreset(weather);
+  const sunDirection = directionToSun(
+    degToRad(preset.sun.azimuthDeg),
+    degToRad(preset.sun.elevationDeg),
+  );
+
   const scene = new Scene();
-  scene.add(addSkyEnvironment(scene, renderer, quality).dome);
+  const skyDome = addSkyEnvironment(scene, renderer, quality, { ...preset, sunDirection }).dome;
+  scene.add(skyDome);
   // 霧色與天空貼圖在地平線那一圈的霾同色，遠處的地面融進天空，沒有硬邊。
-  scene.fog = new Fog(FOG_CONFIG.color, FOG_CONFIG.nearM, FOG_CONFIG.farM);
+  const fog = new Fog(preset.fog.color, preset.fog.nearM, preset.fog.farM);
+  scene.fog = fog;
 
   // 有邊界的關卡：四周是環境模組畫的（大賣場、郵局、街道、窄巷…），陰影範圍與地面影子跟著 bounds 走。
   // 沒有邊界的（原型關）：原本那座停車場，一樣東西都不變。
@@ -258,9 +308,17 @@ export function createGameScene(
   const environmentLayout =
     level === undefined ? undefined : createEnvironmentLayout(level, quality.props);
 
-  // 太陽的方向與天空裡的太陽位置是同一個向量。陰影範圍固定蓋住整塊場地。
-  const shadowBox = bounds === undefined ? lotShadowBox(spot) : boundsShadowBox(bounds);
-  const lights = addLights(scene, SUN_DIRECTION, quality, SUN_CONFIG, shadowBox);
+  // 陰影範圍固定蓋住整塊場地。
+  const shadowBox =
+    bounds === undefined ? lotShadowBox(spot, sunDirection) : boundsShadowBox(bounds, sunDirection);
+  const lights = addLights(
+    scene,
+    sunDirection,
+    quality,
+    preset.sun,
+    shadowBox,
+    preset.hemisphere,
+  );
   // 車開出這個範圍（世界座標的外框）才讓陰影範圍跟著車移動。
   const inner = curbInnerBounds(spot);
   const lotCorners =
@@ -283,8 +341,9 @@ export function createGameScene(
     renderer.capabilities.getMaxAnisotropy(),
     // 路緣石與車擋又矮又長，低角度的太陽下陰影貼圖畫不完整；它們落在地面上的影子由地面著色器直接算。
     bounds === undefined || level === undefined
-      ? groundEdgeShadows(spot, spot.headingRad, SUN_DIRECTION, edgeShadowBoxes(spot))
-      : groundEdgeShadows({ x: 0, z: 0 }, 0, SUN_DIRECTION, boundsEdgeBoxes(bounds, level)),
+      ? groundEdgeShadows(spot, spot.headingRad, sunDirection, edgeShadowBoxes(spot))
+      : groundEdgeShadows({ x: 0, z: 0 }, 0, sunDirection, boundsEdgeBoxes(bounds, level)),
+    preset.ground,
   );
   scene.add(ground);
 
@@ -299,11 +358,20 @@ export function createGameScene(
         createLotLayout(spot, start, DEFAULT_SEED, quality.props),
         quality.props,
         usesHdrChain(quality),
+        preset.lampsOn,
       ),
     );
   } else {
     // bounds 外面的建築、招牌、背景車、路燈…；bounds 裡面沒有穿得過去的東西。
-    scene.add(createEnvironment(spot, environmentLayout, quality.props, usesHdrChain(quality)));
+    scene.add(
+      createEnvironment(
+        spot,
+        environmentLayout,
+        quality.props,
+        usesHdrChain(quality),
+        preset.lampsOn,
+      ),
+    );
   }
 
   // 關卡的障礙物與邊界：這些才有碰撞。模型的佔地就是碰撞盒。
@@ -317,15 +385,44 @@ export function createGameScene(
   const headlights = createCarHeadlights(quality.headlights, usesHdrChain(quality));
   car.root.add(headlights.root);
 
-  // 倒車輪胎痕、灰塵、落葉：純視覺的小效果，數量跟著畫質級別走。
-  const effects = createSceneEffects(quality, spot, start, DEFAULT_SEED);
+  // 倒車輪胎痕、灰塵、落葉、雨絲：純視覺的小效果，數量跟著畫質級別走。下雨時不揚灰塵、不飄落葉。
+  const raining = preset.rain > 0;
+  const effects = createSceneEffects(quality, spot, start, DEFAULT_SEED, {
+    rainStreaks: ambientFx ? RAIN_CONFIG.maxStreaks[quality.level] * preset.rain : 0,
+    leaves: ambientFx && !raining,
+    dust: !raining,
+  });
   scene.add(effects.root);
+
+  // 閃電（只有閃光）：依固定的時間表，短暫提高補光、環境光與天空，霧色往閃光色靠。
+  // 定格截圖不走時間（累積時間 0），畫面是「沒有在閃」的狀態。
+  const lightning =
+    ambientFx && preset.lightning ? createLightning(DEFAULT_SEED + LIGHTNING_SEED_OFFSET) : undefined;
+  const fogBaseColor = new Color(preset.fog.color);
+  const flashColor = new Color(LIGHTNING_CONFIG.flashColor);
+  let weatherSeconds = 0;
+  let shownFlash = 0;
+  const applyFlash = (flash: number): void => {
+    lights.scaleFill(1 + LIGHTNING_CONFIG.hemisphereBoost * flash);
+    scene.environmentIntensity =
+      preset.sky.environmentIntensity * (1 + LIGHTNING_CONFIG.environmentBoost * flash);
+    setSkyDomeIntensity(skyDome, preset.sky.intensity * (1 + LIGHTNING_CONFIG.skyBoost * flash));
+    fog.color.copy(fogBaseColor).lerp(flashColor, LIGHTNING_CONFIG.fogBlend * flash);
+  };
 
   return {
     scene,
     update(pose, frameSeconds = 0) {
       updateCarMesh(car, pose);
       effects.update(pose, frameSeconds);
+      if (lightning !== undefined) {
+        weatherSeconds += frameSeconds;
+        const flash = lightning.flashAt(weatherSeconds);
+        if (flash !== shownFlash) {
+          shownFlash = flash;
+          applyFlash(flash);
+        }
+      }
 
       // 車在場地裡時陰影範圍不動；開出去多遠，範圍就跟著平移多遠。
       lights.aimAt(

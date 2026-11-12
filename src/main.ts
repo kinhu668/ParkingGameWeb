@@ -12,9 +12,11 @@ import { PHYSICS_HZ } from './core/gameConfig';
 import { detectLocale, getLocale, onLocaleChange, setLocale, t } from './core/i18n';
 import { attachKeyboardInput } from './core/input';
 import { msToS } from './core/units';
+import { resolveWeather } from './core/weather';
 import { loadSave, updateSave, withLocale, type SaveStorage } from './core/save';
 import {
   navigationSearch,
+  parseFxOffParam,
   parseLevelParam,
   parseUnlockAllParam,
   parseUrlMode,
@@ -50,7 +52,7 @@ import {
   detectQualityHints,
   type RenderContext,
 } from './render/renderContext';
-import { createGameScene } from './render/scene';
+import { createGameScene, type GameScene } from './render/scene';
 import { runShowcase } from './render/showcase';
 import { createHud } from './ui/hud';
 import { createLevelSelect, levelCards } from './ui/levelSelect';
@@ -101,6 +103,26 @@ function navigateTo(levelId: string | undefined): void {
 }
 
 /**
+ * 這一關的場景。天氣：`?weather=` 蓋過關卡 JSON 的 `weather`；`?fx=off` 不建立落葉、雨絲與閃電。
+ */
+function createLevelScene(
+  renderer: RenderContext['renderer'],
+  quality: RenderContext['quality'],
+  level: LevelDefinition,
+): GameScene {
+  const search = window.location.search;
+  return createGameScene(
+    renderer,
+    quality,
+    level.layout.spot,
+    level.layout.startState,
+    level,
+    resolveWeather(search, level.weather),
+    !parseFxOffParam(search),
+  );
+}
+
+/**
  * 一般遊戲：固定步長物理迴圈 + 算圖內插 + 鍵盤開車 + 碰撞／計時／停車判定 + 可切換的鏡頭（V）+ HUD
  * + 暫停（Esc）+ 過關寫存檔。
  */
@@ -111,7 +133,7 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
     throw new Error('找不到 #hud');
   }
 
-  const gameScene = createGameScene(renderer, quality, layout.spot, layout.startState, level);
+  const gameScene = createLevelScene(renderer, quality, level);
   const input = attachKeyboardInput(window);
 
   // 面板上的按鈕：重來留在這一頁（下一幀處理，與按 R 同一條路），其餘換網址。
@@ -255,7 +277,7 @@ function runCameraShot(
   const vehicle =
     vehicleOnRouteAt(level, timeSeconds) ?? demoVehicleAfterSteps(startState, demoSteps);
 
-  const gameScene = createGameScene(renderer, quality, spot, startState, level);
+  const gameScene = createLevelScene(renderer, quality, level);
   gameScene.update(vehicle);
   const camera = createPresetCamera(preset, vehicle.x, vehicle.z, spot);
 
@@ -281,7 +303,7 @@ function runCameraShot(
 function runLevelSelect({ renderer, quality, pipeline }: RenderContext): void {
   const backdrop = worldLevels(SELECT_WORLD)[0] ?? PROTOTYPE_LEVEL;
   const { spot, startState } = backdrop.layout;
-  const gameScene = createGameScene(renderer, quality, spot, startState, backdrop);
+  const gameScene = createLevelScene(renderer, quality, backdrop);
   gameScene.update(startState);
   const camera = createPresetCamera('spot_low', startState.x, startState.z, spot);
   const draw = (): void => {

@@ -1,4 +1,4 @@
-// 場景裡的動態小效果：倒車輪胎痕、車輪揚起的灰塵、場地上的落葉。全部是純視覺，沒有碰撞。
+// 場景裡的動態小效果：倒車輪胎痕、車輪揚起的灰塵、場地上的落葉、雨絲。全部是純視覺，沒有碰撞。
 // 數量跟著畫質級別走；上限是 0 的效果整個不建立（不佔 draw call）。
 import { Group } from 'three';
 import type { GroundVector } from '../core/heading';
@@ -7,6 +7,7 @@ import type { QualitySettings } from '../render/quality';
 import type { VehiclePose } from '../vehicle/bicycleModel';
 import { createDust } from './dust';
 import { createLeaves } from './leaves';
+import { createRain } from './rain';
 import { createTireMarks } from './tireMarks';
 
 export interface SceneEffects {
@@ -14,7 +15,7 @@ export interface SceneEffects {
   readonly root: Group;
   /**
    * 每個畫面幀呼叫。
-   * @param frameSeconds 距離上一幀多久；定格截圖傳 0：落葉停在起始位置，沒有輪胎痕與灰塵。
+   * @param frameSeconds 距離上一幀多久；定格截圖傳 0：落葉與雨絲停在起始位置，沒有輪胎痕與灰塵。
    */
   update(pose: VehiclePose, frameSeconds: number): void;
 }
@@ -22,30 +23,41 @@ export interface SceneEffects {
 /** 灰塵與落葉各用自己的亂數序列（種子加上這個位移），互不影響，也不影響場地擺設。 */
 const DUST_SEED_OFFSET = 0x51;
 const LEAF_SEED_OFFSET = 0xa7;
-/** 車離開第一次擺放的位置這麼遠（公尺）就算開動了。 */
-const WIND_START_DISTANCE_M = 0.001;
+const RAIN_SEED_OFFSET = 0xd3;
+
+/** 依天氣與 `?fx=off` 決定要不要建立的效果；都不給 = 黃昏（有落葉與灰塵、沒有雨）。 */
+export interface SceneEffectOptions {
+  /** 雨絲數；0 = 不下雨。 */
+  readonly rainStreaks?: number;
+  /** 落葉（下雨時、`?fx=off` 時不飄）。 */
+  readonly leaves?: boolean;
+  /** 車輪揚起的灰塵（下雨時不揚）。 */
+  readonly dust?: boolean;
+}
 
 /**
  * @param spot 目標車位（落葉避開它與通路）
  * @param start 車的起點（世界座標）
  * @param seed 亂數種子
+ * @param options 依天氣開關的效果
  */
 export function createSceneEffects(
   quality: Pick<QualitySettings, 'tireMarks' | 'particles'>,
   spot: ParkingSpot,
   start: GroundVector,
   seed: number,
+  options: SceneEffectOptions = {},
 ): SceneEffects {
   const root = new Group();
   root.name = 'effects';
 
   const tireMarks = quality.tireMarks.maxSegments > 0 ? createTireMarks(quality.tireMarks) : undefined;
   const dust =
-    quality.particles.dust > 0
+    quality.particles.dust > 0 && (options.dust ?? true)
       ? createDust(quality.particles.dust, seed + DUST_SEED_OFFSET)
       : undefined;
   const leaves =
-    quality.particles.leaves > 0
+    quality.particles.leaves > 0 && (options.leaves ?? true)
       ? createLeaves(spot, start, seed + LEAF_SEED_OFFSET, quality.particles.leaves)
       : undefined;
   if (tireMarks !== undefined) {
@@ -57,24 +69,23 @@ export function createSceneEffects(
   if (leaves !== undefined) {
     root.add(leaves.mesh);
   }
+  const rainStreaks = Math.round(options.rainStreaks ?? 0);
+  const rain = rainStreaks > 0 ? createRain(rainStreaks, seed + RAIN_SEED_OFFSET) : undefined;
+  if (rain !== undefined) {
+    root.add(rain.lines);
+  }
 
-  // 風從車第一次動起來才開始吹：還沒開車之前場景是靜止的，同一個鏡頭畫出來的畫面每一幀都一樣
-  // （切一圈鏡頭回來可以逐像素比較）；開動之後落葉就一直飄，車停下來也不會停。
-  let parkedAt: GroundVector | undefined;
-  let windBlowing = false;
+  // 風從一開始就吹：落葉與雨的位置只由累積時間決定，車還沒開動也在飄。
+  // 定格截圖不傳時間（frameSeconds = 0），停在起始位置，所以可重現。
   let elapsedSeconds = 0;
   return {
     root,
     update(pose, frameSeconds) {
-      parkedAt ??= { x: pose.x, z: pose.z };
-      windBlowing ||=
-        Math.hypot(pose.x - parkedAt.x, pose.z - parkedAt.z) > WIND_START_DISTANCE_M;
-      if (windBlowing) {
-        elapsedSeconds += frameSeconds;
-      }
+      elapsedSeconds += frameSeconds;
       tireMarks?.update(pose, frameSeconds);
       dust?.update(pose, frameSeconds);
       leaves?.setTime(elapsedSeconds);
+      rain?.update(elapsedSeconds, pose.x, pose.z);
     },
   };
 }

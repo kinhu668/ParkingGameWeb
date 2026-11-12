@@ -71,17 +71,21 @@ export function createSpotArrow(spot: ParkingSpot): Group {
  * @param layout createEnvironmentLayout 算出來的佈局
  * @param props 這個畫質級別的擺設設定
  * @param hdr 這個級別是不是走高動態範圍的後製鏈（決定路燈光錐與光暈的亮度）
+ * @param lampsLit 路燈亮不亮（跟著天氣）；白天路燈不亮，招牌也不自發光
  */
 export function createEnvironment(
   spot: ParkingSpot,
   layout: EnvironmentLayout,
   props: PropsQualitySettings,
   hdr: boolean,
+  lampsLit = true,
 ): Group {
   const group = new Group();
   group.name = 'environment';
   // 佈局已經是世界座標：給 createLotProps 一個在原點、不轉向的座標框。
-  group.add(createLotProps({ ...spot, x: 0, z: 0, headingRad: 0 }, layout.lot, props, hdr));
+  group.add(
+    createLotProps({ ...spot, x: 0, z: 0, headingRad: 0 }, layout.lot, props, hdr, lampsLit),
+  );
 
   if (layout.slabs.length > 0) {
     const slabs = new InstancedMesh(
@@ -111,7 +115,7 @@ export function createEnvironment(
   }
 
   for (const sign of layout.signs) {
-    group.add(createSignMesh(sign));
+    group.add(createSignMesh(lampsLit ? sign : { ...sign, glow: 0 }));
   }
   group.add(createSpotArrow(spot));
   return group;

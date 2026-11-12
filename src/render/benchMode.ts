@@ -7,6 +7,8 @@ import { advanceFixedLoop } from '../core/fixedLoop';
 import { FIXED_STEP_SECONDS } from '../core/gameConfig';
 import { t, type TranslationKey } from '../core/i18n';
 import { msToS } from '../core/units';
+import { parseFxOffParam } from '../core/urlParams';
+import { resolveWeather } from '../core/weather';
 import { DEMO_ROUTE_SECONDS, demoInputAtStep } from '../level/demoRoute';
 import type { LevelDefinition } from '../level/levelSchema';
 import { interpolateVehiclePose, stepVehicle } from '../vehicle/bicycleModel';
@@ -46,7 +48,15 @@ export function runBench(
   level: LevelDefinition,
 ): void {
   const { spot, startState: start } = level.layout;
-  const gameScene = createGameScene(renderer, quality, spot, start, level);
+  const gameScene = createGameScene(
+    renderer,
+    quality,
+    spot,
+    start,
+    level,
+    resolveWeather(window.location.search, level.weather),
+    !parseFxOffParam(window.location.search),
+  );
   const followCamera = createFollowCamera(start.x, start.z);
 
   const panel = document.createElement('div');

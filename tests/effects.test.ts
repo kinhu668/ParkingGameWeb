@@ -1,6 +1,14 @@
 // 動態小效果：倒車輪胎痕（只在倒車時留、有上限、會淡掉）、灰塵（只在車動時揚起、有上限、可重現）、
 // 落葉（數量跟著畫質、位置可重現、避開通路與目標車位），以及它們「純視覺」的網格設定。不開 WebGL。
-import { InstancedMesh, Mesh, MeshBasicMaterial, Points, PointsMaterial, ShaderLib } from 'three';
+import {
+  InstancedMesh,
+  LineSegments,
+  Mesh,
+  MeshBasicMaterial,
+  Points,
+  PointsMaterial,
+  ShaderLib,
+} from 'three';
 import { describe, expect, test } from 'vitest';
 import { FIXED_STEP_SECONDS, DEFAULT_SEED } from '../src/core/gameConfig';
 import { forward, right } from '../src/core/heading';
@@ -25,6 +33,7 @@ import { PROTOTYPE_LAYOUT } from '../src/level/prototypeLayout';
 import { curbInnerBounds } from '../src/props/lotEdges';
 import { lotKeepOutZones, pointInKeepOut, worldToSpotLocal } from '../src/props/lotLayout';
 import { SKIP_AMBIENT_OCCLUSION } from '../src/render/ambientOcclusionFlag';
+import { RAIN_CONFIG } from '../src/render/weatherPresets';
 import { QUALITY_LEVELS } from '../src/render/quality';
 import {
   CAR_VISUAL_CONFIG,
@@ -577,29 +586,61 @@ describe('效果的畫質級別 createSceneEffects', () => {
     expect(leaves.instanceMatrix.array).not.toEqual(before);
   });
 
-  test('車還沒開動之前場景是靜止的：時間照走，落葉、痕、灰塵都不變；開動之後落葉一直飄，停車也不停', () => {
+  test('落葉從一開始就飄（車還沒開動也在飄）；同一個累積時間畫出來一樣；車不動就沒有痕與灰塵', () => {
     const effects = createSceneEffects(HIGH, SPOT, START, DEFAULT_SEED);
     const leaves = effects.root.getObjectByName('leaves') as InstancedMesh;
     const marks = effects.root.getObjectByName('tireMarks') as Mesh;
     const dust = effects.root.getObjectByName('dust') as Points;
     const before = leaves.instanceMatrix.array.slice();
-    // 停在原地 5 秒（含原地打方向盤）：畫面每一幀都一樣。
+    // 停在原地 5 秒（含原地打方向盤）：落葉在飄，但沒有痕、沒有灰塵。
     for (let frame = 0; frame < 300; frame += 1) {
       effects.update({ ...poseAt(0, 0), steerRad: frame % 2 === 0 ? 0.3 : 0 }, DT);
     }
-    expect(leaves.instanceMatrix.array).toEqual(before);
+    expect(leaves.instanceMatrix.array).not.toEqual(before);
     expect(marks.visible).toBe(false);
     expect(dust.visible).toBe(false);
 
-    // 往前開一小段再停住：之後即使車不動，落葉也繼續飄。
-    const stopped = straightRun(poseAt(0, 0), 0.05, 10).at(-1) ?? poseAt(0, 0);
-    for (const pose of straightRun(poseAt(0, 0), 0.05, 10)) {
-      effects.update(pose, DT);
+    // 另一組效果走同樣長的時間（一樣的步數）：落葉的位置完全相同。
+    const again = createSceneEffects(HIGH, SPOT, START, DEFAULT_SEED);
+    for (let frame = 0; frame < 300; frame += 1) {
+      again.update(poseAt(0, 0), DT);
     }
-    const afterDriving = leaves.instanceMatrix.array.slice();
-    for (let frame = 0; frame < 120; frame += 1) {
-      effects.update(stopped, DT);
+    expect((again.root.getObjectByName('leaves') as InstancedMesh).instanceMatrix.array).toEqual(
+      leaves.instanceMatrix.array,
+    );
+  });
+
+  test('雨絲：有給數量才建立，一個 draw call；下雨時不揚灰塵、不飄落葉；同一個時間位置相同、會往下掉', () => {
+    expect(createSceneEffects(HIGH, SPOT, START, DEFAULT_SEED).root.getObjectByName('rain')).toBeUndefined();
+
+    const options = { rainStreaks: 200, leaves: false, dust: false };
+    const effects = createSceneEffects(HIGH, SPOT, START, DEFAULT_SEED, options);
+    expect(effects.root.children.map((child) => child.name).sort()).toEqual(['rain', 'tireMarks']);
+    const rain = effects.root.getObjectByName('rain') as LineSegments;
+    const positions = rain.geometry.getAttribute('position');
+    expect(positions.count).toBe(400);
+
+    // 定格（時間 0）也看得到雨：每條雨絲都有長度，而且都在車附近的長方體裡。
+    effects.update(poseAt(3, -4), 0);
+    const still = positions.array.slice();
+    for (let index = 0; index < positions.count; index += 2) {
+      expect(positions.getY(index + 1)).toBeGreaterThan(positions.getY(index));
+      expect(Math.abs(positions.getX(index) - 3)).toBeLessThanOrEqual(RAIN_CONFIG.boxSizeM / 2);
+      expect(Math.abs(positions.getZ(index) + 4)).toBeLessThanOrEqual(RAIN_CONFIG.boxSizeM / 2);
+      expect(positions.getY(index)).toBeGreaterThanOrEqual(0);
+      expect(positions.getY(index)).toBeLessThan(RAIN_CONFIG.boxHeightM);
     }
-    expect(leaves.instanceMatrix.array).not.toEqual(afterDriving);
+    const again = createSceneEffects(HIGH, SPOT, START, DEFAULT_SEED, options);
+    again.update(poseAt(3, -4), 0);
+    expect((again.root.getObjectByName('rain') as LineSegments).geometry.getAttribute('position').array).toEqual(still);
+
+    // 過了一點時間：雨絲動了。
+    effects.update(poseAt(3, -4), DT);
+    expect(positions.array).not.toEqual(still);
+  });
+
+  test('?fx=off（不要落葉）：落葉不建立，其餘照常', () => {
+    const effects = createSceneEffects(HIGH, SPOT, START, DEFAULT_SEED, { leaves: false });
+    expect(effects.root.children.map((child) => child.name).sort()).toEqual(['dust', 'tireMarks']);
   });
 });
