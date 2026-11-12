@@ -322,11 +322,11 @@ export function setCarHoodView(car: CarMesh, enabled: boolean): void {
 
 /**
  * 由駕駛輸入與車速決定燈號（與 bicycleModel 的車速規則一致，但不影響物理）：
- * 手煞車、或油門與行進方向相反（正在煞車）→ 煞車燈；正在倒退、或靜止時按著倒車 → 倒車燈。
+ * 手煞車、腳剎、或油門與行進方向相反（正在煞車）→ 煞車燈；正在倒退、或靜止時按著倒車 → 倒車燈。
  */
 export function carLightsFor(input: DriveInput, speedMps: number): CarLights {
   return {
-    braking: input.handbrake || speedMps * input.throttle < 0,
+    braking: input.handbrake || input.brake === true || speedMps * input.throttle < 0,
     reversing: speedMps < 0 || (speedMps === 0 && input.throttle < 0),
   };
 }

@@ -34,6 +34,8 @@ export interface DriveInput {
   readonly steer: number;
   /** 手煞車是否按住。 */
   readonly handbrake: boolean;
+  /** 腳剎是否踩著；不填 = 沒踩（照腳本開的路線用不到腳剎）。比手煞車緩，力道與反向油門的煞車相同。 */
+  readonly brake?: boolean;
 }
 
 /** 車身四角的世界座標，從上方看順時針排列。 */
@@ -75,10 +77,14 @@ function nextSteer(steerRad: number, steerInput: number, dtSeconds: number): num
   );
 }
 
-/** 步驟 2：車速。優先順序：手煞車 → 沒油門滑行 → 反向油門煞車 → 同向（或靜止）加速。 */
+/** 步驟 2：車速。優先順序：手煞車 → 腳剎 → 沒油門滑行 → 反向油門煞車 → 同向（或靜止）加速。 */
 function nextSpeed(speedMps: number, input: DriveInput, dtSeconds: number): number {
   if (input.handbrake) {
     return moveToward(speedMps, 0, VEHICLE_CONFIG_SI.handbrakeMps2 * dtSeconds);
+  }
+  // 腳剎：不論有沒有踩油門都只減速，停在剛好 0。
+  if (input.brake === true) {
+    return moveToward(speedMps, 0, VEHICLE_CONFIG_SI.brakeMps2 * dtSeconds);
   }
   if (input.throttle === 0) {
     return moveToward(speedMps, 0, VEHICLE_CONFIG_SI.coastDecelMps2 * dtSeconds);
