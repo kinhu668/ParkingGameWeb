@@ -3,7 +3,7 @@
 // 所以這裡的背景車、路燈、樹、建築全部放在 bounds 外面；bounds 裡只有平貼地面的標線與貼在牆面上的門窗招牌。
 // 原型關沒有 bounds，不走這裡（仍然是 lotLayout.ts 的那座停車場）。
 import { DEFAULT_SEED } from '../core/gameConfig';
-import { forward } from '../core/heading';
+import { forward, right, type GroundVector } from '../core/heading';
 import { createRng, type Rng } from '../core/rng';
 import { degToRad, ftToM } from '../core/units';
 import type { BoundsFt, ObbFt } from '../level/collision';
@@ -74,6 +74,8 @@ const STALL_LENGTH_FT = 18;
 /** 假車位那一列離 bounds 邊緣多遠（中間是路緣與路燈）。 */
 const STALL_ROW_OUT_FT = 7;
 const LAMP_OUT_FT = 5.6;
+/** 背景車在假車位裡的隨機偏移：橫向、前後（英尺）與歪斜（度）的上限。 */
+const STALL_JITTER = { lateralFt: 0.25, lengthwiseFt: 0.7, skewDeg: 1.5 } as const;
 
 /** 一個邊上的座標系：along 沿著邊、out 往外。 */
 interface SideFrame {
@@ -331,10 +333,12 @@ function addStallRow(builder: Builder, frame: SideFrame, rng: Rng, occupancy: nu
       break;
     }
     const parked = rng() < occupancy;
-    const lateral = (rng() * 2 - 1) * 0.45;
-    const lengthwise = (rng() * 2 - 1) * 0.7;
+    // 車身寬 6 ft、車位寬 9 ft：橫向偏移與歪斜收小，相鄰兩台最壞也還有 2 ft 左右的空隙，
+    // 斜著看過去不會像疊在一起。
+    const lateral = (rng() * 2 - 1) * STALL_JITTER.lateralFt;
+    const lengthwise = (rng() * 2 - 1) * STALL_JITTER.lengthwiseFt;
     const noseOut = rng() < 0.3;
-    const skew = (rng() * 2 - 1) * 2.5;
+    const skew = (rng() * 2 - 1) * STALL_JITTER.skewDeg;
     const variant = rng();
     if (parked) {
       builder.prop(
@@ -879,6 +883,83 @@ function addNarrowAlley(builder: Builder, source: EnvironmentSource, bounds: Bou
   }
 }
 
+/** 裝飾背景車與別的車（另一台背景車、關卡 JSON 的 parked_car）、路燈桿之間至少留這麼寬的空隙（英尺）。 */
+export const PARKED_CAR_CLEARANCE_FT = 1.2;
+
+/** 佔地矩形的四個角（往四周各擴 marginM）。 */
+function footprintCorners(placement: PropPlacement, marginM: number): GroundVector[] {
+  const side = right(placement.headingRad);
+  const ahead = forward(placement.headingRad);
+  const halfX = placement.sizeX / 2 + marginM;
+  const halfZ = placement.sizeZ / 2 + marginM;
+  return [
+    [-1, -1],
+    [1, -1],
+    [1, 1],
+    [-1, 1],
+  ].map(([across = 0, along = 0]) => ({
+    x: placement.x + side.x * across * halfX + ahead.x * along * halfZ,
+    z: placement.z + side.z * across * halfX + ahead.z * along * halfZ,
+  }));
+}
+
+/**
+ * 兩個擺設的佔地（轉過的矩形）之間的空隙是不是小於 clearanceM（重疊也算）：分離軸測試，
+ * 兩個矩形各往外擴一半的 clearanceM 再比。
+ */
+export function footprintsTooClose(a: PropPlacement, b: PropPlacement, clearanceM = 0): boolean {
+  const cornersA = footprintCorners(a, clearanceM / 2);
+  const cornersB = footprintCorners(b, clearanceM / 2);
+  for (const placement of [a, b]) {
+    for (const axis of [right(placement.headingRad), forward(placement.headingRad)]) {
+      const along = (corner: GroundVector): number => corner.x * axis.x + corner.z * axis.z;
+      const projectedA = cornersA.map(along);
+      const projectedB = cornersB.map(along);
+      if (
+        Math.max(...projectedA) < Math.min(...projectedB) ||
+        Math.max(...projectedB) < Math.min(...projectedA)
+      ) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+/**
+ * 剔除會穿插的裝飾背景車：依序（離車位近的優先）留下來，與已經留下的背景車、關卡 JSON 的停放車輛、
+ * 路燈桿之間的空隙不到 PARKED_CAR_CLEARANCE_FT 的就不要。
+ */
+function withoutCrowdedCars(
+  cars: readonly PropPlacement[],
+  source: EnvironmentSource,
+  lamps: readonly PropPlacement[],
+): PropPlacement[] {
+  const clearanceM = ftToM(PARKED_CAR_CLEARANCE_FT);
+  const fixed: PropPlacement[] = [
+    ...lamps,
+    ...source.obstaclesFt
+      .filter((obstacle) => obstacle.type === 'parked_car')
+      .map((car) => ({
+        x: ftToM(car.centerXFt),
+        z: ftToM(car.centerZFt),
+        y: 0,
+        headingRad: degToRad(car.headingDeg),
+        sizeX: ftToM(car.widthFt),
+        sizeY: 0,
+        sizeZ: ftToM(car.lengthFt),
+        variant: 0,
+      })),
+  ];
+  const kept: PropPlacement[] = [];
+  for (const car of cars) {
+    if (![...fixed, ...kept].some((other) => footprintsTooClose(car, other, clearanceM))) {
+      kept.push(car);
+    }
+  }
+  return kept;
+}
+
 /** 取候選的前幾個。 */
 function take<T>(candidates: readonly T[], count: number): T[] {
   return candidates.slice(0, Math.max(0, Math.ceil(count)));
@@ -931,7 +1012,10 @@ export function createEnvironmentLayout(
   const spotZ = ftToM(source.spotFt.centerZFt);
   const lot: LotLayout = {
     ...builder.lot,
-    parkedCars: take(nearestFirst(builder.lot.parkedCars, spotX, spotZ), props.parkedCars),
+    parkedCars: take(
+      withoutCrowdedCars(nearestFirst(builder.lot.parkedCars, spotX, spotZ), source, builder.lot.lamps),
+      props.parkedCars,
+    ),
     lamps: take(nearestFirst(builder.lot.lamps, spotX, spotZ), props.lampHeads),
     trees: take(nearestFirst(builder.lot.trees, spotX, spotZ), props.trees),
   };
