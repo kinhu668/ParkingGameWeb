@@ -1,4 +1,4 @@
-/* 介面樣式：疊在畫布上的 HUD。只用系統字型，不內嵌、不下載任何字型檔。 */
+/* 介面樣式：疊在畫布上的 HUD、結算與暫停面板、關卡選擇。只用系統字型，不內嵌、不下載任何字型檔。 */
 
 :root {
   --ui-font: system-ui, 'PingFang TC', 'Microsoft JhengHei', 'Noto Sans TC', 'Noto Sans CJK TC',
@@ -118,10 +118,16 @@ body {
   color: #ffd76a;
 }
 
-/* 語言按鈕：右上 */
-.hud-language {
+/* 右上角的按鈕：語言、關卡選擇，由上往下排。 */
+.hud-corner {
   grid-column: 2;
   grid-row: 1;
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+}
+
+.hud-button {
   padding: 9px 16px;
   color: inherit;
   font: inherit;
@@ -131,11 +137,13 @@ body {
   transition: background-color 0.15s ease;
 }
 
-.hud-language:hover {
+.hud-button:hover {
   background: var(--ui-panel-hover);
 }
 
-.hud-language:focus-visible {
+.hud-button:focus-visible,
+.panel-button:focus-visible,
+.level-card:focus-visible {
   outline: 2px solid var(--ui-text);
   outline-offset: 2px;
 }
@@ -258,9 +266,203 @@ body {
 }
 
 .hud-status-hint {
-  margin-top: 8px;
+  margin-top: 12px;
   color: var(--ui-text-dim);
-  font-size: 18px;
+  font-size: 15px;
+}
+
+/* 結算的數字：時間、碰撞、角度誤差，三欄並排。 */
+.result-rows {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  grid-auto-flow: column;
+  grid-template-rows: auto auto;
+  justify-content: center;
+  gap: 2px 30px;
+  margin: 14px 0 0;
+}
+
+.result-label {
+  color: var(--ui-text-dim);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+
+.result-value {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 結算與暫停面板的按鈕列。HUD 整體不接滑鼠，按鈕自己開。 */
+.panel-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.panel-button {
+  padding: 9px 20px;
+  border: 1px solid var(--ui-border);
+  border-radius: 10px;
+  background: rgb(255 255 255 / 0.08);
+  color: inherit;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: background-color 0.15s ease;
+}
+
+.panel-button:hover {
+  background: rgb(255 255 255 / 0.18);
+}
+
+.panel-button-primary {
+  border-color: rgb(255 212 94 / 0.7);
+  background: rgb(255 212 94 / 0.22);
+}
+
+.panel-button-primary:hover {
+  background: rgb(255 212 94 / 0.36);
+}
+
+.panel-button[hidden] {
+  display: none;
+}
+
+/* 暫停：整個畫面壓暗一點，面板放在同樣的位置。 */
+.hud-pause {
+  background: rgb(8 11 16 / 0.45);
+}
+
+/* 關卡選擇（首頁）：蓋在定格的場景上，整片壓暗；內容置中，視窗太矮時可以捲動。 */
+.level-select {
+  position: fixed;
+  inset: 0;
+  overflow: auto;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  box-sizing: border-box;
+  background: linear-gradient(rgb(8 11 16 / 0.62), rgb(8 11 16 / 0.84));
+  color: var(--ui-text);
+  font-family: var(--ui-font);
+  font-size: 15px;
+  line-height: 1.4;
+  user-select: none;
+}
+
+.select-language {
+  position: absolute;
+  top: max(var(--ui-gap), env(safe-area-inset-top));
+  right: max(var(--ui-gap), env(safe-area-inset-right));
+}
+
+.select-inner {
+  width: min(1080px, 100%);
+}
+
+.select-title {
+  margin: 0;
+  font-size: 40px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.select-world {
+  margin: 4px 0 20px;
+  color: var(--ui-text-dim);
+  font-size: 17px;
+  letter-spacing: 0.08em;
+}
+
+.select-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 14px;
+}
+
+@media (max-width: 900px) {
+  .select-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.level-card {
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  justify-items: start;
+  align-content: start;
+  gap: 4px;
+  min-height: 168px;
+  padding: 14px 16px 14px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.level-card:hover:enabled {
+  background: var(--ui-panel-hover);
+  transform: translateY(-2px);
+}
+
+.level-card:disabled {
+  cursor: default;
+}
+
+.level-card[data-state='locked'],
+.level-card[data-state='soon'] {
+  color: var(--ui-text-dim);
+  background: rgb(16 20 26 / 0.4);
+}
+
+.level-card-number {
+  font-size: 34px;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.level-card-name {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.level-card-stars {
+  align-self: end;
+  color: #ffd45e;
+  font-size: 24px;
+  letter-spacing: 0.1em;
+}
+
+.level-card-time {
+  display: flex;
+  gap: 8px;
+  color: var(--ui-text-dim);
+  font-size: 13px;
+}
+
+.level-card-time-value {
+  color: var(--ui-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.level-card-lock {
+  align-self: end;
+  width: 26px;
+  height: 26px;
+}
+
+.level-card-note {
+  font-size: 13px;
 }
 
 /* ?show 的未知物件提示與 ?bench 的結果面板：左上角，樣式沿用 HUD 面板。這兩種模式沒有 HUD。 */

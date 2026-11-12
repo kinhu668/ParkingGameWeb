@@ -2,7 +2,7 @@
 // 一律用 KeyboardEvent.code（實體鍵位），不受鍵盤配置與輸入法影響。
 import type { DriveInput } from '../vehicle/bicycleModel';
 
-/** 動作 → 按鍵清單。toggleCamera 是切換遊戲鏡頭（V）；pause 本階段只定義、不接行為。 */
+/** 動作 → 按鍵清單。toggleCamera 是切換遊戲鏡頭（V）；pause 是暫停／繼續（Esc）。 */
 export const KEY_BINDINGS = {
   throttle: ['KeyW', 'ArrowUp'],
   reverse: ['KeyS', 'ArrowDown'],
@@ -67,6 +67,8 @@ export interface KeyboardInput {
   consumeRestart(): boolean;
   /** 上次呼叫之後是否按過「切換鏡頭」；語意與 consumeRestart 相同。 */
   consumeToggleCamera(): boolean;
+  /** 上次呼叫之後是否按過「暫停」；語意與 consumeRestart 相同。 */
+  consumePause(): boolean;
 }
 
 /** 在 window 上掛鍵盤監聽。視窗失焦時清空按住狀態，避免放開鍵的事件漏掉後車子自己一直跑。 */
@@ -74,6 +76,7 @@ export function attachKeyboardInput(target: Window): KeyboardInput {
   const heldCodes = new Set<string>();
   let restartPressed = false;
   let toggleCameraPressed = false;
+  let pausePressed = false;
 
   target.addEventListener('keydown', (event) => {
     // 帶修飾鍵的是瀏覽器快捷鍵（例如 Ctrl+R 重新整理），不當成遊戲輸入。
@@ -89,6 +92,9 @@ export function attachKeyboardInput(target: Window): KeyboardInput {
     if (isBound(KEY_BINDINGS.toggleCamera, event.code) && !event.repeat) {
       toggleCameraPressed = true;
     }
+    if (isBound(KEY_BINDINGS.pause, event.code) && !event.repeat) {
+      pausePressed = true;
+    }
     heldCodes.add(event.code);
   });
 
@@ -100,6 +106,7 @@ export function attachKeyboardInput(target: Window): KeyboardInput {
     heldCodes.clear();
     restartPressed = false;
     toggleCameraPressed = false;
+    pausePressed = false;
   });
 
   return {
@@ -112,6 +119,11 @@ export function attachKeyboardInput(target: Window): KeyboardInput {
     consumeToggleCamera: () => {
       const pressed = toggleCameraPressed;
       toggleCameraPressed = false;
+      return pressed;
+    },
+    consumePause: () => {
+      const pressed = pausePressed;
+      pausePressed = false;
       return pressed;
     },
   };

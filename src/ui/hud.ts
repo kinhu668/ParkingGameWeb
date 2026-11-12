@@ -1,20 +1,24 @@
 // 疊在畫布上的 HTML HUD：車速（mph）、倒數計時、碰撞次數、檔位、角度誤差、簡要操作說明、
-// 語言切換按鈕、目前鏡頭名稱、成功／失敗的狀態面板（完整的結算畫面之後再做）。
+// 語言切換按鈕、關卡選擇按鈕、目前鏡頭名稱、結算面板（results.ts）、暫停面板（pausePanel.ts）。
 // 所有文字都走翻譯鍵；語言切換時就地更新，不重新載入頁面。
 import type { GameCameraView } from '../core/cameraView';
-import { getLocale, onLocaleChange, setLocale, t, type Locale, type TranslationKey } from '../core/i18n';
-import { mpsToMph, radToDeg } from '../core/units';
+import { onLocaleChange, t, type TranslationKey } from '../core/i18n';
+import { mpsToMph } from '../core/units';
 import { angleErrorRad } from '../level/parkingJudge';
 import { UNLIMITED_RULES, stepsToSeconds, type FailReason } from '../level/scoring';
 import type { Session } from '../level/session';
 import type { DriveInput } from '../vehicle/bicycleModel';
-import { formatStars, formatTime } from './format';
+import { createUiBuilder } from './dom';
+import { formatAngleDeg, formatCollisions, formatTime } from './format';
+import { createPausePanel } from './pausePanel';
+import { createResultsPanel, resultReadout, type LevelActions } from './results';
+
+// 這幾個函式搬到共用的檔案了；這裡照舊匯出，既有的呼叫端與測試不必改。
+export { otherLocale } from './dom';
+export { formatAngleDeg, formatCollisions } from './format';
 
 /** 車速顯示到小數第幾位；停車判定門檻是 0.5 mph，整數不夠看。 */
 const SPEED_DECIMALS = 1;
-
-/** 角度誤差顯示到小數第幾位；3 星的門檻是 3°。 */
-const ANGLE_DECIMALS = 1;
 
 /** 剩餘時間低於這個秒數，倒數會變色提醒。 */
 const LOW_TIME_SECONDS = 10;
@@ -26,12 +30,6 @@ export type Gear = 'forward' | 'reverse';
 const GEAR_LABELS: Readonly<Record<Gear, { readonly letter: string; readonly key: TranslationKey }>> = {
   forward: { letter: 'D', key: 'hud.gearForward' },
   reverse: { letter: 'R', key: 'hud.gearReverse' },
-};
-
-/** 失敗原因 → 說明的翻譯鍵；少列一個原因會編譯失敗。 */
-const FAIL_REASON_LABELS: Readonly<Record<FailReason, TranslationKey>> = {
-  timeout: 'status.failTimeout',
-  collisions: 'status.failCollisions',
 };
 
 /** 鏡頭名稱出現後多久完全淡出（毫秒），以及其中維持不透明的比例。 */
@@ -57,6 +55,7 @@ const CONTROL_ROWS: readonly { readonly caps: readonly KeyCap[]; readonly label:
   { caps: [{ key: 'hud.keySpace' }], label: 'hud.controlHandbrake' },
   { caps: [{ text: 'R' }], label: 'hud.controlRestart' },
   { caps: [{ text: 'V' }], label: 'hud.controlCamera' },
+  { caps: [{ text: 'Esc' }], label: 'hud.controlPause' },
 ];
 
 /** 這個鏡頭模式的名稱翻譯鍵。 */
@@ -79,16 +78,6 @@ export function gearFor(speedMps: number, throttle: DriveInput['throttle'], prev
     return previous;
   }
   return throttle > 0 ? 'forward' : 'reverse';
-}
-
-/** 角度誤差文字：弧度換成度的絕對值，固定小數位，加度數符號。 */
-export function formatAngleDeg(angleRad: number): string {
-  return `${Math.abs(radToDeg(angleRad)).toFixed(ANGLE_DECIMALS)}°`;
-}
-
-/** 碰撞次數文字：`已撞次數 / 上限`；沒有上限就只顯示次數。 */
-export function formatCollisions(collisions: number, maxCollisions: number): string {
-  return Number.isFinite(maxCollisions) ? `${collisions} / ${maxCollisions}` : String(collisions);
 }
 
 /** HUD 每幀要顯示的內容（已經換成文字，方便比對有沒有變）。 */
@@ -123,15 +112,10 @@ export function hudReadout(session: Session): HudReadout {
   };
 }
 
-/** 按語言按鈕會切到的語言（只有兩種語言，就是另一種）。 */
-export function otherLocale(locale: Locale): Locale {
-  return locale === 'zh-TW' ? 'en' : 'zh-TW';
-}
-
 export interface Hud {
   /**
    * 每幀呼叫；顯示的文字有變才動 DOM。
-   * 停妥顯示成功面板（含星數），失敗顯示失敗面板（含原因），重來後收起來。
+   * 停妥或失敗時顯示結算面板（星數或原因、時間、碰撞、角度誤差、按鈕），重來後收起來。
    * @param session 這一局的現況
    * @param input 這一幀的駕駛輸入（決定停著時的檔位）
    */
@@ -141,30 +125,18 @@ export interface Hud {
    * 淡出只是看不見，`#hud-camera` 的文字與 `data-view` 一直留著。
    */
   showCameraView(view: GameCameraView): void;
+  /** 顯示或收起暫停面板（Esc）。 */
+  setPaused(paused: boolean): void;
 }
 
-/** 在 root 裡建立 HUD，並訂閱語言切換。 */
-export function createHud(root: HTMLElement): Hud {
-  /** 內容是翻譯文字的元素；語言切換時全部重填。 */
-  const translated: { readonly element: HTMLElement; readonly key: TranslationKey }[] = [];
-
-  function element(tag: string, className: string, parent: HTMLElement): HTMLElement {
-    const created = document.createElement(tag);
-    created.className = className;
-    parent.append(created);
-    return created;
-  }
-
-  function translatedElement(
-    tag: string,
-    className: string,
-    parent: HTMLElement,
-    key: TranslationKey,
-  ): HTMLElement {
-    const created = element(tag, className, parent);
-    translated.push({ element: created, key });
-    return created;
-  }
+/**
+ * 在 root 裡建立 HUD，並訂閱語言切換。
+ * @param actions 結算與暫停面板、關卡選擇按鈕要做的事
+ * @param resume 暫停面板按「繼續」要做的事
+ */
+export function createHud(root: HTMLElement, actions: LevelActions, resume: () => void): Hud {
+  const ui = createUiBuilder();
+  const { element, translatedElement } = ui;
 
   // 車速
   const speedPanel = element('div', 'hud-panel hud-speed', root);
@@ -187,20 +159,16 @@ export function createHud(root: HTMLElement): Hud {
   const gearValue = stat('hud-gear', 'hud.gear');
   const angleValue = stat('hud-angle', 'hud.angle');
 
-  // 語言按鈕：顯示「會切到的語言」的名稱。
-  const languageButton = document.createElement('button');
-  languageButton.type = 'button';
-  languageButton.id = 'hud-language';
-  languageButton.className = 'hud-panel hud-language';
-  root.append(languageButton);
-  translated.push({ element: languageButton, key: 'hud.languageTarget' });
-  // 用滑鼠點按鈕時不讓它拿走鍵盤焦點，否則之後按空白鍵（手煞車）會再觸發一次按鈕。
-  languageButton.addEventListener('mousedown', (event) => {
-    event.preventDefault();
-  });
-  languageButton.addEventListener('click', () => {
-    setLocale(otherLocale(getLocale()));
-  });
+  // 右上角：語言按鈕（顯示「會切到的語言」的名稱），下面是回關卡選擇的按鈕。
+  const cornerButtons = element('div', 'hud-corner', root);
+  ui.languageButton('hud-language', 'hud-panel hud-button', cornerButtons);
+  ui.button(
+    'hud-level-select',
+    'hud-panel hud-button',
+    cornerButtons,
+    'result.levelSelect',
+    actions.levelSelect,
+  );
 
   // 操作說明
   const controlsPanel = element('div', 'hud-panel hud-controls', root);
@@ -225,17 +193,9 @@ export function createHud(root: HTMLElement): Hud {
   let shownView: GameCameraView | undefined;
   let cameraLabelFade: Animation | undefined;
 
-  // 狀態面板：先隱藏，停妥或失敗才顯示；重來後再藏起來。
-  // `data-status` 是 parked 或 failed；標題下面那一行，成功時是星數、失敗時是原因。
-  const statusOverlay = element('div', 'hud-status', root);
-  statusOverlay.id = 'hud-status';
-  statusOverlay.setAttribute('role', 'status');
-  statusOverlay.hidden = true;
-  const statusPanel = element('div', 'hud-panel hud-status-panel', statusOverlay);
-  const statusTitle = element('div', 'hud-status-title', statusPanel);
-  const statusDetail = element('div', 'hud-status-detail', statusPanel);
-  statusDetail.id = 'hud-status-detail';
-  translatedElement('div', 'hud-status-hint', statusPanel, 'status.restartHint');
+  // 結算面板（停妥或失敗才顯示）與暫停面板（Esc）。
+  const results = createResultsPanel(ui, root, actions);
+  const pausePanel = createPausePanel(ui, root, actions, resume);
 
   let shown: HudReadout | undefined;
   let shownGear: Gear = 'forward';
@@ -247,42 +207,12 @@ export function createHud(root: HTMLElement): Hud {
     gearValue.textContent = `${label.letter} ${t(label.key)}`;
   }
 
-  /** 狀態面板的標題與說明（跟著語言變）。 */
-  function renderOutcome(): void {
-    const outcome = shown?.outcome ?? null;
-    statusOverlay.hidden = outcome === null;
-    if (outcome === null || shown === undefined) {
-      delete statusOverlay.dataset.status;
-      delete statusDetail.dataset.stars;
-      return;
-    }
-    statusOverlay.dataset.status = outcome;
-    if (outcome === 'parked') {
-      statusTitle.textContent = t('status.parked');
-      statusDetail.textContent = formatStars(shown.stars ?? 0);
-      statusDetail.dataset.stars = String(shown.stars ?? 0);
-    } else {
-      statusTitle.textContent = t('status.failed');
-      statusDetail.textContent =
-        shown.failReason === null ? '' : t(FAIL_REASON_LABELS[shown.failReason]);
-      delete statusDetail.dataset.stars;
-    }
-  }
-
   function renderTexts(): void {
-    for (const entry of translated) {
-      entry.element.textContent = t(entry.key);
-    }
+    ui.refreshTexts();
     renderGear();
-    renderOutcome();
     if (shownView !== undefined) {
       cameraLabel.textContent = t(cameraViewLabelKey(shownView));
     }
-    // 按鈕上的字是另一種語言寫的，標上 lang 讓字型與螢幕報讀正確。
-    languageButton.lang = otherLocale(getLocale());
-    const languageHint = t('hud.language');
-    languageButton.title = languageHint;
-    languageButton.setAttribute('aria-label', `${languageHint}: ${t('hud.languageTarget')}`);
   }
 
   renderTexts();
@@ -320,8 +250,11 @@ export function createHud(root: HTMLElement): Hud {
         next.stars !== previous.stars ||
         next.failReason !== previous.failReason
       ) {
-        renderOutcome();
+        results.show(resultReadout(session));
       }
+    },
+    setPaused(paused: boolean): void {
+      pausePanel.setVisible(paused);
     },
     showCameraView(view: GameCameraView): void {
       shownView = view;

@@ -1,4 +1,5 @@
-// `?level=<id>` 的 e2e：指定關卡進得去、車頭方向對；沒給就是原型關；不認得的 id 有明確的提示。
+// `?level=<id>` 的 e2e：指定關卡進得去、車頭方向對；沒給時 ?cam、?bench 是原型關、一般遊戲是關卡選擇；
+// 不認得的 id 有明確的提示。
 // 車的狀態只透過 window.__parkingGame 讀取（唯讀）；操作一律送鍵盤事件。
 import type { Page } from '@playwright/test';
 import type { SessionSnapshot } from '../src/level/session';
@@ -80,10 +81,18 @@ test('?level=w1_l03：車在起點、車頭朝 +Z（heading 180），按 W 往�
   expect(Math.abs(state.snapshot.headingDeg - W1_L03_START.headingDeg)).toBeLessThan(TOLERANCE);
 });
 
-test('沒給 level：一般遊戲、?cam、?bench 都是原型關（heading 0）', async ({ page }) => {
+test('沒給 level：一般遊戲是關卡選擇；?cam、?bench 是原型關（heading 0）', async ({ page }) => {
   const html = page.locator('html');
 
+  // 一般遊戲沒給 level：關卡選擇畫面，沒有決議出關卡，也沒有遊戲狀態與 HUD。
   await page.goto('/?lang=zh-TW');
+  await expect(page.locator('#level-select')).toBeVisible();
+  await expect(html).not.toHaveAttribute('data-level');
+  expect(await page.evaluate(() => window.__parkingGame === undefined)).toBe(true);
+  await expect(page.locator('#hud')).toBeEmpty();
+
+  // 原型關要明講 level=prototype。
+  await page.goto('/?level=prototype&lang=zh-TW');
   await expect(html).toHaveAttribute('data-level', 'prototype');
   const { levelId, snapshot } = await nextState(page);
   expect(levelId).toBe('prototype');

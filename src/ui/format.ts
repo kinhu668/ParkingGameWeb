@@ -1,10 +1,24 @@
 // 介面用的文字格式：純函式，不碰 DOM。
+import { radToDeg } from '../core/units';
 
 const SECONDS_PER_MINUTE = 60;
 const TENTHS_PER_SECOND = 10;
 
 /** 浮點誤差的容差：59.999999 秒要顯示成 1:00.0，不是 0:59.9。 */
 const TENTH_EPSILON = 1e-6;
+
+/** 角度誤差顯示到小數第幾位；3 星的門檻是 3°。 */
+const ANGLE_DECIMALS = 1;
+
+/** 角度誤差文字：弧度換成度的絕對值，固定小數位，加度數符號。 */
+export function formatAngleDeg(angleRad: number): string {
+  return `${Math.abs(radToDeg(angleRad)).toFixed(ANGLE_DECIMALS)}°`;
+}
+
+/** 碰撞次數文字：`已撞次數 / 上限`；沒有上限就只顯示次數。 */
+export function formatCollisions(collisions: number, maxCollisions: number): string {
+  return Number.isFinite(maxCollisions) ? `${collisions} / ${maxCollisions}` : String(collisions);
+}
 
 /**
  * 秒 → `m:ss.s`（無條件捨去到 0.1 秒；負值當 0）。
