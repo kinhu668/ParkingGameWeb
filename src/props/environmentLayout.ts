@@ -457,6 +457,100 @@ const CLUB = {
   bayDoor: 0x4a5056,
 } as const;
 
+/** 大賣場入口的尺寸（英尺）。玻璃的亮度都壓低：是看得進去的玻璃門，不是一整面發光的牆。 */
+export const CLUB_ENTRANCE = {
+  /** 門洞（含門框）沿牆面的半寬與高度。 */
+  halfWidth: 10,
+  topY: 9.6,
+  /** 門框與直櫺的顏色、凸出牆面多少、粗細。 */
+  frameColor: 0x353a40,
+  frameDepth: 0.4,
+  frameWidth: 0.5,
+  mullionWidth: 0.28,
+  /** 中間兩扇自動門各多寬；門的上緣（上面是氣窗）。 */
+  doorWidth: 4,
+  doorTopY: 7.3,
+  /** 玻璃的亮度（0–1）：自動門最亮（裡面的燈），兩旁的落地窗與氣窗暗一點。 */
+  doorGlow: 0.3,
+  sideGlow: 0.17,
+  transomGlow: 0.22,
+  /** 門下緣的踢腳板、門把。 */
+  kickColor: 0x2b2f34,
+  kickTopY: 1.1,
+  handleColor: 0xc9ced3,
+  /** 雨遮：凸出門廊多遠、沿牆面的半寬、底面與頂面的高度；兩端各一根柱子。 */
+  canopyDepth: 3.6,
+  canopyHalfWidth: 13,
+  canopyY: 10.1,
+  canopyTopY: 10.8,
+  canopyPost: 0.5,
+} as const;
+
+/**
+ * 大賣場的入口：門框、兩扇玻璃自動門（門把、踢腳板）、兩旁的落地窗、上面一排氣窗、雨遮與兩根柱子。
+ * MEMBERS ENTRANCE 的牌子立在雨遮的前緣上（背後有一塊底板）。
+ * @param center 入口中心沿牆面的位置
+ * @param face 門廊牆面的 out
+ */
+function addClubEntrance(builder: Builder, frame: SideFrame, center: number, face: number): void {
+  const E = CLUB_ENTRANCE;
+  const frameFace = face - E.frameDepth;
+  const left = center - E.halfWidth;
+  const right = center + E.halfWidth;
+  // 門框：兩側的立框與上面的橫框，凸出牆面。
+  builder.sideSlab('solid', frame, left, left + E.frameWidth, frameFace, face, 0, E.topY, E.frameColor);
+  builder.sideSlab('solid', frame, right - E.frameWidth, right, frameFace, face, 0, E.topY, E.frameColor);
+  builder.sideSlab('solid', frame, left, right, frameFace, face, E.topY - E.frameWidth, E.topY, E.frameColor);
+  // 門上緣的橫櫺：下面是門與落地窗，上面是氣窗。
+  builder.sideSlab('solid', frame, left, right, frameFace, face, E.doorTopY, E.doorTopY + E.mullionWidth, E.frameColor);
+  // 直櫺把門洞分成六格：左右各兩片落地窗、中間兩扇門。
+  const paneLeft = left + E.frameWidth;
+  const paneRight = right - E.frameWidth;
+  const sideWidth = (paneRight - paneLeft - 2 * E.doorWidth) / 4;
+  const edges = [
+    paneLeft,
+    paneLeft + sideWidth,
+    paneLeft + 2 * sideWidth,
+    center,
+    paneRight - 2 * sideWidth,
+    paneRight - sideWidth,
+    paneRight,
+  ];
+  const glassTop = E.topY - E.frameWidth;
+  edges.slice(0, -1).forEach((from, pane) => {
+    const to = edges[pane + 1] ?? from;
+    const isDoor = pane === 2 || pane === 3;
+    const half = E.mullionWidth / 2;
+    // 玻璃：下半是門或落地窗，上半是氣窗。
+    builder.glass(frame, from + half, to - half, face, E.kickTopY, E.doorTopY, isDoor ? E.doorGlow : E.sideGlow);
+    builder.glass(frame, from + half, to - half, face, E.doorTopY + E.mullionWidth, glassTop, E.transomGlow);
+    // 踢腳板。
+    builder.sideSlab('solid', frame, from, to, frameFace + 0.1, face, 0.45, E.kickTopY, E.kickColor);
+    if (pane > 0) {
+      builder.sideSlab('solid', frame, from - half, from + half, frameFace, face, 0, glassTop, E.frameColor);
+    }
+  });
+  // 門把：兩扇門靠中間的那一側各一支直的拉桿。
+  for (const side of [-1, 1]) {
+    const at = center + side * 0.55;
+    builder.sideSlab('solid', frame, at - 0.07, at + 0.07, frameFace - 0.12, frameFace, 2.9, 4.7, E.handleColor);
+  }
+  // 雨遮與兩根柱子。
+  const canopyOut = face - E.canopyDepth;
+  builder.sideSlab('solid', frame, center - E.canopyHalfWidth, center + E.canopyHalfWidth, canopyOut, face, E.canopyY, E.canopyTopY, CLUB.teal);
+  builder.sideSlab('solid', frame, center - E.canopyHalfWidth, center + E.canopyHalfWidth, canopyOut - 0.15, canopyOut, E.canopyY - 0.25, E.canopyY + 0.1, CLUB.orange);
+  for (const side of [-1, 1]) {
+    const at = center + side * (E.canopyHalfWidth - 0.8);
+    builder.sideSlab('solid', frame, at - E.canopyPost / 2, at + E.canopyPost / 2, canopyOut + 0.2, canopyOut + 0.2 + E.canopyPost, 0.45, E.canopyY, E.frameColor);
+  }
+  // 牌子立在雨遮前緣：背後一塊底板，牌面貼在底板朝停車場的那一面。
+  const signHalf = 10;
+  const signY0 = E.canopyTopY;
+  const signY1 = E.canopyTopY + 2.4;
+  builder.sideSlab('solid', frame, center - signHalf - 0.2, center + signHalf + 0.2, canopyOut + 0.1, canopyOut + 0.5, signY0, signY1 + 0.15, CLUB.portal);
+  builder.sign(frame, signText('warehouse_club', 'MEMBERS ENTRANCE'), 'clubMinor', center, canopyOut + 0.1, (signY0 + signY1) / 2, 2 * signHalf, signY1 - signY0, 0.3);
+}
+
 /** 大賣場：米灰色的大箱型建築、青綠＋橘色腰帶、凸出來的入口門廊與主招牌。 */
 function addWarehouseClub(builder: Builder, frame: SideFrame): void {
   const facade = 16;
@@ -474,9 +568,8 @@ function addWarehouseClub(builder: Builder, frame: SideFrame): void {
   builder.sideSlab('solid', frame, center - portalHalf, center + portalHalf, portalFace, facade, 0, 36, CLUB.portal);
   builder.sideSlab('solid', frame, center - portalHalf, center + portalHalf, portalFace - 0.3, portalFace, 33, 36, CLUB.teal);
   builder.sideSlab('solid', frame, center - portalHalf, center + portalHalf, portalFace - 0.3, portalFace, 13.2, 14.2, CLUB.orange);
-  builder.glass(frame, center - 10, center + 10, portalFace, 0.4, 9.2, 0.95);
   builder.sign(frame, signText('warehouse_club', 'BULKWORTH WHOLESALE CLUB'), 'club', center, portalFace, 24, 44, 7.6, 0.85);
-  builder.sign(frame, signText('warehouse_club', 'MEMBERS ENTRANCE'), 'clubMinor', center, portalFace, 11.2, 20, 2.4, 0.35);
+  addClubEntrance(builder, frame, center, portalFace);
   // 輪胎中心：門廊旁邊三個捲門。
   const tire = center + 58;
   for (const offset of [-13, 0, 13]) {
