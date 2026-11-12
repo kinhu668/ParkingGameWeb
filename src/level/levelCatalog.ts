@@ -11,6 +11,12 @@ const LEVEL_FILES: Readonly<Record<string, unknown>> = import.meta.glob('../leve
 
 const JSON_EXTENSION = '.json';
 
+/** 一個世界有幾關（關卡選擇畫面的格子數）。 */
+export const LEVELS_PER_WORLD = 10;
+
+/** 關卡 id 裡的編號固定兩位數（`w1_l03`）。 */
+const SLOT_NUMBER_DIGITS = 2;
+
 /** `../levels/w1_l03.json` → `w1_l03.json`。 */
 function fileNameOf(path: string): string {
   return path.slice(path.lastIndexOf('/') + 1);
@@ -48,6 +54,32 @@ export function levelById(id: string): LevelDefinition | undefined {
 /** 某個世界的關卡，依 id 排序（= 關卡順序）。 */
 export function worldLevels(world: number): readonly LevelDefinition[] {
   return LEVELS.filter((level) => level.world === world);
+}
+
+/** 關卡選擇畫面上的一格：這個世界的第幾關，以及那一關（還沒做的是 undefined）。 */
+export interface WorldSlot {
+  /** 從 1 開始的關卡編號。 */
+  readonly number: number;
+  /** 這一格對應的關卡 id（`w<世界>_l<兩位數編號>`）。 */
+  readonly id: string;
+  /** 目錄裡有這個 id 才有值；沒有 = 這一關還沒做。 */
+  readonly level: LevelDefinition | undefined;
+}
+
+/** 第 world 個世界第 number 關的 id：`w1_l03`。 */
+function slotLevelId(world: number, number: number): string {
+  return `w${world}_l${String(number).padStart(SLOT_NUMBER_DIGITS, '0')}`;
+}
+
+/**
+ * 某個世界的全部格子（固定 LEVELS_PER_WORLD 格），依編號排序。
+ * 目錄裡還沒有的關也佔一格，關卡選擇畫面顯示成「即將推出」。
+ */
+export function worldSlots(world: number): readonly WorldSlot[] {
+  return Array.from({ length: LEVELS_PER_WORLD }, (_, index) => {
+    const id = slotLevelId(world, index + 1);
+    return { number: index + 1, id, level: levelById(id) };
+  });
 }
 
 /** 同一個世界的下一關的 id；最後一關、原型關或不認得的 id 回傳 undefined。 */

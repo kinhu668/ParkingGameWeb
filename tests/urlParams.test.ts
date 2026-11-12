@@ -1,7 +1,13 @@
 // 網址參數 → 啟動模式：各模式、優先順序（show > cam > bench > 一般遊戲）、未知值的處理、與 ?lang= 並用。
 import { describe, expect, test } from 'vitest';
 import { detectLocale } from '../src/core/i18n';
-import { CAMERA_PRESETS, parseLevelParam, parseUrlMode } from '../src/core/urlParams';
+import {
+  CAMERA_PRESETS,
+  navigationSearch,
+  parseLevelParam,
+  parseUnlockAllParam,
+  parseUrlMode,
+} from '../src/core/urlParams';
 
 describe('parseUrlMode：各模式', () => {
   test.each(['', '?', '?foo=1', '?t=3'])('%j → 一般遊戲', (search) => {
@@ -123,5 +129,62 @@ describe('parseLevelParam：?level=<id>', () => {
 
   test('重複給的時候用第一個', () => {
     expect(parseLevelParam('?level=w1_l01&level=w1_l03')).toBe('w1_l01');
+  });
+});
+
+describe('parseUnlockAllParam', () => {
+  test('只有 ?unlock=all 算數', () => {
+    expect(parseUnlockAllParam('?unlock=all')).toBe(true);
+    expect(parseUnlockAllParam('?lang=en&unlock=all&quality=low')).toBe(true);
+  });
+
+  test.each(['', '?unlock', '?unlock=', '?unlock=ALL', '?unlock=1', '?unlock=w1_l03', '?level=all'])(
+    '%j → false',
+    (search) => {
+      expect(parseUnlockAllParam(search)).toBe(false);
+    },
+  );
+
+  test('不是啟動模式：不影響 parseUrlMode', () => {
+    expect(parseUrlMode('?unlock=all')).toEqual({ kind: 'game' });
+  });
+});
+
+describe('navigationSearch：換關／回關卡選擇的查詢字串', () => {
+  test('進關：加上 level，放在最前面；quality、lang、view 原樣保留', () => {
+    expect(navigationSearch('?quality=low&lang=zh-TW&view=top', 'w1_l01', 'zh-TW')).toBe(
+      '?level=w1_l01&quality=low&lang=zh-TW&view=top',
+    );
+  });
+
+  test('下一關：level 換掉，不會出現兩個', () => {
+    expect(navigationSearch('?level=w1_l01&quality=high', 'w1_l03', 'en')).toBe(
+      '?level=w1_l03&quality=high',
+    );
+  });
+
+  test('回關卡選擇：拿掉 level，其餘保留；沒有其他參數就是空字串', () => {
+    expect(navigationSearch('?level=w1_l01&view=cockpit&unlock=all', undefined, 'en')).toBe(
+      '?view=cockpit&unlock=all',
+    );
+    expect(navigationSearch('?level=w1_l01', undefined, 'en')).toBe('');
+    expect(navigationSearch('', undefined, 'zh-TW')).toBe('');
+  });
+
+  test('網址原本有 lang：改成現在的語言（在這一頁按過語言按鈕不會被蓋回去）', () => {
+    expect(navigationSearch('?level=w1_l01&lang=zh-TW', 'w1_l03', 'en')).toBe(
+      '?level=w1_l03&lang=en',
+    );
+    expect(navigationSearch('?lang=en', 'w1_l01', 'zh-TW')).toBe('?level=w1_l01&lang=zh-TW');
+  });
+
+  test('網址原本沒有 lang：不加（交給存檔或瀏覽器語言）', () => {
+    expect(navigationSearch('?quality=low', 'w1_l01', 'en')).toBe('?level=w1_l01&quality=low');
+  });
+
+  test('結果解析回來：level 是目的地，其他模式參數沒有被加進去', () => {
+    const search = navigationSearch('?view=top', 'w1_l03', 'en');
+    expect(parseLevelParam(search)).toBe('w1_l03');
+    expect(parseUrlMode(search)).toEqual({ kind: 'game' });
   });
 });
