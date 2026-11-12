@@ -15,6 +15,8 @@ import { t } from '../core/i18n';
 import { degToRad } from '../core/units';
 import { parkingSpotFromFt } from '../level/parkingJudge';
 import { PROTOTYPE_LAYOUT_FT } from '../level/prototypeLayout';
+import { OBSTACLE_TYPES } from '../level/obstacleTypes';
+import { createObstacleShowcase } from '../props/obstacleMeshes';
 import { createSpotMarkings } from '../props/spotMarkings';
 import { showChoicesNotice } from '../ui/notice';
 import { createCarMesh } from '../vehicle/carMesh';
@@ -34,6 +36,14 @@ const SHOWCASE_OBJECTS: ReadonlyMap<string, (detail: VehicleDetail) => Object3D>
         parkingSpotFromFt({ ...PROTOTYPE_LAYOUT_FT.spot, centerXFt: 0, centerZFt: 0 }),
       ),
   ],
+  // 關卡的障礙物：`obstacle_cone`、`obstacle_shopping_cart`…每種一筆。
+  ...OBSTACLE_TYPES.map(
+    (type) =>
+      [
+        `obstacle_${type}`,
+        (detail: VehicleDetail): Object3D => createObstacleShowcase(type, detail),
+      ] as const,
+  ),
 ]);
 
 /** 可用的展示 id（依登錄順序）。 */

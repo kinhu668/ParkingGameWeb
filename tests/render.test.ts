@@ -747,7 +747,8 @@ describe('展示登錄表 showcase（?show=）', () => {
     const size = box.getSize(new Vector3());
     expect(Math.abs(center.x)).toBeLessThan(ftToM(1));
     expect(Math.abs(center.z)).toBeLessThan(ftToM(1));
-    expect(Math.max(size.x, size.z)).toBeGreaterThan(ftToM(5));
+    // 車與車位都大於 5 ft；關卡的障礙物有小的（護柱 0.8 ft）。
+    expect(Math.max(size.x, size.z)).toBeGreaterThan(ftToM(id.startsWith('obstacle_') ? 0.5 : 5));
   });
 
   test('每次建立的是新的物件', () => {

@@ -1,0 +1,118 @@
+// 有邊界（bounds）的關卡四周的環境：把 environmentLayout.ts 算出來的佈局畫出來。
+// 背景車、路燈、樹、背景建築、窗、標線重用 createLotProps；主建築、人行道、門、路面標線是一批上色的方塊
+// （一個 InstancedMesh）；招牌是貼了字的平面。全部是純視覺：不進物理、不進碰撞、不進停車判定。
+import {
+  BoxGeometry,
+  Color,
+  Group,
+  InstancedMesh,
+  Matrix4,
+  Mesh,
+  MeshStandardMaterial,
+  Shape,
+  ShapeGeometry,
+  Vector3,
+} from 'three';
+import { ftToM } from '../core/units';
+import type { ParkingSpot } from '../level/parkingJudge';
+import type { PropsQualitySettings } from '../render/quality';
+import { SPOT_MARKING_CONFIG } from '../render/renderConfig';
+import type { EnvironmentLayout } from './environmentLayout';
+import { createSpotFrame } from './lotEdges';
+import { createLotProps } from './lotProps';
+import { createSignMesh } from './signs';
+
+const SLAB_ROUGHNESS = 0.9;
+/** 方向箭頭：比標線再高一點點，不與車位的漆共面。 */
+const ARROW_LIFT_M = SPOT_MARKING_CONFIG.liftM * 1.5;
+const ARROW_OPACITY = 0.55;
+
+/**
+ * 目標車位裡的方向箭頭（平貼地面）：指向停好時車頭該朝的方向，倒車入庫時才知道哪一頭是車頭。
+ */
+export function createSpotArrow(spot: ParkingSpot): Group {
+  const stemHalfM = ftToM(0.45);
+  const headHalfM = ftToM(1.5);
+  const headLengthM = ftToM(3.2);
+  const lengthM = Math.min(spot.lengthM * 0.42, ftToM(9));
+  const tipY = lengthM / 2;
+  const neckY = tipY - headLengthM;
+  // 畫在 XY 平面：+Y 是車位前方；躺平後 +Y 變成本地 −Z。
+  const outline = new Shape();
+  outline.moveTo(-stemHalfM, -lengthM / 2);
+  outline.lineTo(stemHalfM, -lengthM / 2);
+  outline.lineTo(stemHalfM, neckY);
+  outline.lineTo(headHalfM, neckY);
+  outline.lineTo(0, tipY);
+  outline.lineTo(-headHalfM, neckY);
+  outline.lineTo(-stemHalfM, neckY);
+  outline.closePath();
+  const arrow = new Mesh(
+    new ShapeGeometry(outline).rotateX(-Math.PI / 2),
+    new MeshStandardMaterial({
+      color: SPOT_MARKING_CONFIG.color,
+      roughness: SPOT_MARKING_CONFIG.roughness,
+      transparent: true,
+      opacity: ARROW_OPACITY,
+      depthWrite: false,
+    }),
+  );
+  arrow.name = 'spotArrow';
+  arrow.position.y = ARROW_LIFT_M;
+  arrow.receiveShadow = true;
+  const frame = createSpotFrame(spot);
+  frame.add(arrow);
+  return frame;
+}
+
+/**
+ * 建立一關四周的環境（世界座標）。
+ * @param spot 目標車位（畫方向箭頭用）
+ * @param layout createEnvironmentLayout 算出來的佈局
+ * @param props 這個畫質級別的擺設設定
+ * @param hdr 這個級別是不是走高動態範圍的後製鏈（決定路燈光錐與光暈的亮度）
+ */
+export function createEnvironment(
+  spot: ParkingSpot,
+  layout: EnvironmentLayout,
+  props: PropsQualitySettings,
+  hdr: boolean,
+): Group {
+  const group = new Group();
+  group.name = 'environment';
+  // 佈局已經是世界座標：給 createLotProps 一個在原點、不轉向的座標框。
+  group.add(createLotProps({ ...spot, x: 0, z: 0, headingRad: 0 }, layout.lot, props, hdr));
+
+  if (layout.slabs.length > 0) {
+    const slabs = new InstancedMesh(
+      new BoxGeometry(1, 1, 1),
+      new MeshStandardMaterial({ color: 0xffffff, roughness: SLAB_ROUGHNESS }),
+      layout.slabs.length,
+    );
+    layout.slabs.forEach((slab, index) => {
+      slabs.setMatrixAt(
+        index,
+        new Matrix4()
+          .makeTranslation(
+            (slab.minX + slab.maxX) / 2,
+            (slab.minY + slab.maxY) / 2,
+            (slab.minZ + slab.maxZ) / 2,
+          )
+          .scale(new Vector3(slab.maxX - slab.minX, slab.maxY - slab.minY, slab.maxZ - slab.minZ)),
+      );
+      slabs.setColorAt(index, new Color(slab.color));
+    });
+    slabs.instanceMatrix.needsUpdate = true;
+    slabs.name = 'environmentSlabs';
+    // 主建築不投影：太陽很低，會把整個場地罩進影子裡（與背景建築相同）。
+    slabs.castShadow = false;
+    slabs.receiveShadow = true;
+    group.add(slabs);
+  }
+
+  for (const sign of layout.signs) {
+    group.add(createSignMesh(sign));
+  }
+  group.add(createSpotArrow(spot));
+  return group;
+}

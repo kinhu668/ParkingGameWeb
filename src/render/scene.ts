@@ -20,8 +20,18 @@ import {
   edgeShadowBoxes,
 } from '../props/lotEdges';
 import { createLotLayout, spotLocalToWorld } from '../props/lotLayout';
+import type { GroundEdgeBox } from '../props/groundShader';
+import type { BoundsFt } from '../level/collision';
+import { ftToM } from '../core/units';
 import { createLotProps } from '../props/lotProps';
-import { createObstacleBoxes, type ObstacleSource } from '../props/obstacleMeshes';
+import { createEnvironmentLayout, type EnvironmentSource } from '../props/environmentLayout';
+import { createEnvironment } from '../props/environments';
+import {
+  BOUNDS_STYLES,
+  boundsVisualBoxesFt,
+  createObstacleMeshes,
+  type ObstacleSource,
+} from '../props/obstacleMeshes';
 import { createSpotMarkings } from '../props/spotMarkings';
 import type { VehiclePose } from '../vehicle/bicycleModel';
 import { createCarHeadlights } from '../vehicle/carHeadlights';
@@ -131,6 +141,46 @@ export function lotShadowBox(spot: ParkingSpot): ShadowBox {
   );
 }
 
+/** bounds 四個角的世界座標（公尺），往外多留 marginM。 */
+function boundsCorners(bounds: BoundsFt, marginM: number): GroundVector[] {
+  const minX = ftToM(bounds.minXFt) - marginM;
+  const maxX = ftToM(bounds.maxXFt) + marginM;
+  const minZ = ftToM(bounds.minZFt) - marginM;
+  const maxZ = ftToM(bounds.maxZFt) + marginM;
+  return [
+    { x: minX, z: minZ },
+    { x: maxX, z: minZ },
+    { x: maxX, z: maxZ },
+    { x: minX, z: maxZ },
+  ];
+}
+
+/** 有邊界的關卡的陰影範圍：蓋住整個可行駛範圍，加上邊界外的路燈、樹與背景車。 */
+export function boundsShadowBox(bounds: BoundsFt): ShadowBox {
+  return fitShadowBox(
+    SUN_DIRECTION,
+    boundsCorners(bounds, SUN_CONFIG.lotShadowMarginM),
+    SUN_CONFIG.lotShadowMaxHeightM,
+    SUN_CONFIG.distanceM,
+    SUN_CONFIG.lotShadowDepthMarginM,
+  );
+}
+
+/** 邊界的矮路緣落在地面上的影子（由地面著色器直接算）；高牆（巷子）不算，回傳空的。 */
+function boundsEdgeBoxes(bounds: BoundsFt, level: ObstacleSource): GroundEdgeBox[] {
+  const style = BOUNDS_STYLES[level.environment ?? 'open_lot'];
+  if (style.heightFt > 2) {
+    return [];
+  }
+  return boundsVisualBoxesFt(bounds, style.depthFt).map((box) => ({
+    minX: ftToM(box.centerXFt - box.widthFt / 2),
+    maxX: ftToM(box.centerXFt + box.widthFt / 2),
+    minZ: ftToM(box.centerZFt - box.lengthFt / 2),
+    maxZ: ftToM(box.centerZFt + box.lengthFt / 2),
+    heightM: ftToM(style.heightFt),
+  }));
+}
+
 /**
  * 把黃昏的環境貼圖（反射＋補光）設到 scene 上，回傳整組天空（穹頂要不要加進場景由呼叫端決定）。
  * 遊戲場景與展示台共用同一片天空的環境光；展示台不用天空當背景。
@@ -188,31 +238,40 @@ export function addLights(
  * @param quality 畫質設定
  * @param spot 要畫標線的車位
  * @param start 車的起點（世界座標）；起點到車位的通路上不放擺設
- * @param obstacles 關卡的障礙物與邊界（會撞到的東西）；不給就不畫
+ * @param level 關卡的障礙物、邊界與環境；不給就只有原型關的停車場
  */
 export function createGameScene(
   renderer: WebGLRenderer,
   quality: QualitySettings,
   spot: ParkingSpot,
   start: GroundVector,
-  obstacles?: ObstacleSource,
+  level?: ObstacleSource & EnvironmentSource,
 ): GameScene {
   const scene = new Scene();
   scene.add(addSkyEnvironment(scene, renderer, quality).dome);
   // 霧色與天空貼圖在地平線那一圈的霾同色，遠處的地面融進天空，沒有硬邊。
   scene.fog = new Fog(FOG_CONFIG.color, FOG_CONFIG.nearM, FOG_CONFIG.farM);
 
+  // 有邊界的關卡：四周是環境模組畫的（大賣場、郵局、街道、窄巷…），陰影範圍與地面影子跟著 bounds 走。
+  // 沒有邊界的（原型關）：原本那座停車場，一樣東西都不變。
+  const bounds = level?.boundsFt;
+  const environmentLayout =
+    level === undefined ? undefined : createEnvironmentLayout(level, quality.props);
+
   // 太陽的方向與天空裡的太陽位置是同一個向量。陰影範圍固定蓋住整塊場地。
-  const shadowBox = lotShadowBox(spot);
+  const shadowBox = bounds === undefined ? lotShadowBox(spot) : boundsShadowBox(bounds);
   const lights = addLights(scene, SUN_DIRECTION, quality, SUN_CONFIG, shadowBox);
   // 車開出這個範圍（世界座標的外框）才讓陰影範圍跟著車移動。
   const inner = curbInnerBounds(spot);
-  const lotCorners = [
-    spotLocalToWorld(spot, inner.minX, inner.minZ),
-    spotLocalToWorld(spot, inner.maxX, inner.minZ),
-    spotLocalToWorld(spot, inner.maxX, inner.maxZ),
-    spotLocalToWorld(spot, inner.minX, inner.maxZ),
-  ];
+  const lotCorners =
+    bounds === undefined
+      ? [
+          spotLocalToWorld(spot, inner.minX, inner.minZ),
+          spotLocalToWorld(spot, inner.maxX, inner.minZ),
+          spotLocalToWorld(spot, inner.maxX, inner.maxZ),
+          spotLocalToWorld(spot, inner.minX, inner.maxZ),
+        ]
+      : boundsCorners(bounds, 0);
   const lotMinX = Math.min(...lotCorners.map((corner) => corner.x));
   const lotMaxX = Math.max(...lotCorners.map((corner) => corner.x));
   const lotMinZ = Math.min(...lotCorners.map((corner) => corner.z));
@@ -223,26 +282,33 @@ export function createGameScene(
     quality.ground,
     renderer.capabilities.getMaxAnisotropy(),
     // 路緣石與車擋又矮又長，低角度的太陽下陰影貼圖畫不完整；它們落在地面上的影子由地面著色器直接算。
-    groundEdgeShadows(spot, spot.headingRad, SUN_DIRECTION, edgeShadowBoxes(spot)),
+    bounds === undefined || level === undefined
+      ? groundEdgeShadows(spot, spot.headingRad, SUN_DIRECTION, edgeShadowBoxes(spot))
+      : groundEdgeShadows({ x: 0, z: 0 }, 0, SUN_DIRECTION, boundsEdgeBoxes(bounds, level)),
   );
   scene.add(ground);
 
   scene.add(createSpotMarkings(spot));
-  // 路緣石與車擋只是擺設：沒有碰撞，也不進停車判定。
-  scene.add(createCurbs(spot), createWheelStop(spot));
-  // 場地擺設（路燈、柱子、建築、圍欄、樹、背景車、小細節）同樣只是擺設：固定種子、全部用 InstancedMesh。
-  scene.add(
-    createLotProps(
-      spot,
-      createLotLayout(spot, start, DEFAULT_SEED, quality.props),
-      quality.props,
-      usesHdrChain(quality),
-    ),
-  );
+  if (environmentLayout === undefined) {
+    // 路緣石與車擋只是擺設：沒有碰撞，也不進停車判定。
+    scene.add(createCurbs(spot), createWheelStop(spot));
+    // 場地擺設（路燈、柱子、建築、圍欄、樹、背景車、小細節）同樣只是擺設：固定種子、全部用 InstancedMesh。
+    scene.add(
+      createLotProps(
+        spot,
+        createLotLayout(spot, start, DEFAULT_SEED, quality.props),
+        quality.props,
+        usesHdrChain(quality),
+      ),
+    );
+  } else {
+    // bounds 外面的建築、招牌、背景車、路燈…；bounds 裡面沒有穿得過去的東西。
+    scene.add(createEnvironment(spot, environmentLayout, quality.props, usesHdrChain(quality)));
+  }
 
-  // 關卡的障礙物與邊界：這些才有碰撞。目前是單色方塊，底面就是碰撞盒。
-  if (obstacles !== undefined) {
-    scene.add(createObstacleBoxes(obstacles));
+  // 關卡的障礙物與邊界：這些才有碰撞。模型的佔地就是碰撞盒。
+  if (level !== undefined) {
+    scene.add(createObstacleMeshes(level, quality.props.meshDetail));
   }
 
   const car = createCarMesh(quality.vehicleDetail);

@@ -116,7 +116,7 @@ function unitBox(): BoxGeometry {
 }
 
 /** 把整個幾何塗成同一個頂點顏色（合併成一個幾何後各部分仍有自己的顏色）。 */
-function tinted<T extends BufferGeometry>(geometry: T, hex: number): T {
+export function tinted<T extends BufferGeometry>(geometry: T, hex: number): T {
   const color = new Color(hex);
   const count = geometry.getAttribute('position').count;
   const colors = new Float32Array(count * 3);
@@ -378,7 +378,7 @@ function addPlants(
 }
 
 /** 交通錐：黑色底座、橘色錐身、中間一圈白色反光帶，合成一個幾何（頂點顏色）。 */
-function createTrafficConeGeometry(): BufferGeometry {
+export function createTrafficConeGeometry(): BufferGeometry {
   const baseM = ftToM(1.2);
   const baseHeightM = ftToM(0.12);
   const bodyHeightM = ftToM(2.15);
@@ -413,7 +413,7 @@ function createTrafficConeGeometry(): BufferGeometry {
 }
 
 /** 垃圾桶：桶身＋蓋子。 */
-function createBinGeometry(): BufferGeometry {
+export function createBinGeometry(): BufferGeometry {
   const bodyHeightM = ftToM(3);
   const lidHeightM = ftToM(0.3);
   return mergeGeometries([
