@@ -12,6 +12,7 @@ import { advanceFixedLoop } from './core/fixedLoop';
 import { PHYSICS_HZ } from './core/gameConfig';
 import { detectLocale, getLocale, onLocaleChange, setLocale, t } from './core/i18n';
 import { attachKeyboardInput } from './core/input';
+import { mergeDriveInputs } from './core/touchInput';
 import { msToS } from './core/units';
 import { resolveWeather } from './core/weather';
 import { loadSave, updateSave, withLocale } from './core/save';
@@ -20,6 +21,7 @@ import {
   parseAssistOffParam,
   parseFxOffParam,
   parseLevelParam,
+  parseTouchParam,
   parseUnlockAllParam,
   parseUrlMode,
   type CameraPreset,
@@ -61,6 +63,7 @@ import { createLevelSelect, levelCards } from './ui/levelSelect';
 import { showChoicesNotice } from './ui/notice';
 import { createReverseAssist } from './ui/reverseAssist';
 import './ui/style.css';
+import { createTouchControls, preventPageGestures } from './ui/touchControls';
 import { interpolateVehiclePose, type DriveInput } from './vehicle/bicycleModel';
 import { carLightsFor } from './vehicle/carMesh';
 import { INITIAL_GEARBOX, gearboxForFrame, inputForGear, nextGearbox } from './vehicle/gearbox';
@@ -128,7 +131,7 @@ function createLevelScene(
 
 /**
  * 一般遊戲：固定步長物理迴圈 + 算圖內插 + 鍵盤開車（按鍵可自訂）+ 碰撞／計時／停車判定 + 可切換的鏡頭 + HUD
- * + 暫停 + 過關寫存檔 + 倒車輔助層 + 掛檔（按了掛 D／掛 R 才進入手排）。
+ * + 暫停 + 過關寫存檔 + 倒車輔助層 + 掛檔（按了掛 D／掛 R 才進入手排）+ 觸控層（手機的方向盤、踏板與掛檔鍵）。
  */
 function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDefinition): void {
   const { layout } = level;
@@ -186,6 +189,19 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
     hud.setPaused(next);
   }
 
+  // 觸控層（方向盤、剎車、油門、掛 D／R、暫停、重來）：手機與平板才顯示，`?touch=on`／`off` 蓋過偵測。
+  // 暫停與重來走與鍵盤、面板按鈕相同的路；暫停後用暫停面板上的按鈕繼續。
+  const touch = createTouchControls(hudRoot, parseTouchParam(window.location.search), {
+    pause: () => {
+      if (session.status === 'ready' || session.status === 'driving') {
+        setPaused(true);
+      }
+    },
+    restart: () => {
+      restartRequested = true;
+    },
+  });
+
   // 進場的鏡頭：?view= > 上次存的 > 預設。
   const gameCamera = createGameCamera(
     resolveInitialView(window.location.search, storage),
@@ -224,6 +240,7 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
       input.consumeRestart();
       input.consumeToggleCamera();
       input.consumeShift();
+      touch.consumeShift();
       if (input.consumePause()) {
         hud.closeControls();
       }
@@ -231,12 +248,13 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
 
     // 重來：車回起點、判定／計時／碰撞歸零、檔位回到自排 D 檔，成功或失敗的面板消失（hud.update 會看到新的一局）。
     // 按鍵與面板上的「重來」按鈕走同一條路；暫停中重來會順便解除暫停。
-    // 重來之前按的掛檔鍵不帶進新的一局：鍵盤重來由 input 依按鍵先後丟掉；面板按鈕不知道先後，這裡一律丟掉。
+    // 重來之前按的掛檔鍵不帶進新的一局：鍵盤重來由 input 依按鍵先後丟掉；面板與觸控層的按鈕不知道先後，這裡一律丟掉。
     const restarted = input.consumeRestart() || restartRequested;
     if (restarted) {
       if (restartRequested) {
         input.consumeShift();
       }
+      touch.consumeShift();
       restartRequested = false;
       session = restartSession(session);
       previousVehicle = session.vehicle;
@@ -252,10 +270,12 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
       setPaused(!paused);
     }
 
-    // 檔位：重來先回到自排 D 檔；掛 D／掛 R 進入手排，檔位立刻換過去。暫停中或這一局已經結束時不換檔。
+    // 檔位：重來先回到自排 D 檔；掛 D／掛 R（鍵盤或觸控層）進入手排，檔位立刻換過去。暫停中或這一局已經結束時不換檔。
+    const keyShift = input.consumeShift();
+    const touchShift = touch.consumeShift();
     gearbox = gearboxForFrame(gearbox, {
       restarted,
-      shift: input.consumeShift(),
+      shift: keyShift ?? touchShift,
       canShift: running && !paused,
     });
 
@@ -272,7 +292,10 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
     const loop = advanceFixedLoop(accumulatorSeconds, simSeconds);
     accumulatorSeconds = loop.accumulatorSeconds;
     // 玩家按的輸入先套上檔位：手排時反方向的油門只會剎車，不會把車推向另一邊。
-    const pressedInput = paused ? NO_DRIVE_INPUT : input.driveInput();
+    // 鍵盤與觸控層合在一起；觸控的油門踏板只有一顆，方向跟著目前的檔位（手排 R 檔才是倒車）。
+    const pressedInput = paused
+      ? NO_DRIVE_INPUT
+      : mergeDriveInputs(input.driveInput(), touch.driveInput(gearbox));
     const driveInput = inputForGear(pressedInput, gearbox);
     for (let step = 0; step < loop.steps; step += 1) {
       previousVehicle = session.vehicle;
@@ -315,6 +338,17 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
     );
     pipeline.render(gameScene.scene, gameCamera.camera);
     hud.update(session, gearbox);
+    // 觸控層只在能開車的時候顯示：暫停、結算、按鍵設定開著時收起來，不擋面板上的按鈕。
+    touch.update(
+      {
+        driving:
+          (session.status === 'ready' || session.status === 'driving') &&
+          !paused &&
+          !hud.controlsOpen(),
+        gearbox,
+      },
+      frameSeconds,
+    );
     // 倒車輔助層疊在剛畫好的主畫面上；看的是 HUD 顯示的同一個檔位（手排時就是玩家掛的檔）。
     reverseAssist?.frame(
       gameScene.scene,
@@ -406,6 +440,8 @@ const canvas = document.querySelector<HTMLCanvasElement>('#game-canvas');
 if (canvas === null) {
   throw new Error('找不到 #game-canvas');
 }
+// 手機上不讓整頁被拖著捲動或雙指縮放（每種模式都適用；可以捲動的面板照常捲）。
+preventPageGestures(document);
 
 // 語言：?lang= 優先，其次是存檔裡上次用語言按鈕選的，否則跟隨瀏覽器；<html lang> 隨語言切換同步。
 // 每種模式都適用。之後每次切換（只有按語言按鈕會切換）都寫進存檔；?lang= 本身不寫。
