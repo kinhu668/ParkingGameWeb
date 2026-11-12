@@ -1,5 +1,6 @@
 // 倒車輔助層不需要瀏覽器就能驗證的部分：何時顯示／收起、四個視口的版面、引導線的幾何與投影、
 // `?assist=off`、HUD 的檔位在重來後回到前進檔。
+import { Vector3 } from 'three';
 import { describe, expect, test } from 'vitest';
 import {
   ASSIST_VIEW_ASPECT,
@@ -14,11 +15,12 @@ import {
   type AssistDriveState,
   type AssistVisibility,
 } from '../src/core/reverseAssist';
-import { mphToMps } from '../src/core/units';
+import { degToRad, mphToMps } from '../src/core/units';
 import { parseAssistOffParam } from '../src/core/urlParams';
 import en from '../src/locale/en.json';
 import zhTW from '../src/locale/zh-TW.json';
-import { REVERSE_ASSIST_CONFIG } from '../src/render/renderConfig';
+import { rearWheelContacts } from '../src/effects/tireMarks';
+import { PARTICLE_CONFIG, REVERSE_ASSIST_CONFIG } from '../src/render/renderConfig';
 import { QUALITY_LEVELS } from '../src/render/quality';
 import {
   ASSIST_VIEW_MIRRORED,
@@ -278,6 +280,27 @@ describe('四台鏡頭與投影', () => {
     // 左鏡：越外側（車的左邊）越靠畫面左邊，車身那一側在右邊。
     expect(project('mirrorLeft', { lateralM: -6, aheadM: -10 }).u).toBeLessThan(inLeft.u);
     expect(project('mirrorRight', { lateralM: 6, aheadM: -10 }).u).toBeGreaterThan(inRight.u);
+  });
+
+  test('後輪旁揚起的灰塵就在同側後視鏡的畫面裡、離鏡頭很近：所以小畫面不畫灰塵', () => {
+    const contacts = rearWheelContacts({ x: 0, z: 0, headingRad: 0, steerRad: 0 });
+    const cameras = createAssistCameras();
+    placeAssistCameras(cameras, { x: 0, z: 0, headingRad: 0, steerRad: 0 });
+    const dust = PARTICLE_CONFIG.dust;
+    for (const [view, contact] of [
+      ['mirrorLeft', contacts.left],
+      ['mirrorRight', contacts.right],
+    ] as const) {
+      // 灰塵從著地點上方 spawnHeightM 以內揚起，再往上飄：那個高度已經在畫面裡了。
+      const puff = new Vector3(contact.x, dust.spawnHeightM, contact.z);
+      const distanceM = cameras[view].position.distanceTo(puff);
+      const onScreen = puff.clone().project(cameras[view]);
+      expect(Math.abs(onScreen.x), view).toBeLessThan(1);
+      expect(Math.abs(onScreen.y), view).toBeLessThan(1);
+      // 一顆灰塵長到最大時，在這個距離就佔掉畫面高度的一半以上（窄視角）；幾顆疊起來整個畫面都是。
+      const viewHeightM = 2 * distanceM * Math.tan(degToRad(REVERSE_ASSIST_CONFIG.mirror.fovDeg) / 2);
+      expect(dust.endSizeM / viewHeightM, view).toBeGreaterThan(0.5);
+    }
   });
 
   test('鏡頭跟著車的位置與朝向走', () => {

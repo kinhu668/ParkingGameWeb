@@ -586,6 +586,62 @@ describe('效果的畫質級別 createSceneEffects', () => {
     expect(leaves.instanceMatrix.array).not.toEqual(before);
   });
 
+  test('drawWithoutDust（倒車輔助層的小畫面）：畫的時候沒有灰塵，畫完恢復；輪胎痕與落葉照常', () => {
+    const effects = createSceneEffects(HIGH, SPOT, START, DEFAULT_SEED);
+    const leaves = effects.root.getObjectByName('leaves') as InstancedMesh;
+    const marks = effects.root.getObjectByName('tireMarks') as Mesh;
+    const dust = effects.root.getObjectByName('dust') as Points;
+    for (const pose of straightRun(poseAt(0, 1), -0.05, 40)) {
+      effects.update(pose, DT);
+    }
+    expect(dust.visible).toBe(true);
+
+    let draws = 0;
+    effects.drawWithoutDust(() => {
+      draws += 1;
+      expect(dust.visible).toBe(false);
+      expect(marks.visible).toBe(true);
+      expect(leaves.visible).toBe(true);
+    });
+    expect(draws).toBe(1);
+    // 主畫面的下一幀照樣看得到灰塵。
+    expect(dust.visible).toBe(true);
+
+    // 畫到一半丟例外也要恢復。
+    expect(() =>
+      effects.drawWithoutDust(() => {
+        throw new Error('畫壞了');
+      }),
+    ).toThrow('畫壞了');
+    expect(dust.visible).toBe(true);
+  });
+
+  test('drawWithoutDust：本來就沒有灰塵（車沒動、下雨、low）時照樣跑 draw，不會把灰塵變出來', () => {
+    // 車沒動：灰塵的 Points 藏著，畫完仍然藏著。
+    const idle = createSceneEffects(HIGH, SPOT, START, DEFAULT_SEED);
+    const idleDust = idle.root.getObjectByName('dust') as Points;
+    idle.update(poseAt(0, 0), DT);
+    expect(idleDust.visible).toBe(false);
+    let draws = 0;
+    idle.drawWithoutDust(() => {
+      draws += 1;
+      expect(idleDust.visible).toBe(false);
+    });
+    expect(idleDust.visible).toBe(false);
+
+    // 沒有建立灰塵的場景（下雨不揚塵、low 沒有粒子）。
+    for (const effects of [
+      createSceneEffects(HIGH, SPOT, START, DEFAULT_SEED, { dust: false }),
+      createSceneEffects(QUALITY_PRESETS.low, SPOT, START, DEFAULT_SEED),
+    ]) {
+      expect(effects.root.getObjectByName('dust')).toBeUndefined();
+      effects.drawWithoutDust(() => {
+        draws += 1;
+      });
+    }
+    expect(draws).toBe(3);
+  });
+
   test('落葉從一開始就飄（車還沒開動也在飄）；同一個累積時間畫出來一樣；車不動就沒有痕與灰塵', () => {
     const effects = createSceneEffects(HIGH, SPOT, START, DEFAULT_SEED);
     const leaves = effects.root.getObjectByName('leaves') as InstancedMesh;
