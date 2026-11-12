@@ -59,6 +59,8 @@ export interface EnvironmentLayout {
   readonly lot: LotLayout;
   readonly slabs: readonly EnvironmentSlab[];
   readonly signs: readonly SignPlacement[];
+  /** 立在人行道上的告示牌：桿子是 slabs 的第幾塊、牌面是 signs 的第幾塊（兩者是同一樣東西）。 */
+  readonly poleSigns: readonly { readonly slab: number; readonly sign: number }[];
 }
 
 /** bounds 的四個邊：n = −Z、s = +Z、w = −X、e = +X。 */
@@ -140,6 +142,7 @@ class Builder {
   readonly lot: Record<PropCategory, PropPlacement[]>;
   readonly slabs: EnvironmentSlab[] = [];
   readonly signs: SignPlacement[] = [];
+  readonly poleSigns: { slab: number; sign: number }[] = [];
 
   constructor() {
     const lot = {} as Record<PropCategory, PropPlacement[]>;
@@ -276,6 +279,7 @@ class Builder {
     topY: number,
   ): void {
     const half = 0.12;
+    this.poleSigns.push({ slab: this.slabs.length, sign: this.signs.length });
     this.slab('solid', { x: at.x - half, z: at.z - half }, { x: at.x + half, z: at.z + half }, 0, topY, 0x4b4f55);
     const ahead = forward(degToRad(facingDeg));
     this.signs.push({
@@ -1019,5 +1023,5 @@ export function createEnvironmentLayout(
     lamps: take(nearestFirst(builder.lot.lamps, spotX, spotZ), props.lampHeads),
     trees: take(nearestFirst(builder.lot.trees, spotX, spotZ), props.trees),
   };
-  return { lot, slabs: builder.slabs, signs: builder.signs };
+  return { lot, slabs: builder.slabs, signs: builder.signs, poleSigns: builder.poleSigns };
 }

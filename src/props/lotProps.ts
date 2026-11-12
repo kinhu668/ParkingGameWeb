@@ -28,13 +28,17 @@ import { ftToM } from '../core/units';
 import type { ParkingSpot } from '../level/parkingJudge';
 import { SKIP_AMBIENT_OCCLUSION } from '../render/ambientOcclusionFlag';
 import type { PropsQualitySettings, VehicleDetail } from '../render/quality';
-import { LOT_PROPS_CONFIG as LOT } from '../render/renderConfig';
+import { LOT_PROPS_CONFIG as LOT, OCCLUSION_FADE_CONFIG as FADE } from '../render/renderConfig';
 import { createSpotFrame, createWheelStopGeometry, createWheelStopMaterial } from './lotEdges';
 import type { LotLayout, PropPlacement } from './lotLayout';
+import { occluderBox, registerOccluders, type OccluderPart } from './occluders';
 import { createParkedCars } from './parkedCars';
 
 /** 光暈離地的高度：高過標線，又低到看不出浮起來。 */
 const LAMP_POOL_LIFT_M = ftToM(0.08);
+
+/** 遮擋判定用：燈臂＋燈殼那一塊的高度（含斜撐以上的部分）。 */
+const LAMP_ARM_BOX_HEIGHT_M = ftToM(1.2);
 
 /** 路燈沒亮時燈罩的顏色。 */
 const LAMP_OFF_LENS_COLOR = 0xd8d4c8;
@@ -111,6 +115,14 @@ function instanced(
   mesh.castShadow = options.castShadow ?? false;
   mesh.receiveShadow = options.receiveShadow ?? true;
   return mesh;
+}
+
+/** 這個實例在這幾個 InstancedMesh 裡的那一份（沒有實例的網格是 undefined，略過）。 */
+function instanceParts(
+  meshes: readonly (InstancedMesh | undefined)[],
+  index: number,
+): OccluderPart[] {
+  return meshes.flatMap((mesh) => (mesh === undefined ? [] : [{ mesh, index }]));
 }
 
 /** 單位方塊：邊長 1、底面在 y = 0。 */
@@ -267,6 +279,32 @@ function addLamps(
       group.add(mesh);
     }
   }
+  // 擋到跟車鏡頭時整盞一起淡：燈桿一塊、燈臂＋燈殼一塊（光錐與光暈本來就是半透明的，不必淡）。
+  const reachM = armM + head.z / 2;
+  registerOccluders(
+    group,
+    lamps.map((lamp, index) => {
+      const ahead = forward(lamp.headingRad);
+      return {
+        boxes: [
+          occluderBox(
+            { x: lamp.x, y: heightM / 2, z: lamp.z },
+            { x: 2 * LOT.lampPoleRadiusM, y: heightM, z: 2 * LOT.lampPoleRadiusM },
+          ),
+          occluderBox(
+            {
+              x: lamp.x + (ahead.x * reachM) / 2,
+              y: heightM - LAMP_ARM_BOX_HEIGHT_M / 2 + head.y / 2,
+              z: lamp.z + (ahead.z * reachM) / 2,
+            },
+            { x: head.x, y: LAMP_ARM_BOX_HEIGHT_M, z: reachM },
+            headingToRotationY(lamp.headingRad),
+          ),
+        ],
+        parts: instanceParts([posts, lenses], index),
+      };
+    }),
+  );
 
   // 沒亮的燈到這裡為止：沒有光錐、沒有地上的光暈、沒有真光源。
   if (!lampsLit) {
@@ -444,6 +482,27 @@ function addPlants(
       group.add(mesh);
     }
   }
+  // 擋到跟車鏡頭時整棵一起淡：樹幹一塊、樹冠一塊（樹冠是橢球，方塊取小一點，角落的空氣不算）。灌木很矮，不淡。
+  registerOccluders(
+    group,
+    trees.map((tree, index) => ({
+      boxes: [
+        occluderBox(
+          { x: tree.x, y: tree.sizeY * 0.25, z: tree.z },
+          { x: 2 * trunkRadiusM, y: tree.sizeY * 0.5, z: 2 * trunkRadiusM },
+        ),
+        occluderBox(
+          { x: tree.x, y: tree.sizeY * 0.64, z: tree.z },
+          { x: tree.sizeX * 0.8, y: tree.sizeY * 0.6, z: tree.sizeX * 0.8 },
+        ),
+      ],
+      parts: [
+        ...instanceParts([trunks], index),
+        ...instanceParts([foliage], 2 * index),
+        ...instanceParts([foliage], 2 * index + 1),
+      ],
+    })),
+  );
 }
 
 /** 交通錐：黑色底座、橘色錐身、中間一圈白色反光帶，合成一個幾何（頂點顏色）。 */
@@ -546,33 +605,60 @@ export function createLotProps(
     }
   };
   const box = unitBox();
+  /** 加進場景，並把每個方塊實例登記成會擋鏡頭的東西（太矮的不登記）。 */
+  const addBoxes = (mesh: InstancedMesh | undefined, placements: readonly PropPlacement[]): void => {
+    add(mesh);
+    if (mesh === undefined) {
+      return;
+    }
+    registerOccluders(
+      frame,
+      placements.flatMap((placement, index) =>
+        placement.y + placement.sizeY < FADE.minHeightM
+          ? []
+          : [
+              {
+                boxes: [
+                  occluderBox(
+                    { x: placement.x, y: placement.y + placement.sizeY / 2, z: placement.z },
+                    { x: placement.sizeX, y: placement.sizeY, z: placement.sizeZ },
+                    headingToRotationY(placement.headingRad),
+                  ),
+                ],
+                parts: [{ mesh, index }],
+              },
+            ],
+      ),
+    );
+  };
 
   frame.add(createParkedCars(layout.parkedCars, props.meshDetail));
   addLamps(frame, layout.lamps, props, hdr, lampsLit, lampStyle);
 
   // 混凝土柱與柱頂的橫梁：同一個材質，一個 draw call。
-  add(
-    instanced(
-      box,
-      standard(LOT.concreteColor, LOT.concreteRoughness),
-      [...layout.pillars, ...layout.beams].map(boxAt),
-      { name: 'concrete', castShadow: true },
-    ),
+  const concrete = [...layout.pillars, ...layout.beams];
+  addBoxes(
+    instanced(box, standard(LOT.concreteColor, LOT.concreteRoughness), concrete.map(boxAt), {
+      name: 'concrete',
+      castShadow: true,
+    }),
+    concrete,
   );
 
   // 背景建築不投影：太陽很低，會把整個場地罩進影子裡。
-  add(
+  addBoxes(
     instanced(box, standard(0xffffff, LOT.buildingRoughness), layout.buildings.map(boxAt), {
       name: 'buildings',
       colors: layout.buildings.map((building) =>
         pick(LOT.buildingColors, building.variant, secondary(building.variant)),
       ),
     }),
+    layout.buildings,
   );
   // 窗：不吃光的材質，顏色就是亮度。亮著的是暖黃，沒亮的是深色玻璃。
   const lit = LOT.buildingWindowLitColor;
   const dark = LOT.buildingWindowDarkColor;
-  add(
+  addBoxes(
     instanced(
       box,
       new MeshBasicMaterial({ color: 0xffffff }),
@@ -587,6 +673,7 @@ export function createLotProps(
         ),
       },
     ),
+    layout.windows,
   );
 
   add(

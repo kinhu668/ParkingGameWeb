@@ -53,6 +53,7 @@ import {
   SKY_CONFIG,
   SUN_CONFIG,
 } from './renderConfig';
+import { createOcclusionFade, type Point3 } from './occlusionFade';
 import { fitShadowBox, type ShadowBox } from './shadowArea';
 import {
   SUN_DIRECTION,
@@ -85,6 +86,19 @@ export interface GameScene {
   setHoodView(enabled: boolean): void;
   /** 燈號：煞車燈、倒車燈。 */
   setLights(lights: CarLights): void;
+  /**
+   * 遮擋半透明：把擋在鏡頭與車之間的擺設（路燈、樹、背景車、建築塊…）淡成半透明，不擋了再淡回來。
+   * 每個畫面幀、鏡頭就位之後呼叫。`?fx=off` 時什麼都不做。
+   * @param cameraPosition 鏡頭位置（世界座標）
+   * @param enabled 這個鏡頭模式要不要做（只有跟車鏡頭要）；false 時已經淡掉的會淡回來
+   * @param frameSeconds 距離上一幀多久
+   */
+  fadeOccluders(
+    cameraPosition: Point3,
+    pose: VehiclePose,
+    enabled: boolean,
+    frameSeconds: number,
+  ): void;
 }
 
 /** 場景的燈光：半球補光 + 會投影的太陽。 */
@@ -277,7 +291,7 @@ export function addLights(
  * @param start 車的起點（世界座標）；起點到車位的通路上不放擺設
  * @param level 關卡的障礙物、邊界與環境；不給就只有原型關的停車場
  * @param weather 天氣（core/weather.ts 的 resolveWeather）；不給 = 黃昏（基準畫面）
- * @param ambientFx 會自己動的環境效果（落葉、雨絲、閃電）要不要建立；`?fx=off` 傳 false
+ * @param ambientFx 會自己動的環境效果（落葉、雨絲、閃電）與跟車鏡頭的遮擋半透明要不要有；`?fx=off` 傳 false
  */
 export function createGameScene(
   renderer: WebGLRenderer,
@@ -410,8 +424,14 @@ export function createGameScene(
     fog.color.copy(fogBaseColor).lerp(flashColor, LIGHTNING_CONFIG.fogBlend * flash);
   };
 
+  // 遮擋半透明：擺設都就位了才收集（佔地方塊要換成世界座標）。玩家車沒有登記，不會被淡掉。
+  const occlusion = ambientFx ? createOcclusionFade(scene) : undefined;
+
   return {
     scene,
+    fadeOccluders(cameraPosition, pose, enabled, frameSeconds) {
+      occlusion?.update(cameraPosition, pose, enabled, frameSeconds);
+    },
     update(pose, frameSeconds = 0) {
       updateCarMesh(car, pose);
       effects.update(pose, frameSeconds);

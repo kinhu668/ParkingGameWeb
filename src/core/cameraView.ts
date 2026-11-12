@@ -22,6 +22,11 @@ function isGameCameraView(value: string): value is GameCameraView {
   return (GAME_CAMERA_VIEWS as readonly string[]).includes(value);
 }
 
+/** 是不是跟車鏡頭（鏡頭在車外、車後方；只有這兩個模式做遮擋半透明）。 */
+export function isChaseView(view: GameCameraView): boolean {
+  return view === 'chase_near' || view === 'chase_far';
+}
+
 /** 按一次 V 之後的鏡頭：循環順序的下一個。 */
 export function nextGameCameraView(view: GameCameraView): GameCameraView {
   const nextIndex = (GAME_CAMERA_VIEWS.indexOf(view) + 1) % GAME_CAMERA_VIEWS.length;

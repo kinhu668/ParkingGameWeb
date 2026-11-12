@@ -90,7 +90,8 @@ export function parseUnlockAllParam(urlSearch: string): boolean {
 }
 
 /**
- * `?fx=off`：不建立會自己動的環境效果（落葉、雨絲、閃電），畫面在車不動時每一幀都相同（e2e 逐像素比對用）。
+ * `?fx=off`：不建立會自己動的環境效果（落葉、雨絲、閃電），也不做跟車鏡頭的遮擋半透明，
+ * 畫面在車不動時每一幀都相同（e2e 逐像素比對用）。
  * 其他的值當作沒給。不是啟動模式，不影響 parseUrlMode。
  */
 export function parseFxOffParam(urlSearch: string): boolean {

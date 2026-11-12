@@ -33,6 +33,7 @@ import {
 } from '../vehicle/carWheel';
 import { VEHICLE_CONFIG_SI } from '../vehicle/vehicleConfig';
 import type { PropPlacement } from './lotLayout';
+import { occluderBox, registerOccluders, type OccluderPart } from './occluders';
 
 /** 背景車畫的車身分區（沒有車艙內襯：玻璃不透明，看不進去）。配件（保險桿、燈組、車牌、門縫）已併在各分區裡。 */
 export const PARKED_CAR_BODY_PARTS: readonly BodyPart[] = [
@@ -148,6 +149,8 @@ export function createParkedCars(
   const carMatrices = placements.map(carMatrix);
   // 車牌上的字不併進共用的車殼：每台車的號碼不同，另外畫。
   const bodyGeometries = createBodyGeometries('low', { plateText: false });
+  /** 畫出車身的每一個 InstancedMesh（遮擋半透明要整台一起淡）。 */
+  const bodyMeshes: InstancedMesh[] = [];
   for (const part of PARKED_CAR_BODY_PARTS) {
     const geometry = bodyGeometries.get(part);
     if (geometry === undefined) {
@@ -162,18 +165,42 @@ export function createParkedCars(
       });
     }
     group.add(mesh);
+    bodyMeshes.push(mesh);
   }
 
   // 車牌的字：每台車自己的號碼，擺到各自的位置後全部併成一個網格（一個 draw call）。
   const plates = parkedCarPlates(placements.length);
-  const plateTexts = new Mesh(
-    mergeGeometries(
-      carMatrices.map((matrix, index) =>
-        createPlateTextGeometry(plates[index] ?? '').applyMatrix4(matrix),
-      ),
-    ),
-    trim,
+  const plateGeometries = carMatrices.map((matrix, index) =>
+    createPlateTextGeometry(plates[index] ?? '').applyMatrix4(matrix),
   );
+  /** 每台車的字在合併後的網格裡佔幾個索引（沒有索引就是頂點數）。 */
+  const plateCounts = plateGeometries.map(
+    (geometry) => geometry.getIndex()?.count ?? geometry.getAttribute('position').count,
+  );
+  const plateGeometry = mergeGeometries(plateGeometries);
+  const plateTexts: Mesh = new Mesh(plateGeometry, trim);
+  // 某幾台車被淡成半透明時，它們車牌上的字不畫：用分組只畫其餘的車。沒有車被淡就不分組，與原本完全相同。
+  const hiddenPlates = new Set<number>();
+  const setPlateHidden = (index: number, hidden: boolean): void => {
+    if (hidden) {
+      hiddenPlates.add(index);
+    } else {
+      hiddenPlates.delete(index);
+    }
+    plateGeometry.clearGroups();
+    if (hiddenPlates.size === 0) {
+      plateTexts.material = trim;
+      return;
+    }
+    let start = 0;
+    plateCounts.forEach((count, car) => {
+      if (!hiddenPlates.has(car)) {
+        plateGeometry.addGroup(start, count, 0);
+      }
+      start += count;
+    });
+    plateTexts.material = [trim];
+  };
   plateTexts.name = 'parkedCars:plateText';
   plateTexts.receiveShadow = true;
   plateTexts.userData.plates = plates;
@@ -213,5 +240,34 @@ export function createParkedCars(
   );
   rims.name = 'parkedCars:rim';
   group.add(tires, rims);
+
+  // 擋到跟車鏡頭時整台一起淡：車殼各分區、四個輪胎與輪圈；車牌上的字藏起來。
+  const size = {
+    x: VEHICLE_CONFIG_SI.widthM,
+    y: VEHICLE_CONFIG_SI.heightM,
+    z: VEHICLE_CONFIG_SI.lengthM,
+  };
+  registerOccluders(
+    group,
+    placements.map((placement, index) => {
+      const wheels: OccluderPart[] = [0, 1, 2, 3].flatMap((wheel) => [
+        { mesh: tires, index: index * 4 + wheel },
+        { mesh: rims, index: index * 4 + wheel },
+      ]);
+      return {
+        boxes: [
+          occluderBox(
+            { x: placement.x, y: placement.y + size.y / 2, z: placement.z },
+            size,
+            headingToRotationY(placement.headingRad),
+          ),
+        ],
+        parts: [...bodyMeshes.map((mesh) => ({ mesh, index })), ...wheels],
+        setHidden: (hidden: boolean) => {
+          setPlateHidden(index, hidden);
+        },
+      };
+    }),
+  );
   return group;
 }

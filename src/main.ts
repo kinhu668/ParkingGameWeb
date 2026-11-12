@@ -2,6 +2,7 @@
 // 啟動關卡選擇（沒有 ?level 的首頁）／一般遊戲（?level）／展示（?show）／固定鏡頭截圖（?cam）／
 // 效能測試（?bench）其中一種。?cam、?bench 沒給 ?level 是原型關。
 import {
+  isChaseView,
   nextGameCameraView,
   resolveInitialView,
   storeView,
@@ -103,7 +104,7 @@ function navigateTo(levelId: string | undefined): void {
 }
 
 /**
- * 這一關的場景。天氣：`?weather=` 蓋過關卡 JSON 的 `weather`；`?fx=off` 不建立落葉、雨絲與閃電。
+ * 這一關的場景。天氣：`?weather=` 蓋過關卡 JSON 的 `weather`；`?fx=off` 不建立落葉、雨絲與閃電，也不做遮擋半透明。
  */
 function createLevelScene(
   renderer: RenderContext['renderer'],
@@ -247,6 +248,13 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
     gameScene.setHoodView(gameCamera.view() === 'hood');
     gameScene.setLights(carLightsFor(driveInput, session.vehicle.speedMps));
     gameCamera.update(pose, session.vehicle.speedMps, frameSeconds);
+    // 跟車鏡頭：擋在鏡頭與車之間的擺設淡成半透明（暫停時也照真實時間淡，鏡頭仍可切換）。
+    gameScene.fadeOccluders(
+      gameCamera.camera.position,
+      pose,
+      isChaseView(gameCamera.view()),
+      frameSeconds,
+    );
     pipeline.render(gameScene.scene, gameCamera.camera);
     hud.update(session, driveInput);
 

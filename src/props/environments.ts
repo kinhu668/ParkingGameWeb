@@ -20,10 +20,15 @@ import { forward, headingToRotationY } from '../core/heading';
 import { ftToM } from '../core/units';
 import type { ParkingSpot } from '../level/parkingJudge';
 import type { PropsQualitySettings } from '../render/quality';
-import { LOT_PROPS_CONFIG as LOT, SPOT_MARKING_CONFIG } from '../render/renderConfig';
+import {
+  LOT_PROPS_CONFIG as LOT,
+  OCCLUSION_FADE_CONFIG as FADE,
+  SPOT_MARKING_CONFIG,
+} from '../render/renderConfig';
 import type { EnvironmentLayout } from './environmentLayout';
 import { createSpotFrame } from './lotEdges';
 import { createLotProps } from './lotProps';
+import { occluderBox, registerOccluders, type Occluder } from './occluders';
 import { createSignMesh } from './signs';
 
 const SLAB_ROUGHNESS = 0.9;
@@ -94,6 +99,7 @@ export function createEnvironment(
 
   // 立體的方塊與平貼地面的標線：一個 InstancedMesh。
   const boxes = layout.slabs.filter((slab) => slab.facingRad === undefined);
+  let slabMesh: InstancedMesh | undefined;
   if (boxes.length > 0) {
     const mesh = new InstancedMesh(
       new BoxGeometry(1, 1, 1),
@@ -119,6 +125,7 @@ export function createEnvironment(
     mesh.castShadow = false;
     mesh.receiveShadow = true;
     group.add(mesh);
+    slabMesh = mesh;
   }
 
   // 貼在牆面上的薄片（門、捲門、窗）：只有朝外那一面的平面。吃光的（門）與不吃光的（窗、門燈）各一個 InstancedMesh。
@@ -176,8 +183,36 @@ export function createEnvironment(
     group.add(mesh);
   }
 
-  for (const sign of layout.signs) {
-    group.add(createSignMesh(lampsLit ? sign : { ...sign, glow: 0 }));
+  const signMeshes = layout.signs.map((sign) => createSignMesh(lampsLit ? sign : { ...sign, glow: 0 }));
+  group.add(...signMeshes);
+
+  // 擋到跟車鏡頭時淡掉的方塊：立體、夠高的每一塊各自淡（人行道、路緣、地上的標線不淡）。
+  // 招牌柱：桿子與牌面一起淡。
+  if (slabMesh !== undefined) {
+    const mesh = slabMesh;
+    const occluders: Occluder[] = [];
+    boxes.forEach((slab, index) => {
+      if (slab.kind !== 'solid' || slab.maxY < FADE.minHeightM) {
+        return;
+      }
+      const poleSign = layout.poleSigns.find((entry) => layout.slabs[entry.slab] === slab);
+      const signMesh = poleSign === undefined ? undefined : signMeshes[poleSign.sign];
+      occluders.push({
+        boxes: [
+          occluderBox(
+            {
+              x: (slab.minX + slab.maxX) / 2,
+              y: (slab.minY + slab.maxY) / 2,
+              z: (slab.minZ + slab.maxZ) / 2,
+            },
+            { x: slab.maxX - slab.minX, y: slab.maxY - slab.minY, z: slab.maxZ - slab.minZ },
+          ),
+        ],
+        parts: [{ mesh, index }],
+        ...(signMesh === undefined ? {} : { meshes: [signMesh] }),
+      });
+    });
+    registerOccluders(group, occluders);
   }
   group.add(createSpotArrow(spot));
   return group;

@@ -27,8 +27,10 @@ import {
   type ObstacleType,
 } from '../level/obstacleTypes';
 import type { VehicleDetail } from '../render/quality';
+import { OCCLUSION_FADE_CONFIG as FADE } from '../render/renderConfig';
 import { createBinGeometry, createTrafficConeGeometry, tinted } from './lotProps';
 import type { PropPlacement } from './lotLayout';
+import { occluderBox, registerOccluders, type Occluder } from './occluders';
 import { createParkedCars } from './parkedCars';
 import { createSignMesh } from './signs';
 
@@ -498,13 +500,30 @@ export function createObstacleMeshes(source: ObstacleSource, detail: VehicleDeta
       continue;
     }
     const geometry = createObstacleGeometry(type);
+    geometry.computeBoundingBox();
     const mesh = new InstancedMesh(geometry, material, indices.length);
     const wall = WALL_STYLES[environment];
+    // 夠高、擋得住跟車鏡頭的才登記（牆、子母車、疊高的棧板、回收架…）；交通錐、推車這些矮的不淡。
+    const heightM = (geometry.boundingBox?.max.y ?? 0) * (type === 'wall' ? ftToM(wall.heightFt) : 1);
+    const occluders: Occluder[] = [];
     indices.forEach((index, instance) => {
+      const obstacle = obstacleAt(index);
       mesh.setMatrixAt(
         instance,
-        obstacleMatrix(obstacleAt(index), geometry, type === 'wall' ? ftToM(wall.heightFt) : 1),
+        obstacleMatrix(obstacle, geometry, type === 'wall' ? ftToM(wall.heightFt) : 1),
       );
+      if (heightM >= FADE.minHeightM) {
+        occluders.push({
+          boxes: [
+            occluderBox(
+              { x: ftToM(obstacle.centerXFt), y: heightM / 2, z: ftToM(obstacle.centerZFt) },
+              { x: ftToM(obstacle.widthFt), y: heightM, z: ftToM(obstacle.lengthFt) },
+              headingToRotationY(degToRad(obstacle.headingDeg)),
+            ),
+          ],
+          parts: [{ mesh, index: instance }],
+        });
+      }
       if (type === 'wall') {
         mesh.setColorAt(instance, new Color(wall.color));
       }
@@ -516,6 +535,7 @@ export function createObstacleMeshes(source: ObstacleSource, detail: VehicleDeta
     mesh.castShadow = !(type === 'wall' && wall.heightFt > 10);
     mesh.receiveShadow = true;
     group.add(mesh);
+    registerOccluders(group, occluders);
 
     // 貼在模型上的字：投遞箱前面的 MAIL、推車回收架招牌兩面的 CART RETURN。
     for (const index of indices) {
