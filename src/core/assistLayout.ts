@@ -29,6 +29,12 @@ const LAYOUT = {
   gapPx: 10,
   /** 上排（鳥瞰＋倒後鏡頭）的上緣：在上方置中那排行車資訊的下面。 */
   topRowYPx: 92,
+  /**
+   * 畫面不比這個寬（手機直向）時，上方的資訊排成兩排（樣式表的 `max-width: 600px`），
+   * 上排的上緣要再往下讓。
+   */
+  narrowWidthPx: 600,
+  narrowTopRowYPx: 138,
   /** 上排的高度 = 畫面高 × 這個比例，夾在上下限之間。 */
   topRowHeightFraction: 0.27,
   topRowMinHeightPx: 90,
@@ -51,6 +57,7 @@ function clamp(value: number, min: number, max: number): number {
  */
 export function assistLayout(widthPx: number, heightPx: number): AssistLayout {
   const usableWidthPx = Math.max(widthPx - 2 * LAYOUT.marginPx, 1);
+  const topRowYPx = widthPx <= LAYOUT.narrowWidthPx ? LAYOUT.narrowTopRowYPx : LAYOUT.topRowYPx;
 
   // 上排：高度先照比例，整排太寬就縮到剛好放得下。
   const rowAspect = ASSIST_VIEW_ASPECT.bird + ASSIST_VIEW_ASPECT.rear;
@@ -78,14 +85,14 @@ export function assistLayout(widthPx: number, heightPx: number): AssistLayout {
   const centeredY = Math.round(heightPx * LAYOUT.mirrorCenterYFraction - mirrorHeightPx / 2);
   const overlapsRow = LAYOUT.marginPx + mirrorWidthPx + LAYOUT.gapPx > rowX;
   const mirrorY = overlapsRow
-    ? Math.max(centeredY, LAYOUT.topRowYPx + rowHeightPx + LAYOUT.gapPx)
+    ? Math.max(centeredY, topRowYPx + rowHeightPx + LAYOUT.gapPx)
     : centeredY;
 
   return {
-    bird: { x: rowX, y: LAYOUT.topRowYPx, width: birdWidthPx, height: rowHeightPx },
+    bird: { x: rowX, y: topRowYPx, width: birdWidthPx, height: rowHeightPx },
     rear: {
       x: rowX + birdWidthPx + LAYOUT.gapPx,
-      y: LAYOUT.topRowYPx,
+      y: topRowYPx,
       width: rearWidthPx,
       height: rowHeightPx,
     },
