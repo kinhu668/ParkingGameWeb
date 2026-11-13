@@ -51,7 +51,8 @@ async function holdUntil(
 }
 
 test('HUD 顯示預設綁定；按鍵設定可重綁、擋同一鍵、存檔、恢復預設（中英文）', async ({ page }) => {
-  await page.goto('/?level=w1_l01&lang=zh-TW');
+  // touch=off：左下角的鍵盤操作說明（與它的「自訂按鍵」按鈕）只在螢幕操作層收起來時顯示。
+  await page.goto('/?level=w1_l01&lang=zh-TW&touch=off');
   const panel = page.locator('#controls-panel');
   const pause = page.locator('#hud-pause');
   const message = page.locator('#controls-message');

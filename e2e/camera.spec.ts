@@ -43,7 +43,8 @@ async function checkView(page: Page, view: GameCameraView): Promise<string> {
 
 test('按 V 依序切過五個鏡頭，每個都畫得出來，第五次回到近距離跟車', async ({ page }) => {
   // 指定 ?view= 當起點，不受之前存過的鏡頭影響。fx=off：落葉不飄，繞一圈回來的畫面才能逐像素比較。
-  await page.goto('/?level=prototype&view=chase_near&lang=zh-TW&fx=off');
+  // touch=off：看的是左下角的鍵盤操作說明（螢幕操作層開著時它會收起來）。
+  await page.goto('/?level=prototype&view=chase_near&lang=zh-TW&fx=off&touch=off');
   await expect(page.locator('#game-canvas')).toBeVisible();
   // 操作說明有「V 切換鏡頭」這一列。
   await expect(page.locator('.hud-controls')).toContainText('切換鏡頭');
@@ -66,7 +67,7 @@ test('按 V 依序切過五個鏡頭，每個都畫得出來，第五次回到�
 });
 
 test('?view=cockpit 一進場就是駕駛座；切換語言時鏡頭名稱與操作說明一起換', async ({ page }) => {
-  await page.goto('/?level=prototype&view=cockpit&lang=zh-TW');
+  await page.goto('/?level=prototype&view=cockpit&lang=zh-TW&touch=off');
   const label = page.locator('#hud-camera');
   const controls = page.locator('.hud-controls');
   await expect(page.locator('#game-canvas')).toBeVisible();

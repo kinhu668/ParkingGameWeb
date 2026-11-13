@@ -1,5 +1,6 @@
-// 觸控層的 e2e：手機 viewport + hasTouch，用真實的觸控事件（CDP 的 Input.dispatchTouchEvent，可以多指）。
-// 何時顯示（hasTouch、?touch=on／off、桌面）、拖方向盤轉向、踩油門前進、踩剎車減速（與油門同時踩）、
+// 螢幕操作層的 e2e（手機）：手機 viewport + hasTouch，用真實的觸控事件（CDP 的 Input.dispatchTouchEvent，可以多指）。
+// 桌面用滑鼠操作與點鍵帽改鍵在 screenControls.spec.ts。
+// 何時顯示（預設顯示、?touch=on／off）、拖方向盤轉向、踩油門前進、踩剎車減速（與油門同時踩）、
 // 掛 R 後輔助層出現並能倒車、掛 D／重來收起、暫停後能點繼續、橫向與直向的版面不與輔助小窗搶點。
 import type { CDPSession, Page } from '@playwright/test';
 import { nextSnapshot } from './driving';
@@ -16,6 +17,7 @@ const CONTROL_IDS = [
   'touch-gear-reverse',
   'touch-pause',
   'touch-restart',
+  'touch-camera',
 ] as const;
 const ASSIST_IDS = ['assist-bird', 'assist-rear', 'assist-mirror-left', 'assist-mirror-right'] as const;
 
@@ -127,17 +129,27 @@ async function shiftToReverse(page: Page): Promise<void> {
 }
 
 test.describe('桌面（沒有觸控）', () => {
-  test('預設不顯示觸控層，鍵盤操作說明照舊；不認得的 ?touch 值當作沒給', async ({ page }) => {
+  test('預設顯示螢幕操作層、鍵盤操作說明收起；?touch=off 才隱藏；不認得的 ?touch 值當作沒給', async ({ page }) => {
     await page.goto('/?level=w1_l01&lang=zh-TW');
     await expect(page.locator('#hud-speed')).toHaveText('0.0');
+    await expect(page.locator('#hud')).toHaveAttribute('data-touch', 'on');
+    for (const id of CONTROL_IDS) {
+      await expect(page.locator(`#${id}`)).toBeVisible();
+    }
+    // 左下角讓給方向盤：鍵盤的操作說明收起來（每個控制項上有鍵帽）。
+    await expect(page.locator('.hud-controls')).toBeHidden();
+
+    await page.goto('/?level=w1_l01&lang=zh-TW&touch=off');
+    await expect(page.locator('#hud-speed')).toHaveText('0.0');
     await expect(page.locator('#hud')).toHaveAttribute('data-touch', 'off');
-    await expect(page.locator('#touch-controls')).toBeHidden();
+    await expect(page.locator('#touch-controls')).toHaveCount(0);
     await expect(page.locator('.hud-controls')).toBeVisible();
 
     await page.goto('/?level=w1_l01&lang=zh-TW&touch=maybe');
     await expect(page.locator('#hud-speed')).toHaveText('0.0');
-    await expect(page.locator('#touch-controls')).toBeHidden();
-    await expect(page.locator('.hud-controls')).toBeVisible();
+    await expect(page.locator('#hud')).toHaveAttribute('data-touch', 'on');
+    await expect(page.locator('#touch-controls')).toBeVisible();
+    await expect(page.locator('.hud-controls')).toBeHidden();
   });
 
   test('?touch=on 強制顯示，滑鼠也能按；鍵盤照常能開車', async ({ page }) => {
@@ -150,6 +162,7 @@ test.describe('桌面（沒有觸控）', () => {
     await expect(page.locator('#touch-brake')).toHaveText('Brake');
     await expect(page.locator('#touch-pause')).toHaveText('Pause');
     await expect(page.locator('#touch-restart')).toHaveText('Restart');
+    await expect(page.locator('#touch-camera')).toHaveText('Camera');
     // 左下角讓給方向盤：鍵盤的操作說明收起來。
     await expect(page.locator('.hud-controls')).toBeHidden();
 
@@ -183,6 +196,7 @@ test.describe('手機橫向', () => {
     await expect(page.locator('#touch-brake')).toHaveText('剎車');
     await expect(page.locator('#touch-pause')).toHaveText('暫停');
     await expect(page.locator('#touch-restart')).toHaveText('重來');
+    await expect(page.locator('#touch-camera')).toHaveText('鏡頭');
     await expect(page.locator('#touch-gear-drive')).toHaveAttribute('aria-label', '掛 D 檔');
     await expect(page.locator('#touch-gear-reverse')).toHaveAttribute('aria-label', '掛 R 檔');
     // 頁面不捲動、不縮放。
