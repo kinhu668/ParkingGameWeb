@@ -641,53 +641,37 @@ export const SPOT_MARKING_CONFIG = {
 } as const;
 
 /**
- * 目標車位上方的天空箭頭（props/spotBeacon.ts）：吊在車位中心正上方、尖端朝下的立體大箭頭。
- * 駕駛座視角很平，看不見地上的標線；這個箭頭讓玩家從起點就知道目標在哪。每一關都有（含原型關）。
- * 它是玩法標記，不是環境效果：`?fx=off` 也顯示（只是不動）、低畫質也有、不吃霧、不靠光暈。
+ * 目標車位的發光標記（props/spotGlow.ts）：沿車位輪廓從地面升起的一圈低矮半透明光牆＋輪廓內側貼地的光暈。
+ * 駕駛座視角很平，看不清地上的標線；這圈光讓玩家遠遠就知道目標在哪。每一關都有（含原型關）。
+ * 它是玩法標記，不是環境效果：`?fx=off` 也顯示（只是不脈動）、低畫質也有、不吃霧、不靠光暈。
  */
-export const SPOT_BEACON_CONFIG = {
+export const SPOT_GLOW_CONFIG = {
   /** 琥珀色：與地面的白漆標線、車燈的白光都分得開；亮度不超過 1，不靠 bloom 也不會洗成白塊。 */
   color: 0xffab1a,
-  /** 描邊殼的顏色（深褐）：亮的天空前面看得到輪廓，暗的夜空前面看得到琥珀色的本體。 */
-  outlineColor: 0x241505,
-  /** 描邊的厚度（公尺）。 */
-  outlineM: 0.09,
-  /** 尖端到桿頂的總長。 */
-  lengthM: 4.4,
-  /** 箭頭（圓錐）的長度與最寬處的半徑。 */
-  headLengthM: 2.1,
-  headRadiusM: 1.35,
-  /** 桿的半徑。 */
-  shaftRadiusM: 0.44,
-  /** 繞一圈切成幾面：面數少，每一面的明暗分得清楚，自轉時看得出是立體的。 */
-  radialSegments: 6,
+  /** 停妥後的顏色（綠）。 */
+  parkedColor: 0x35e07a,
   /**
-   * 每一面的明暗是烘在頂點顏色裡的（不吃場景的燈，白天、夜晚、雨天都一樣亮）：
-   * 假想的光從這個方向來（箭頭自己的座標），背光面的亮度是 minShade。
+   * 光牆頂端離地的高度。必須比每一個鏡頭模式的鏡頭都低（引擎蓋 3.55 ft、駕駛座 3.8 ft）：
+   * 鏡頭永遠在牆頂之上，不可能被標記包住或貼著牆面看（以前吊在空中的箭頭就是把遠距跟車的鏡頭包在裡面）。
    */
-  shadeDirection: { x: 0.75, y: -0.3, z: 0.55 },
-  minShade: 0.5,
-  /**
-   * 尖端離地的高度（靜止時）。駕駛座的眼睛只有 3.8 ft 高，前擋上緣與畫面頂端的 HUD 會切掉仰角約 27° 以上的東西：
-   * 起點離車位只有 45–60 ft 的關（原型關、側向停車）吊得太高就只剩尖端在畫面裡。
-   * 這個高度從那些起點看得到（幾乎）整支箭頭；尖端仍在車頂、鳥瞰小畫面的裁切高度（10.5 ft）之上，
-   * 桿頂（尖端 + lengthM）高過窄巷 22 ft 的牆。
-   */
-  hoverTipM: 4.4,
-  /** 上下浮動：振幅與週期。 */
-  bobAmplitudeM: 0.3,
-  bobPeriodS: 2.6,
-  /** 自轉一圈的秒數（繞世界 Y）。 */
-  spinPeriodS: 9,
-  /** 停妥後淡出要多久（秒）。 */
-  fadeSeconds: 0.6,
-  /**
-   * 鏡頭在箭頭上方往下看（俯視）而且靠近車位時，箭頭會蓋住車位的標線與車身：淡成這個不透明度，看得穿。
-   * 鏡頭離車位中心的水平距離在 overheadFarM 以外完全不淡，overheadNearM 以內淡到底。
-   */
-  overheadOpacity: 0.3,
-  overheadNearM: 5,
-  overheadFarM: 12,
+  heightM: ftToM(3.2),
+  /** 光牆與地面光暈的下緣離地多高：略高於車位標線，避免共面閃爍。 */
+  liftM: ftToM(0.06),
+  /** 光牆貼地處的不透明度；往上照 (1 − 高度比例)^wallFalloff 淡到 0。 */
+  wallOpacity: 0.85,
+  wallFalloff: 1.7,
+  /** 光牆沿高度切成幾層（頂點之間是直線內插，層數越多漸層越接近上面的曲線）。 */
+  wallLayers: 6,
+  /** 貼地光暈：從輪廓往車位中心多寬、輪廓上的不透明度（往內淡到 0）。 */
+  groundBandM: ftToM(2.2),
+  groundOpacity: 0.6,
+  /** 脈動：整體不透明度在 1 − pulseDepth 與 1 之間來回，一個來回 pulsePeriodS 秒。 */
+  pulseDepth: 0.3,
+  pulsePeriodS: 1.8,
+  /** 停妥後：這麼久之內由琥珀變綠，綠色共維持 greenHoldSeconds（含變色的時間），再用 fadeSeconds 淡到 0。 */
+  greenSeconds: 0.2,
+  greenHoldSeconds: 0.7,
+  fadeSeconds: 0.8,
 } as const;
 
 /**
