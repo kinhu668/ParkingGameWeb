@@ -148,6 +148,10 @@ export interface GameScene {
    */
   showWeatherAt(timeSeconds: number): void;
   /**
+   * 目前畫的是第幾道閃電的電弧（0 = 第一道）；沒有在閃、沒有閃電的天氣、`?fx=off` 都是 undefined。唯讀；e2e 與除錯用。
+   */
+  lightningStrike(): number | undefined;
+  /**
    * 目標車位的發光標記的顯示狀態走一幀：停妥後變綠再淡出、重來後回來。
    * 每個畫面幀呼叫。沒呼叫過（定格截圖、關卡選擇的背景）就是琥珀色、完全顯示。
    * @param parked 這一局是不是已經停妥（session.parked）
@@ -694,6 +698,10 @@ export function createGameScene(
     showWeatherAt(timeSeconds) {
       weatherSeconds = Math.max(weatherSeconds, timeSeconds);
       showLightning();
+    },
+    lightningStrike() {
+      const shown = arcs?.shown();
+      return shown !== undefined && shown.visible ? shown.strikeIndex : undefined;
     },
     updateSpotGlow(parked, frameSeconds) {
       glow.show(parked, frameSeconds);

@@ -430,6 +430,8 @@ function runCameraShot(
   gameScene.update(vehicle);
   // 閃電照同一個 t 走：雷雨的 `t=2` 正好是第一道（閃光＋電弧）；其他特效仍停在時間 0。
   gameScene.showWeatherAt(timeSeconds);
+  // 這一張定格裡畫的是第幾道閃電的電弧（沒有在閃是 none）：寫在 <html data-lightning>，方便除錯與 e2e 確認。
+  document.documentElement.dataset.lightning = String(gameScene.lightningStrike() ?? 'none');
   const camera = createPresetCamera(preset, vehicle.x, vehicle.z, spot);
 
   const draw = (): void => {

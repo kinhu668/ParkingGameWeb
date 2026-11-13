@@ -50,3 +50,28 @@ test('?weather= 蓋過關卡 JSON；沒給或不認得的值用關卡自己的�
   const prototypeDusk = await captureShot(page, '/?cam=top&t=2&weather=dusk');
   expect(prototypeDusk === prototype).toBe(true);
 });
+
+test('雷雨的定格：t=0 沒有在閃，t=2 是第一道閃電（閃光＋電弧）而且可重現；?fx=off 與其他天氣沒有', async ({ page }) => {
+  const html = page.locator('html');
+  const storm = '/?level=w1_l07&cam=spot_low';
+  await captureShot(page, `${storm}&t=0`);
+  await expect(html).toHaveAttribute('data-lightning', 'none');
+
+  const first = await captureShot(page, `${storm}&t=2`, 'weather-storm-arc-t2.png');
+  await expect(html).toHaveAttribute('data-lightning', '0');
+  const second = await captureShot(page, `${storm}&t=2`);
+  expect(second === first, '同一道閃電重拍必須完全相同').toBe(true);
+
+  // 閃光淡掉之後（一道閃電只有 0.7 秒）又是沒有在閃。
+  await captureShot(page, `${storm}&t=3`);
+  await expect(html).toHaveAttribute('data-lightning', 'none');
+
+  // ?fx=off：不建立閃電，也沒有電弧。
+  const calm = await captureShot(page, `${storm}&t=2&fx=off`);
+  await expect(html).toHaveAttribute('data-lightning', 'none');
+  expect(calm === first).toBe(false);
+
+  // 不是雷雨的天氣沒有閃電。
+  await captureShot(page, `${storm}&t=2&weather=rain`);
+  await expect(html).toHaveAttribute('data-lightning', 'none');
+});
