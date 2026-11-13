@@ -23,11 +23,10 @@ function badgesOn(control: string): readonly string[] {
 }
 
 describe('控制項 ↔ 動作', () => {
-  test('方向盤是左轉與右轉兩個鍵；油門是 throttle；剎車是腳剎 brake（不是手煞車）', () => {
+  test('方向盤是左轉與右轉兩個鍵；油門是 throttle；剎車是 brake', () => {
     expect(badgesOn('wheel')).toEqual(['steerLeft', 'steerRight']);
     expect(badgesOn('gas')).toEqual(['throttle']);
     expect(badgesOn('brake')).toEqual(['brake']);
-    expect(TOUCH_KEY_BADGES.map((badge) => badge.action)).not.toContain('handbrake');
   });
 
   test('掛檔、暫停、重來、鏡頭各一個；每個控制項都有鍵帽，每個動作只出現一次', () => {
@@ -82,7 +81,7 @@ describe('鍵帽上的字', () => {
   });
 
   test('空白鍵走翻譯鍵', () => {
-    const result = rebind({ ...DEFAULT_BINDINGS, handbrake: ['Slash'] }, 'brake', TOUCH_KEY_SLOT, 'Space');
+    const result = rebind(DEFAULT_BINDINGS, 'brake', TOUCH_KEY_SLOT, 'Space');
     expect(result.kind).toBe('ok');
     if (result.kind === 'ok') {
       expect(capText(result.bindings, 'brake')).toBe('hud.keySpace');

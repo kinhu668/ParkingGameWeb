@@ -33,7 +33,6 @@ export const ACTION_LABELS: Readonly<Record<ControlAction, TranslationKey>> = {
   steerLeft: 'controls.action.steerLeft',
   steerRight: 'controls.action.steerRight',
   brake: 'controls.action.brake',
-  handbrake: 'controls.action.handbrake',
   gearDrive: 'controls.action.gearDrive',
   gearReverse: 'controls.action.gearReverse',
   restart: 'controls.action.restart',

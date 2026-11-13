@@ -10,7 +10,6 @@ export const CONTROL_ACTIONS = [
   'steerLeft',
   'steerRight',
   'brake',
-  'handbrake',
   'gearDrive',
   'gearReverse',
   'restart',
@@ -28,7 +27,7 @@ export const MAX_KEYS_PER_ACTION = 2;
 
 /**
  * 預設鍵位。R 留給掛 R 檔，所以重來是 Backspace／T；掛 D 檔用 Q，不搶右轉的 D。
- * 剎車（腳剎）是逗號；手煞車是 `/ ?` 那一顆與空白鍵。
+ * 剎車是逗號。空白鍵與 `/ ?` 那一顆預設不綁任何動作，玩家可以自己拿去綁。
  */
 export const DEFAULT_BINDINGS: ControlBindings = {
   throttle: ['KeyW', 'ArrowUp'],
@@ -36,7 +35,6 @@ export const DEFAULT_BINDINGS: ControlBindings = {
   steerLeft: ['KeyA', 'ArrowLeft'],
   steerRight: ['KeyD', 'ArrowRight'],
   brake: ['Comma'],
-  handbrake: ['Slash', 'Space'],
   gearDrive: ['KeyQ'],
   gearReverse: ['KeyR'],
   restart: ['Backspace', 'KeyT'],

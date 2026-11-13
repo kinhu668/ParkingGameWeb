@@ -263,10 +263,6 @@ describe('controlRowKeys：HUD 操作說明要畫的鍵帽', () => {
       'Backspace',
       'KeyT',
     ]);
-    expect(controlRowKeys(DEFAULT_BINDINGS, ['handbrake']).map((cap) => cap.code)).toEqual([
-      'Slash',
-      'Space',
-    ]);
     expect(controlRowKeys(DEFAULT_BINDINGS, ['brake']).map((cap) => cap.code)).toEqual(['Comma']);
   });
 
@@ -292,7 +288,7 @@ describe('按鍵提示文字：keyText／keysText／fillTemplate', () => {
     setLocale('en');
     expect(keyText('Space')).toBe('Space');
     expect(keysText(DEFAULT_BINDINGS.restart)).toBe('Backspace / T');
-    expect(keysText(DEFAULT_BINDINGS.handbrake)).toBe('/ / Space');
+    expect(keysText(['Slash', 'Space'])).toBe('/ / Space');
     expect(keysText(DEFAULT_BINDINGS.pause)).toBe('Esc');
   });
 

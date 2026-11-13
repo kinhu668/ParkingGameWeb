@@ -75,7 +75,6 @@ describe('DEFAULT_BINDINGS：人類指定的預設鍵位', () => {
       steerLeft: ['KeyA', 'ArrowLeft'],
       steerRight: ['KeyD', 'ArrowRight'],
       brake: ['Comma'],
-      handbrake: ['Slash', 'Space'],
       gearDrive: ['KeyQ'],
       gearReverse: ['KeyR'],
       restart: ['Backspace', 'KeyT'],
@@ -127,7 +126,7 @@ describe('rebind：重綁', () => {
   test('把剎車從逗號改成 B；其他動作不變，原本的物件也沒被改到', () => {
     const next = rebound(DEFAULT_BINDINGS, 'brake', 0, 'KeyB');
     expect(next.brake).toEqual(['KeyB']);
-    expect(next.handbrake).toEqual(DEFAULT_BINDINGS.handbrake);
+    expect(next.restart).toEqual(DEFAULT_BINDINGS.restart);
     expect(DEFAULT_BINDINGS.brake).toEqual(['Comma']);
     expect(actionBoundTo(next, 'Comma')).toBeUndefined();
   });
@@ -148,14 +147,14 @@ describe('rebind：重綁', () => {
       action: 'steerRight',
     });
     // 備用鍵也算。
-    expect(rebind(DEFAULT_BINDINGS, 'brake', 0, 'Space')).toEqual({
+    expect(rebind(DEFAULT_BINDINGS, 'brake', 0, 'KeyT')).toEqual({
       kind: 'conflict',
-      action: 'handbrake',
+      action: 'restart',
     });
     // 同一個動作的另一格也算。
-    expect(rebind(DEFAULT_BINDINGS, 'handbrake', 0, 'Space')).toEqual({
+    expect(rebind(DEFAULT_BINDINGS, 'restart', 0, 'KeyT')).toEqual({
       kind: 'conflict',
-      action: 'handbrake',
+      action: 'restart',
     });
   });
 
@@ -202,10 +201,10 @@ describe('rebind：重綁', () => {
 
 describe('clearExtraKey', () => {
   test('拿掉備用鍵；只剩一個鍵時不動', () => {
-    const cleared = clearExtraKey(DEFAULT_BINDINGS, 'handbrake');
-    expect(cleared.handbrake).toEqual(['Slash']);
-    expect(actionBoundTo(cleared, 'Space')).toBeUndefined();
-    expect(clearExtraKey(cleared, 'handbrake')).toBe(cleared);
+    const cleared = clearExtraKey(DEFAULT_BINDINGS, 'restart');
+    expect(cleared.restart).toEqual(['Backspace']);
+    expect(actionBoundTo(cleared, 'KeyT')).toBeUndefined();
+    expect(clearExtraKey(cleared, 'restart')).toBe(cleared);
     expect(clearExtraKey(DEFAULT_BINDINGS, 'brake')).toBe(DEFAULT_BINDINGS);
   });
 });
@@ -215,7 +214,7 @@ describe('bindingsEqual', () => {
     expect(bindingsEqual(DEFAULT_BINDINGS, { ...DEFAULT_BINDINGS, brake: ['Comma'] })).toBe(true);
     expect(bindingsEqual(DEFAULT_BINDINGS, { ...DEFAULT_BINDINGS, brake: ['KeyB'] })).toBe(false);
     expect(bindingsEqual(DEFAULT_BINDINGS, { ...DEFAULT_BINDINGS, restart: ['KeyT', 'Backspace'] })).toBe(false);
-    expect(bindingsEqual(DEFAULT_BINDINGS, { ...DEFAULT_BINDINGS, handbrake: ['Slash'] })).toBe(false);
+    expect(bindingsEqual(DEFAULT_BINDINGS, { ...DEFAULT_BINDINGS, restart: ['Backspace'] })).toBe(false);
   });
 });
 

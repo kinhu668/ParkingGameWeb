@@ -70,7 +70,7 @@ export function createUiBuilder(): UiBuilder {
     created.id = id;
     created.className = className;
     parent.append(created);
-    // 用滑鼠點按鈕時不讓它拿走鍵盤焦點，否則之後按空白鍵（手煞車）會再觸發一次按鈕。
+    // 用滑鼠點按鈕時不讓它拿走鍵盤焦點，否則之後按空白鍵（玩家可能把它綁成遊戲按鍵）會再觸發一次按鈕。
     created.addEventListener('mousedown', (event) => {
       event.preventDefault();
     });

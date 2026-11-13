@@ -17,7 +17,7 @@ export interface TouchKeyBadge {
 
 /**
  * 每個控制項上的鍵帽。方向盤有兩個（左轉、右轉，在方向盤外接正方形的左上、右上角，圓的外面）；
- * 油門是 `throttle`、剎車是腳剎 `brake`（不是手煞車）。倒車與手煞車在螢幕上沒有自己的控制項，不列。
+ * 油門是 `throttle`、剎車是 `brake`。倒車在螢幕上沒有自己的控制項，不列。
  */
 export const TOUCH_KEY_BADGES: readonly TouchKeyBadge[] = [
   { action: 'steerLeft', control: 'wheel', anchor: 'left' },

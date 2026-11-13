@@ -58,7 +58,6 @@ const CONTROL_ROWS: readonly {
   { actions: ['throttle', 'reverse'], label: 'hud.controlDrive' },
   { actions: ['steerLeft', 'steerRight'], label: 'hud.controlSteer' },
   { actions: ['brake'], label: 'hud.controlBrake' },
-  { actions: ['handbrake'], label: 'hud.controlHandbrake' },
   { actions: ['gearDrive', 'gearReverse'], label: 'hud.controlGears' },
   { actions: ['restart'], label: 'hud.controlRestart' },
   { actions: ['toggleCamera'], label: 'hud.controlCamera' },

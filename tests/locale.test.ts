@@ -77,7 +77,6 @@ const PLANNED_KEYS = [
   'controls.action.steerLeft',
   'controls.action.steerRight',
   'controls.action.brake',
-  'controls.action.handbrake',
   'controls.action.gearDrive',
   'controls.action.gearReverse',
   'controls.action.restart',
