@@ -60,6 +60,7 @@ import {
 } from './render/renderContext';
 import { createGameScene, type GameScene } from './render/scene';
 import { runShowcase } from './render/showcase';
+import { weatherPreset } from './render/weatherPresets';
 import { createHud } from './ui/hud';
 import { createLevelSelect, levelCards } from './ui/levelSelect';
 import { showChoicesNotice } from './ui/notice';
@@ -240,7 +241,15 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
   // 四個小畫面用沒有遮擋淡出的場景畫（跟車鏡頭的主畫面才淡）。
   const reverseAssist = parseAssistOffParam(window.location.search)
     ? undefined
-    : createReverseAssist(renderer, quality, hudRoot, gameScene.scene, gameScene.drawAssistViews);
+    : createReverseAssist(
+        renderer,
+        quality,
+        hudRoot,
+        gameScene.scene,
+        gameScene.drawAssistViews,
+        // 夜晚、雷雨的小畫面把暗處抬亮（主畫面的曝光不變）。
+        weatherPreset(resolveWeather(window.location.search, level.weather)).assistView,
+      );
 
   // 內插需要相鄰兩步的車輛狀態：previousVehicle = 上一步、session.vehicle = 最新一步。
   let session = startSession(layout);

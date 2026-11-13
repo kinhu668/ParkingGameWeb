@@ -34,6 +34,7 @@ import type { GroundPoint } from '../vehicle/reverseGuides';
 import { VEHICLE_CONFIG_SI } from '../vehicle/vehicleConfig';
 import { effectivePixelRatio, type QualitySettings } from './quality';
 import { REVERSE_ASSIST_CONFIG as CONFIG } from './renderConfig';
+import type { AssistViewPreset } from './weatherPresets';
 
 const HALF_LENGTH_M = VEHICLE_CONFIG_SI.lengthM / 2;
 const HALF_WIDTH_M = VEHICLE_CONFIG_SI.widthM / 2;
@@ -176,15 +177,41 @@ const BLIT_VERTEX_SHADER = /* glsl */ `
   }
 `;
 
-/** 把一張離屏緩衝區貼到目前的視口：可左右鏡像、可半透明（淡入淡出），並做色調映射與色域轉換。 */
+/**
+ * 小畫面的暗部增益：場景線性亮度 luma 抬亮之後的亮度。夜裡的後視鏡只有幾個百分點的亮度，色調映射完就是一塊黑；
+ * 這裡把暗處乘上 darkGain，但抬亮後最多到 kneeLuma，比它亮的地方（路燈、車燈、受光的牆）維持原樣：
+ * 等於只給暗部加曝光，亮部不會被洗白。darkGain ≤ 1（白天、黃昏）時完全不動。結果隨 luma 單調不減。
+ * 與貼圖著色器裡的式子相同。
+ */
+export function assistLiftedLuma(luma: number, view: AssistViewPreset): number {
+  if (view.darkGain <= 1 || luma <= 0) {
+    return luma;
+  }
+  return Math.max(luma, view.kneeLuma * (1 - Math.exp((-view.darkGain * luma) / view.kneeLuma)));
+}
+
+/**
+ * 把一張離屏緩衝區貼到目前的視口：可左右鏡像、可半透明（淡入淡出），並做色調映射與色域轉換。
+ * 色調映射之前先做暗部增益（assistLiftedLuma）：只影響這四個小畫面，主畫面的曝光不變。
+ */
 const BLIT_FRAGMENT_SHADER = /* glsl */ `
   uniform sampler2D tView;
   uniform float opacity;
   uniform float mirrored;
+  uniform float darkGain;
+  uniform float kneeLuma;
   varying vec2 vUv;
   void main() {
     vec2 uv = vec2( mix( vUv.x, 1.0 - vUv.x, mirrored ), vUv.y );
-    gl_FragColor = vec4( texture2D( tView, uv ).rgb, opacity );
+    vec3 color = texture2D( tView, uv ).rgb;
+    if ( darkGain > 1.0 ) {
+      float luma = dot( color, vec3( 0.2126, 0.7152, 0.0722 ) );
+      if ( luma > 1e-6 ) {
+        float lifted = max( luma, kneeLuma * ( 1.0 - exp( - darkGain * luma / kneeLuma ) ) );
+        color *= lifted / luma;
+      }
+    }
+    gl_FragColor = vec4( color, opacity );
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
   }
@@ -205,9 +232,13 @@ export interface ReverseAssistViews {
 /** 把場景畫進小畫面的那一段包在這裡面跑：給場景一個機會先換成「小畫面該看到的樣子」，畫完再換回來。 */
 export type AssistSceneGuard = (draw: () => void) => void;
 
+/** 不抬亮（白天、黃昏；沒有指定天氣時用這個）。 */
+export const NO_ASSIST_LIFT: AssistViewPreset = { darkGain: 1, kneeLuma: 0.3 };
+
 /**
  * 建立四個視口的鏡頭與緩衝區。renderer 要用同一個 quality 建立。
  * @param drawScene 畫小畫面時包在外面的那一層（GameScene.drawAssistViews：不套用遮擋半透明、不畫灰塵）；不給就直接畫
+ * @param view 這種天氣的暗部增益（WeatherPreset.assistView）；不給 = 不抬亮
  */
 export function createReverseAssistViews(
   renderer: WebGLRenderer,
@@ -215,6 +246,7 @@ export function createReverseAssistViews(
   drawScene: AssistSceneGuard = (draw) => {
     draw();
   },
+  view: AssistViewPreset = NO_ASSIST_LIFT,
 ): ReverseAssistViews {
   const cost = CONFIG.quality[quality.level];
   const cameras = createAssistCameras();
@@ -241,7 +273,13 @@ export function createReverseAssistViews(
 
   const blitMaterial = new ShaderMaterial({
     name: 'AssistBlitShader',
-    uniforms: { tView: { value: null }, opacity: { value: 1 }, mirrored: { value: 0 } },
+    uniforms: {
+      tView: { value: null },
+      opacity: { value: 1 },
+      mirrored: { value: 0 },
+      darkGain: { value: view.darkGain },
+      kneeLuma: { value: view.kneeLuma },
+    },
     vertexShader: BLIT_VERTEX_SHADER,
     fragmentShader: BLIT_FRAGMENT_SHADER,
     transparent: true,

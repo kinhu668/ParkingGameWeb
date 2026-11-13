@@ -21,6 +21,7 @@ import {
   createReverseAssistViews,
   type AssistSceneGuard,
 } from '../render/reverseAssistViews';
+import type { AssistViewPreset } from '../render/weatherPresets';
 import type { Scene, WebGLRenderer } from 'three';
 import type { VehiclePose } from '../vehicle/bicycleModel';
 import {
@@ -76,6 +77,7 @@ function polylinePoints(
  * 在 root（#hud）裡建立倒車輔助層。一開始是收起的。
  * @param renderer 主畫布的 renderer（四個畫面貼在同一張畫布上）
  * @param drawScene 畫四個小畫面時包在外面的那一層（GameScene.drawAssistViews）：小畫面不套用跟車鏡頭的遮擋半透明、不畫車輪揚起的灰塵
+ * @param view 這種天氣的小畫面暗部增益（夜晚、雷雨把暗處抬亮）；不給 = 不抬亮
  */
 export function createReverseAssist(
   renderer: WebGLRenderer,
@@ -83,8 +85,9 @@ export function createReverseAssist(
   root: HTMLElement,
   scene: Scene,
   drawScene?: AssistSceneGuard,
+  view?: AssistViewPreset,
 ): ReverseAssist {
-  const views = createReverseAssistViews(renderer, quality, drawScene);
+  const views = createReverseAssistViews(renderer, quality, drawScene, view);
   views.warmUp(scene);
   const project = createGuideProjector();
   const ui = createUiBuilder();
