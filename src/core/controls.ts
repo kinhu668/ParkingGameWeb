@@ -145,6 +145,8 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 /**
  * 驗證 JSON.parse 出來的內容。任何一處不合格就整份不要（回傳 undefined）：
  * 少了動作、鍵數不對、不能綁的鍵、同一個鍵出現兩次都算壞檔。多出來的欄位會被丟掉。
+ * 舊版存檔裡已經移除的動作 `handbrake` 就是這樣遷移的：那一項不看也不留（不算壞檔），
+ * 其他綁定照舊，它原本佔的鍵空出來可以重綁；下次存檔寫的是這裡回傳的內容，不會再有它。
  */
 export function parseBindings(raw: unknown): ControlBindings | undefined {
   if (!isPlainObject(raw) || raw.version !== CONTROLS_VERSION || !isPlainObject(raw.bindings)) {

@@ -289,6 +289,74 @@ describe('loadBindings／saveBindings', () => {
   });
 });
 
+describe('舊存檔遷移：已移除的動作 handbrake', () => {
+  /** 舊版的預設表：多一個 handbrake，佔著 / 與空白鍵。 */
+  const LEGACY_DEFAULTS = { ...DEFAULT_BINDINGS, handbrake: ['Slash', 'Space'] };
+
+  test('現在沒有這個動作；空白鍵與 / 預設沒有動作，可以拿去綁', () => {
+    expect(CONTROL_ACTIONS).not.toContain('handbrake');
+    expect(DEFAULT_BINDINGS).not.toHaveProperty('handbrake');
+    for (const code of ['Space', 'Slash']) {
+      expect(actionBoundTo(DEFAULT_BINDINGS, code), code).toBeUndefined();
+      expect(rebound(DEFAULT_BINDINGS, 'brake', 1, code).brake).toEqual(['Comma', code]);
+    }
+  });
+
+  test('含 handbrake 的舊存檔讀得進來：那一項丟掉，其他鍵照舊，存檔沒被當成壞檔刪掉', () => {
+    const legacy = { ...LEGACY_DEFAULTS, brake: ['KeyB'], restart: ['Enter', 'KeyT'] };
+    const storage = memoryStorage({ [CONTROLS_STORAGE_KEY]: stored(legacy) });
+    const loaded = loadBindings(storage);
+    expect(loaded).not.toHaveProperty('handbrake');
+    expect(loaded).toEqual({ ...DEFAULT_BINDINGS, brake: ['KeyB'], restart: ['Enter', 'KeyT'] });
+    expect(storage.items.has(CONTROLS_STORAGE_KEY)).toBe(true);
+  });
+
+  test('舊存檔只改過 handbrake：讀回來就是預設', () => {
+    const storage = memoryStorage({
+      [CONTROLS_STORAGE_KEY]: stored({ ...LEGACY_DEFAULTS, handbrake: ['KeyH'] }),
+    });
+    expect(loadBindings(storage)).toEqual(DEFAULT_BINDINGS);
+  });
+
+  test.each<[string, unknown]>([
+    ['不是陣列', 'Space'],
+    ['空的', []],
+    ['不能綁的鍵', ['Tab']],
+    ['null', null],
+  ])('handbrake 那一項的內容不看（%s）：其他綁定照樣讀進來', (_name, handbrake) => {
+    const raw = { version: CONTROLS_VERSION, bindings: { ...LEGACY_DEFAULTS, brake: ['KeyB'], handbrake } };
+    expect(parseBindings(raw)).toEqual({ ...DEFAULT_BINDINGS, brake: ['KeyB'] });
+  });
+
+  test('handbrake 原本佔的鍵空出來了：可以綁給別的動作', () => {
+    const loaded = parseBindings({ version: CONTROLS_VERSION, bindings: LEGACY_DEFAULTS });
+    expect(loaded).toEqual(DEFAULT_BINDINGS);
+    const next = rebound(rebound(loaded ?? DEFAULT_BINDINGS, 'brake', 1, 'Space'), 'pause', 1, 'Slash');
+    expect(next.brake).toEqual(['Comma', 'Space']);
+    expect(next.pause).toEqual(['Escape', 'Slash']);
+  });
+
+  test('讀進來再存：寫回去的內容沒有 handbrake，再讀一次還是一樣', () => {
+    const legacy = { ...LEGACY_DEFAULTS, brake: ['KeyB'] };
+    const storage = memoryStorage({ [CONTROLS_STORAGE_KEY]: stored(legacy) });
+    const loaded = loadBindings(storage);
+    saveBindings(storage, loaded);
+    const saved: unknown = JSON.parse(storage.items.get(CONTROLS_STORAGE_KEY) ?? 'null');
+    expect(saved).toEqual({
+      version: CONTROLS_VERSION,
+      bindings: { ...DEFAULT_BINDINGS, brake: ['KeyB'] },
+    });
+    expect(JSON.stringify(saved)).not.toContain('handbrake');
+    expect(loadBindings(storage)).toEqual(loaded);
+  });
+
+  test('舊存檔讀進來是預設、再存：那一筆刪掉，不留 handbrake', () => {
+    const storage = memoryStorage({ [CONTROLS_STORAGE_KEY]: stored(LEGACY_DEFAULTS) });
+    saveBindings(storage, loadBindings(storage));
+    expect(storage.items.has(CONTROLS_STORAGE_KEY)).toBe(false);
+  });
+});
+
 describe('keyLabel：鍵帽上的字', () => {
   test('字母與數字直接寫；方向鍵是箭頭；符號鍵寫符號', () => {
     expect(keyLabel('KeyW')).toEqual({ text: 'W' });
