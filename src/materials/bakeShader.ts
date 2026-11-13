@@ -294,8 +294,8 @@ Surf carPaint(vec2 uv) {
   float bigFlake = smoothstep(0.42, 0.22, big.x) * step(0.55, big.y);
   float b = big.y * 91.7;
   s.nrm = flake * vec2(cos(a), sin(a)) * (0.25 + 0.75 * fract(fl.y * 7.31))
-    + 0.7 * bigFlake * vec2(cos(b), sin(b));
-  s.tint = 1.0 + 0.1 * flake * (fract(fl.y * 13.7) - 0.4) + 0.14 * bigFlake * (fract(big.y * 5.3) - 0.3);
+    + 0.5 * bigFlake * vec2(cos(b), sin(b));
+  s.tint = 1.0 + 0.1 * flake * (fract(fl.y * 13.7) - 0.4) + 0.09 * bigFlake * (fract(big.y * 5.3) - 0.3);
   s.rough = 1.0 + 0.25 * flake * (fract(fl.y * 3.3) - 0.5) - 0.2 * bigFlake;
   s.h = 0.0005 * fbm(uv, 10, 2, 102u);
   return s;
