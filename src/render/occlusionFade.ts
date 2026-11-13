@@ -215,6 +215,9 @@ function createStandIn(part: OccluderPart): StandIn | undefined {
     return undefined;
   }
   const material = source.clone();
+  // clone 不會帶著著色器掛鉤：庫材質（三面投影）與標線的替身要長得跟原本一樣，淡掉時紋路才不會突然消失。
+  material.onBeforeCompile = source.onBeforeCompile;
+  material.customProgramCacheKey = source.customProgramCacheKey;
   material.transparent = true;
   // 實例的顏色乘進替身的材質裡。
   if (

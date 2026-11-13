@@ -10,6 +10,7 @@ import {
   type BufferGeometry,
 } from 'three';
 import { headingToRotationY } from '../core/heading';
+import { createScenerySurface } from '../materials/surfaceMaterial';
 import type { ParkingSpot } from '../level/parkingJudge';
 import { CURB_CONFIG, WHEEL_STOP_CONFIG } from '../render/renderConfig';
 import type { GroundEdgeBox } from './groundShader';
@@ -123,10 +124,9 @@ export function createSpotFrame(spot: ParkingSpot): Group {
  */
 export function createCurbs(spot: ParkingSpot): Group {
   const { heightM } = CURB_CONFIG;
-  const material = new MeshStandardMaterial({
+  const material = createScenerySurface('concrete', {
     color: CURB_CONFIG.color,
     roughness: CURB_CONFIG.roughness,
-    metalness: 0,
   });
 
   const frame = createSpotFrame(spot);
@@ -160,10 +160,11 @@ export function createWheelStopGeometry(): BufferGeometry {
 
 /** 車擋的材質。 */
 export function createWheelStopMaterial(): MeshStandardMaterial {
-  return new MeshStandardMaterial({
+  return createScenerySurface('concrete', {
     color: WHEEL_STOP_CONFIG.color,
     roughness: WHEEL_STOP_CONFIG.roughness,
-    metalness: 0,
+    // 車擋很小：水泥的伸縮縫不要剛好切在上面，紋路也細一點。
+    tileM: 1.9,
   });
 }
 

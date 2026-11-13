@@ -15,6 +15,7 @@ import {
   type Material,
 } from 'three';
 import { forward, headingToRotationY } from '../core/heading';
+import { createSurfaceMaterial } from '../materials/surfaceMaterial';
 import type { VehicleDetail } from '../render/quality';
 import { CAR_DETAIL_CONFIG, CAR_VISUAL_CONFIG as VISUAL } from '../render/renderConfig';
 import type { DriveInput, VehiclePose } from './bicycleModel';
@@ -54,6 +55,8 @@ export interface CarMesh {
   lastPlacement: { readonly x: number; readonly z: number } | undefined;
 }
 
+/** 輪胎貼圖繞一圈重複幾次（一次有 4 道人字溝）。 */
+const TIRE_PATTERN_REPEATS = 6;
 const HALF_WIDTH_M = VEHICLE_CONFIG_SI.widthM / 2;
 const HALF_WHEELBASE_M = VEHICLE_CONFIG_SI.wheelbaseM / 2;
 
@@ -62,6 +65,26 @@ function shadowMesh(geometry: BufferGeometry, material: Material): Mesh {
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   return mesh;
+}
+
+/** 輪胎的材質：胎面的人字溝與胎壁的稜線、凸字繞著輪軸鋪（材質庫的 tire，圓柱座標）。 */
+export function createTireMaterial(): MeshStandardMaterial {
+  return createSurfaceMaterial('tire', {
+    space: 'radial',
+    color: VISUAL.tireColor,
+    roughness: VISUAL.tireRoughness,
+    radial: [TIRE_PATTERN_REPEATS, VISUAL.wheelWidthM / 2, VISUAL.rimRadiusM, VISUAL.wheelRadiusM],
+  });
+}
+
+/** 輪圈的材質：拋光的合金（材質庫的 chrome，用輪圈自己的顏色與粗糙度）。 */
+export function createRimMaterial(): MeshStandardMaterial {
+  return createSurfaceMaterial('chrome', {
+    space: 'local',
+    color: VISUAL.rimColor,
+    roughness: VISUAL.rimRoughness,
+    metalness: VISUAL.rimMetalness,
+  });
 }
 
 /** 燈殼材質：color 是沒亮時的顏色，glowColor 是發光的顏色。 */
@@ -142,7 +165,10 @@ function createWipers(material: Material): Group {
  * @param detail 細分程度（CAR_DETAIL_CONFIG）：low 面數少，high 輪拱與輪胎較圓。外框尺寸兩者相同。
  */
 export function createCarMesh(detail: VehicleDetail = 'high'): CarMesh {
-  const paint = new MeshPhysicalMaterial({
+  // 車身的材質來自材質庫，用物件座標取樣（紋路跟著車走）。
+  // 烤漆：清漆底下有金屬片（法線各自歪一點，近看有細碎的反光），清漆層本身是平滑的。
+  const paint = createSurfaceMaterial('carPaint', {
+    space: 'local',
     color: VISUAL.bodyColor,
     roughness: VISUAL.bodyRoughness,
     metalness: VISUAL.bodyMetalness,
@@ -150,15 +176,22 @@ export function createCarMesh(detail: VehicleDetail = 'high'): CarMesh {
     clearcoatRoughness: VISUAL.minGlossRoughness,
   });
   // 玻璃雙面、不寫深度：隔著它還看得到車艙，也不會擋掉後面的另一片玻璃；從車裡往外看同樣隔著一層。
-  const glass = new MeshStandardMaterial({
+  const glass = createSurfaceMaterial('glass', {
+    space: 'local',
     color: VISUAL.glassColor,
     roughness: VISUAL.minGlossRoughness,
-    transparent: true,
-    opacity: VISUAL.glassOpacity,
-    depthWrite: false,
-    side: DoubleSide,
+    parameters: {
+      transparent: true,
+      opacity: VISUAL.glassOpacity,
+      depthWrite: false,
+      side: DoubleSide,
+    },
   });
-  const trim = new MeshStandardMaterial({ color: VISUAL.trimColor, roughness: VISUAL.trimRoughness });
+  const trim = createSurfaceMaterial('plastic', {
+    space: 'local',
+    color: VISUAL.trimColor,
+    roughness: VISUAL.trimRoughness,
+  });
   const headliner = new MeshStandardMaterial({
     color: VISUAL.headlinerColor,
     emissive: VISUAL.headlinerColor,
@@ -177,7 +210,8 @@ export function createCarMesh(detail: VehicleDetail = 'high'): CarMesh {
     VISUAL.taillightEmissiveIntensity,
   );
   const reverseLightMaterial = lamp(VISUAL.reverseLightOffColor, VISUAL.reverseLightColor, 0);
-  const chrome = new MeshStandardMaterial({
+  const chrome = createSurfaceMaterial('chrome', {
+    space: 'local',
     color: VISUAL.chromeColor,
     roughness: VISUAL.chromeRoughness,
     metalness: 1,
@@ -233,12 +267,8 @@ export function createCarMesh(detail: VehicleDetail = 'high'): CarMesh {
   const tireGeometry = createTireGeometry(wheelSegments);
   const rimGeometry = createRimGeometry(wheelSegments);
   const discGeometry = createBrakeDiscGeometry(wheelSegments);
-  const tire = new MeshStandardMaterial({ color: VISUAL.tireColor, roughness: VISUAL.tireRoughness });
-  const rim = new MeshStandardMaterial({
-    color: VISUAL.rimColor,
-    roughness: VISUAL.rimRoughness,
-    metalness: VISUAL.rimMetalness,
-  });
+  const tire = createTireMaterial();
+  const rim = createRimMaterial();
   const wheelXM = BODY_LAYOUT.halfWidthM - VISUAL.wheelTuckM - VISUAL.wheelWidthM / 2;
   const wheelSpinners: Group[] = [];
   const createWheel = (side: number, zM: number): Group => {

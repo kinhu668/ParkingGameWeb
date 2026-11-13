@@ -18,6 +18,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { DEFAULT_SEED } from '../core/gameConfig';
 import { headingToRotationY } from '../core/heading';
 import { createRng } from '../core/rng';
+import { createSurfaceMaterial } from '../materials/surfaceMaterial';
 import type { VehicleDetail } from '../render/quality';
 import { CAR_VISUAL_CONFIG as VISUAL, LOT_PROPS_CONFIG as LOT } from '../render/renderConfig';
 import { BODY_LAYOUT, type BodyPart } from '../vehicle/carBody';
@@ -31,6 +32,7 @@ import {
   createRimGeometry,
   createTireGeometry,
 } from '../vehicle/carWheel';
+import { createRimMaterial, createTireMaterial } from '../vehicle/carMesh';
 import { VEHICLE_CONFIG_SI } from '../vehicle/vehicleConfig';
 import type { PropPlacement } from './lotLayout';
 import { occluderBox, registerOccluders, type OccluderPart } from './occluders';
@@ -120,15 +122,23 @@ export function createParkedCars(
 
   const lampOff = (color: number): MeshStandardMaterial =>
     new MeshStandardMaterial({ color, roughness: 0.3 });
-  const trim = new MeshStandardMaterial({ color: VISUAL.trimColor, roughness: VISUAL.trimRoughness });
+  // 與玩家車同一套庫材質（物件座標取樣）；背景車不開清漆（省一層反射的計算），車色仍是每台各自的實例顏色。
+  const trim = createSurfaceMaterial('plastic', {
+    space: 'local',
+    color: VISUAL.trimColor,
+    roughness: VISUAL.trimRoughness,
+  });
   const materials: Readonly<Record<BodyPart, Material>> = {
     // 車色由每個實例的顏色決定，材質本身是白的。
-    paint: new MeshStandardMaterial({
+    paint: createSurfaceMaterial('carPaint', {
+      space: 'local',
       color: 0xffffff,
       roughness: LOT.carRoughness,
       metalness: LOT.carMetalness,
+      clearcoat: 0,
     }),
-    glass: new MeshStandardMaterial({
+    glass: createSurfaceMaterial('glass', {
+      space: 'local',
       color: VISUAL.glassColor,
       roughness: VISUAL.minGlossRoughness,
     }),
@@ -136,7 +146,8 @@ export function createParkedCars(
     headlight: lampOff(VISUAL.headlightColor),
     taillight: lampOff(VISUAL.taillightColor),
     reverseLight: lampOff(VISUAL.reverseLightOffColor),
-    chrome: new MeshStandardMaterial({
+    chrome: createSurfaceMaterial('chrome', {
+      space: 'local',
       color: VISUAL.chromeColor,
       roughness: VISUAL.chromeRoughness,
       metalness: 1,
@@ -225,17 +236,13 @@ export function createParkedCars(
   const segments = PARKED_WHEEL_SEGMENTS;
   const tires = instanced(
     createTireGeometry(segments),
-    new MeshStandardMaterial({ color: VISUAL.tireColor, roughness: VISUAL.tireRoughness }),
+    createTireMaterial(),
     wheelMatrices,
   );
   tires.name = 'parkedCars:tire';
   const rims = instanced(
     detail === 'high' ? createRimGeometry(segments) : createBrakeDiscGeometry(segments),
-    new MeshStandardMaterial({
-      color: VISUAL.rimColor,
-      roughness: VISUAL.rimRoughness,
-      metalness: VISUAL.rimMetalness,
-    }),
+    createRimMaterial(),
     wheelMatrices,
   );
   rims.name = 'parkedCars:rim';

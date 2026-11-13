@@ -87,6 +87,26 @@ export interface SurfaceOverlays {
 
 export const NO_OVERLAYS: SurfaceOverlays = { dirt: 0, streaks: 0, oil: 0, tireMarks: 0 };
 
+/** 場景裡不會動的東西（建築、人行道、擺設）各種表面慣用的髒污強度。 */
+export const SCENERY_OVERLAYS: Readonly<Record<SurfaceId, SurfaceOverlays>> = {
+  asphaltDry: { dirt: 0.3, streaks: 0, oil: 0.6, tireMarks: 0.6 },
+  asphaltWet: { dirt: 0.2, streaks: 0, oil: 0.4, tireMarks: 0.3 },
+  concrete: { dirt: 0.5, streaks: 0.5, oil: 0.3, tireMarks: 0.15 },
+  epoxy: { dirt: 0.15, streaks: 0, oil: 0.3, tireMarks: 0.6 },
+  wornPaint: { dirt: 0.35, streaks: 0, oil: 0.3, tireMarks: 0.6 },
+  rustedIron: { dirt: 0.4, streaks: 0.5, oil: 0, tireMarks: 0 },
+  galvanized: { dirt: 0.2, streaks: 0.3, oil: 0, tireMarks: 0 },
+  corrugated: { dirt: 0.35, streaks: 0.6, oil: 0, tireMarks: 0 },
+  brick: { dirt: 0.55, streaks: 0.6, oil: 0, tireMarks: 0 },
+  glass: NO_OVERLAYS,
+  tire: NO_OVERLAYS,
+  carPaint: NO_OVERLAYS,
+  plastic: { dirt: 0.25, streaks: 0.2, oil: 0, tireMarks: 0 },
+  chrome: NO_OVERLAYS,
+  paintedMetal: { dirt: 0.3, streaks: 0.5, oil: 0, tireMarks: 0 },
+  plaster: { dirt: 0.5, streaks: 0.55, oil: 0, tireMarks: 0 },
+};
+
 /** 各畫質級別的材質細節（QUALITY_PRESETS 的 materials）。 */
 export interface MaterialQualitySettings {
   /** 烘出來的貼圖邊長（像素）。 */

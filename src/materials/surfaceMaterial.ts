@@ -21,7 +21,13 @@ import {
   surfaceLibraryDetail,
   surfaceMaps,
 } from './surfaceLibrary';
-import { NO_OVERLAYS, SURFACE_SPECS, type SurfaceId, type SurfaceOverlays } from './surfaces';
+import {
+  NO_OVERLAYS,
+  SCENERY_OVERLAYS,
+  SURFACE_SPECS,
+  type SurfaceId,
+  type SurfaceOverlays,
+} from './surfaces';
 
 export type SurfaceSpace = 'world' | 'local' | 'radial';
 
@@ -37,6 +43,8 @@ export interface SurfaceMaterialOptions {
   readonly overlays?: Partial<SurfaceOverlays>;
   /** 天氣的潮濕對它有多大作用（0–1）；不給：world = 1，其餘 = 0。 */
   readonly wetResponse?: number;
+  /** 貼圖裡「不跟底色走的顏色」（灰縫、鏽、露出的柏油）的明暗倍率；不給 = 1。 */
+  readonly overlayTint?: number;
   /** 貼圖鋪一次幾公尺；不給 = 這種表面的預設。 */
   readonly tileM?: number;
   /** 法線強度的倍率。 */
@@ -92,6 +100,8 @@ uniform vec4 uSurfParams;
 uniform vec4 uSurfOverlay;
 uniform vec4 uSurfRadial;
 uniform float uSurfWet;
+// 蓋色（灰縫、鏽…）的明暗倍率：深色的舊磚牆灰縫也跟著暗
+uniform float uSurfOverTint;
 `;
 
 // 接在 normal_fragment_maps 後面：這時 diffuseColor（含實例／頂點顏色）、roughnessFactor、metalnessFactor、
@@ -148,7 +158,7 @@ float surfAo = 1.0;
     #endif
   #endif
 
-  vec3 sBase = mix( diffuseColor.rgb * ( sO.a * 2.0 ), sC.rgb, sC.a );
+  vec3 sBase = mix( diffuseColor.rgb * ( sO.a * 2.0 ), sC.rgb * uSurfOverTint, sC.a );
   float sRough = roughnessFactor * sO.g * 2.0;
   float sMetal = metalnessFactor * sO.b;
   surfAo = sO.r;
@@ -261,6 +271,7 @@ export function createSurfaceMaterial(
     shader.uniforms.uSurfOverlay = { value: overlay };
     shader.uniforms.uSurfRadial = { value: radial };
     shader.uniforms.uSurfWet = SURFACE_WETNESS;
+    shader.uniforms.uSurfOverTint = { value: options.overlayTint ?? 1 };
     const defines = [
       space === 'world' ? '#define SURF_WORLD' : '',
       space === 'radial' ? '#define SURF_RADIAL' : '',
@@ -280,6 +291,20 @@ export function createSurfaceMaterial(
   };
   material.customProgramCacheKey = () => `surface:${variant()}`;
   return material;
+}
+
+/**
+ * 不會動的場景物件（建築、擺設、障礙物）用的庫材質：世界座標三面投影，加上這種表面慣用的髒污。
+ */
+export function createScenerySurface(
+  id: SurfaceId,
+  options: Omit<SurfaceMaterialOptions, 'space'> = {},
+): MeshStandardMaterial {
+  return createSurfaceMaterial(id, {
+    ...options,
+    space: 'world',
+    overlays: { ...SCENERY_OVERLAYS[id], ...options.overlays },
+  });
 }
 
 /** 這個材質是庫裡的哪一種表面；不是庫材質回傳 undefined。 */

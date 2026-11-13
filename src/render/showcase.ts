@@ -40,9 +40,13 @@ function createSurfaceSample(id: SurfaceId): Group {
     overlays: { dirt: 0.5, streaks: 0.5, oil: 0.5, tireMarks: 0.5 },
   });
   const box = new Mesh(new BoxGeometry(sizeM, sizeM, sizeM), material);
-  box.position.y = sizeM / 2;
-  const ball = new Mesh(new SphereGeometry(0.42, 48, 24), material);
-  ball.position.set(sizeM * 0.9, 0.42, sizeM * 0.2);
+  const ballRadiusM = 0.42;
+  const ballOffsetM = sizeM * 0.9;
+  // 方塊＋球合起來的中心在原點（展示台的鏡頭對準包圍球）。
+  const shiftM = -(ballOffsetM + ballRadiusM - sizeM / 2) / 2;
+  box.position.set(shiftM, sizeM / 2, 0);
+  const ball = new Mesh(new SphereGeometry(ballRadiusM, 48, 24), material);
+  ball.position.set(shiftM + ballOffsetM, ballRadiusM, sizeM * 0.2);
   for (const mesh of [box, ball]) {
     mesh.castShadow = true;
     mesh.receiveShadow = true;

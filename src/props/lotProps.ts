@@ -25,6 +25,8 @@ import {
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { forward, headingToRotationY } from '../core/heading';
 import { ftToM } from '../core/units';
+import { createScenerySurface } from '../materials/surfaceMaterial';
+import type { SurfaceId } from '../materials/surfaces';
 import type { ParkingSpot } from '../level/parkingJudge';
 import { SKIP_AMBIENT_OCCLUSION } from '../render/ambientOcclusionFlag';
 import type { PropsQualitySettings, VehicleDetail } from '../render/quality';
@@ -156,8 +158,10 @@ function secondary(variant: number): number {
   return (variant * 7.31) % 1;
 }
 
-function standard(color: number, roughness: number, metalness = 0): MeshStandardMaterial {
-  return new MeshStandardMaterial({ color, roughness, metalness });
+/** 庫材質（世界座標三面投影＋這種表面慣用的髒污），顏色、粗糙度、金屬度用擺設自己的設定。 */
+function surface(id: SurfaceId, color: number, roughness: number, metalness = 0): MeshStandardMaterial {
+  // 鍍鋅件上的白鏽跟著底色暗下來：深色的燈桿上不會冒出一塊一塊的白斑。
+  return createScenerySurface(id, { color, roughness, metalness, overlayTint: id === 'galvanized' ? 0.5 : 1 });
 }
 
 /** 燈頭（發光面的中心）的位置：燈桿頂端沿燈臂方向伸出去。 */
@@ -251,7 +255,7 @@ function addLamps(
   const head = LOT.lampHeadSizeM;
   const armM = LOT.lampArmLengthM;
   const post = mergeGeometries(createLampPostParts(style));
-  const posts = instanced(post, standard(LOT.lampColor, 0.6, 0.5), lamps.map(atPlacement), {
+  const posts = instanced(post, surface('galvanized', LOT.lampColor, 0.6, 0.5), lamps.map(atPlacement), {
     name: 'lampPosts',
     castShadow: true,
   });
@@ -418,7 +422,8 @@ function addPlants(
   const trunkRadiusM = ftToM(0.55);
   const trunks = instanced(
     new CylinderGeometry(0.7, 1, 1, 8).translate(0, 0.5, 0),
-    standard(LOT.trunkColor, 0.95),
+    // 樹不在材質庫裡：樹幹照舊是單色。
+    new MeshStandardMaterial({ color: LOT.trunkColor, roughness: 0.95 }),
     trees.map((tree) => ({
       ...atPlacement(tree),
       scaleX: trunkRadiusM,
@@ -641,7 +646,7 @@ export function createLotProps(
   // 混凝土柱與柱頂的橫梁：同一個材質，一個 draw call。
   const concrete = [...layout.pillars, ...layout.beams];
   addBoxes(
-    instanced(box, standard(LOT.concreteColor, LOT.concreteRoughness), concrete.map(boxAt), {
+    instanced(box, surface('concrete', LOT.concreteColor, LOT.concreteRoughness), concrete.map(boxAt), {
       name: 'concrete',
       castShadow: true,
     }),
@@ -651,7 +656,7 @@ export function createLotProps(
   // 背景建築也投影。太陽很低時影子的長度有上限（shadowReach.ts）：樓腳前面有影子，但不會拉過整個場地。
   const buildings = instanced(
     box,
-    standard(0xffffff, LOT.buildingRoughness),
+    surface('concrete', 0xffffff, LOT.buildingRoughness),
     layout.buildings.map(boxAt),
     {
       name: 'buildings',
@@ -689,7 +694,7 @@ export function createLotProps(
   add(
     instanced(
       box,
-      standard(LOT.fenceColor, 0.6, 0.4),
+      surface('galvanized', LOT.fenceColor, 0.6, 0.4),
       [...layout.fencePosts, ...layout.fenceRails].map(boxAt),
       { name: 'fence', castShadow: props.detailShadows },
     ),
@@ -698,7 +703,7 @@ export function createLotProps(
   addPlants(frame, layout.trees, layout.bushes, props.meshDetail);
 
   add(
-    instanced(box, standard(LOT.stallLineColor, 0.85), layout.stallLines.map(boxAt), {
+    instanced(box, surface('wornPaint', LOT.stallLineColor, 0.85), layout.stallLines.map(boxAt), {
       name: 'stallLines',
     }),
   );
@@ -710,7 +715,18 @@ export function createLotProps(
     }),
   );
 
-  const painted = new MeshStandardMaterial({ color: 0xffffff, roughness: 0.75, vertexColors: true });
+  // 垃圾桶與標誌是塗裝鋼、交通錐是塑膠；各部分的顏色在頂點顏色裡。
+  const painted = createScenerySurface('paintedMetal', {
+    color: 0xffffff,
+    roughness: 0.75,
+    metalness: 0.15,
+    parameters: { vertexColors: true },
+  });
+  const moulded = createScenerySurface('plastic', {
+    color: 0xffffff,
+    roughness: 0.75,
+    parameters: { vertexColors: true },
+  });
   add(
     instanced(createBinGeometry(), painted, layout.bins.map(atPlacement), {
       name: 'bins',
@@ -718,7 +734,7 @@ export function createLotProps(
     }),
   );
   add(
-    instanced(createTrafficConeGeometry(), painted, layout.trafficCones.map(atPlacement), {
+    instanced(createTrafficConeGeometry(), moulded, layout.trafficCones.map(atPlacement), {
       name: 'trafficCones',
       castShadow: props.detailShadows,
     }),
@@ -730,7 +746,7 @@ export function createLotProps(
     }),
   );
   add(
-    instanced(box, standard(LOT.drainColor, 0.55, 0.6), layout.drains.map(boxAt), {
+    instanced(box, surface('galvanized', LOT.drainColor, 0.55, 0.6), layout.drains.map(boxAt), {
       name: 'drains',
     }),
   );

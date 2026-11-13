@@ -12,6 +12,7 @@ import type { LevelEnvironment } from '../level/levelSchema';
 import type { ObstacleType } from '../level/obstacleTypes';
 import type { PropsQualitySettings } from '../render/quality';
 import { LOT_PROPS_CONFIG as LOT, SPOT_MARKING_CONFIG } from '../render/renderConfig';
+import type { SurfaceId } from '../materials/surfaces';
 import { VEHICLE_CONFIG_SI } from '../vehicle/vehicleConfig';
 import { PROP_CATEGORIES, type LotLayout, type PropCategory, type PropPlacement } from './lotLayout';
 import type { SignPlacement, SignStyleId } from './signs';
@@ -44,6 +45,8 @@ export interface EnvironmentSlab {
   readonly minY: number;
   readonly maxY: number;
   readonly color: number;
+  /** 這一塊是什麼表面（材質庫的表面；顏色仍由 color 決定）。亮著的窗與門燈（lit）不吃光，不看這個。 */
+  readonly surface: SurfaceId;
   /**
    * 只有 decal 有：薄片朝哪個方向（heading）。畫成只有這一面的平面——鏡頭跑到牆後面時看不到它，
    * 不會被一扇門擋住整個畫面。
@@ -172,6 +175,7 @@ class Builder {
       minY: ftToM(minY),
       maxY: ftToM(maxY),
       color,
+      surface: slabSurface(kind, color),
     });
   }
 
@@ -885,6 +889,56 @@ function addNarrowAlley(builder: Builder, source: EnvironmentSource, bounds: Bou
       }
     }
   }
+}
+
+/**
+ * 環境方塊的顏色 → 材質庫的表面。佈局只用上面幾組固定的顏色，所以用顏色對就夠了，
+ * 不必在每一個 sideSlab 多傳一個參數。同一個顏色在不同環境裡是同一種東西（深綠＝塗裝鋼）。
+ */
+const SLAB_SURFACES: ReadonlyMap<number, SurfaceId> = new Map<number, SurfaceId>([
+  // 大賣場：水泥牆與門廊、塗裝鋼的腰帶與雨遮、瓦楞捲門、鋁門框、鉻門把。
+  [CLUB.wall, 'concrete'],
+  [CLUB.portal, 'concrete'],
+  [CLUB.walkway, 'concrete'],
+  [CLUB.teal, 'paintedMetal'],
+  [CLUB.orange, 'paintedMetal'],
+  [CLUB.bayDoor, 'corrugated'],
+  [CLUB_ENTRANCE.frameColor, 'paintedMetal'],
+  [CLUB_ENTRANCE.kickColor, 'paintedMetal'],
+  [CLUB_ENTRANCE.handleColor, 'chrome'],
+  // 郵局：磚牆、粉刷的橫額、塗裝鋼的飾帶／雨遮／投遞箱、水泥人行道。
+  [POSTAL.brick, 'brick'],
+  [POSTAL.cream, 'plaster'],
+  [POSTAL.green, 'paintedMetal'],
+  [POSTAL.walkway, 'concrete'],
+  // 街道：水泥人行道、磚矮牆、草地（粉刷的顆粒當草皮的雜色）、店面磚／粉刷／水泥混用、帆布雨遮。
+  [STREET.sidewalk, 'concrete'],
+  [STREET.parkWall, 'brick'],
+  [STREET.grass, 'plaster'],
+  [0x8c4a3c, 'brick'],
+  [0xcdbf9f, 'plaster'],
+  [0x5f7480, 'plaster'],
+  [0x9b8468, 'brick'],
+  [0x6f7f5c, 'concrete'],
+  [0xa1543a, 'brick'],
+  [0x7a6a8a, 'plaster'],
+  [0x8f2a22, 'plastic'],
+  [0x27566b, 'plastic'],
+  [0xb9772a, 'plastic'],
+  [0x3b3a36, 'plastic'],
+  // 窄巷：塗裝鋼的後門、瓦楞捲門、鍍鋅的屋頂設備。
+  ...ALLEY.doors.map((color) => [color, 'paintedMetal'] as const),
+  [ALLEY.rollUp, 'corrugated'],
+  [ALLEY.rollUpRib, 'galvanized'],
+  [ALLEY.roofUnit, 'galvanized'],
+]);
+
+/** 這一塊方塊是什麼表面：平貼地面的標線是磨損的漆，其餘依顏色；沒登記的顏色當粉刷牆。 */
+export function slabSurface(kind: EnvironmentSlab['kind'], color: number): SurfaceId {
+  if (kind === 'flat') {
+    return 'wornPaint';
+  }
+  return SLAB_SURFACES.get(color) ?? 'plaster';
 }
 
 /** 裝飾背景車與別的車（另一台背景車、關卡 JSON 的 parked_car）、路燈桿之間至少留這麼寬的空隙（英尺）。 */

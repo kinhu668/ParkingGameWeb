@@ -126,7 +126,7 @@ Surf concrete(vec2 uv) {
   float mott = fbm(uv, 4, 5, 10u);
   float fine = fbm(uv, 96, 3, 11u);
   vec3 pores = cells(uv, 56, 12u);
-  float pore = smoothstep(0.16, 0.06, pores.x) * step(0.72, pores.y);
+  float pore = smoothstep(0.13, 0.05, pores.x) * step(0.8, pores.y);
   vec2 g = abs(fract(uv * 2.0 + 0.5) - 0.5) * 0.5;
   float joint = smoothstep(0.0035, 0.0012, min(g.x, g.y));
   float stain = smoothstep(0.52, 0.75, fbm(uv, 3, 4, 13u));
@@ -198,8 +198,8 @@ Surf galvanized(vec2 uv) {
   s.tint = 0.86 + 0.22 * sp.y + 0.1 * (sp2.y - 0.5) + 0.06 * (streak - 0.5);
   s.rough = 0.8 + 0.5 * sp2.y + 0.2 * (streak - 0.5);
   s.metal = 1.0 - 0.3 * white;
-  s.over = vec3(0.7, 0.72, 0.72);
-  s.cov = 0.5 * white;
+  s.over = vec3(0.6, 0.62, 0.62);
+  s.cov = 0.3 * white;
   s.h = 0.0004 * sp.y;
   return s;
 }
@@ -286,12 +286,17 @@ Surf tire(vec2 uv) {
 // 車漆：清漆底下的金屬片（每一片的法線各自歪一點、亮度略有不同）＋很淡的橘皮。
 Surf carPaint(vec2 uv) {
   Surf s = blank();
+  // 兩層金屬片：2 mm 的細片（近看才分得出來）＋少數 6 mm 的大片（幾步之外仍看得到零星的亮點）。
   vec3 fl = cells(uv, 110, 100u);
   float flake = smoothstep(0.5, 0.25, fl.x);
   float a = fl.y * 6.2831853;
-  s.nrm = flake * vec2(cos(a), sin(a)) * (0.25 + 0.75 * fract(fl.y * 7.31));
-  s.tint = 1.0 + 0.1 * flake * (fract(fl.y * 13.7) - 0.4);
-  s.rough = 1.0 + 0.25 * flake * (fract(fl.y * 3.3) - 0.5);
+  vec3 big = cells(uv, 36, 101u);
+  float bigFlake = smoothstep(0.42, 0.22, big.x) * step(0.55, big.y);
+  float b = big.y * 91.7;
+  s.nrm = flake * vec2(cos(a), sin(a)) * (0.25 + 0.75 * fract(fl.y * 7.31))
+    + 0.7 * bigFlake * vec2(cos(b), sin(b));
+  s.tint = 1.0 + 0.1 * flake * (fract(fl.y * 13.7) - 0.4) + 0.14 * bigFlake * (fract(big.y * 5.3) - 0.3);
+  s.rough = 1.0 + 0.25 * flake * (fract(fl.y * 3.3) - 0.5) - 0.2 * bigFlake;
   s.h = 0.0005 * fbm(uv, 10, 2, 102u);
   return s;
 }

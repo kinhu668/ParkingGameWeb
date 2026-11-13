@@ -27,6 +27,8 @@ import {
   OBSTACLE_TYPES,
   type ObstacleType,
 } from '../level/obstacleTypes';
+import { createScenerySurface } from '../materials/surfaceMaterial';
+import { SURFACE_SPECS, type SurfaceId } from '../materials/surfaces';
 import type { VehicleDetail } from '../render/quality';
 import { OCCLUSION_FADE_CONFIG as FADE } from '../render/renderConfig';
 import { createBinGeometry, createTrafficConeGeometry, tinted } from './lotProps';
@@ -402,6 +404,31 @@ export function createObstacleGeometry(type: ModelObstacleType): BufferGeometry 
 }
 
 const MODEL_ROUGHNESS = 0.78;
+const OBSTACLE_METALNESS_MAX = 0.45;
+
+/** 每種障礙物是什麼表面（牆另外依環境決定，見 WALL_SURFACES）。 */
+export const OBSTACLE_SURFACES: Readonly<Record<Exclude<ObstacleType, 'parked_car' | 'wall'>, SurfaceId>> = {
+  cone: 'plastic',
+  shopping_cart: 'galvanized',
+  cart_corral: 'galvanized',
+  trash_bin: 'paintedMetal',
+  dumpster: 'rustedIron',
+  mailbox: 'paintedMetal',
+  pallet: 'plaster',
+  pallet_stack: 'plaster',
+  bollard: 'paintedMetal',
+  barrier: 'plastic',
+  planter: 'concrete',
+};
+
+/** 牆（JSON 的 wall 與巷子的邊界）在各環境是什麼表面：郵局與巷子是磚，其餘是水泥。 */
+export const WALL_SURFACES: Readonly<Record<LevelEnvironment, SurfaceId>> = {
+  open_lot: 'concrete',
+  warehouse_club: 'concrete',
+  post_office: 'brick',
+  city_street: 'concrete',
+  narrow_alley: 'brick',
+};
 
 /** 障礙物在世界座標的矩陣：模型的外框（本地 X、Z）縮放成碰撞盒的寬與長，立在地面上。 */
 function obstacleMatrix(obstacle: ObbFt, geometry: BufferGeometry, heightScale = 1): Matrix4 {
@@ -499,11 +526,26 @@ export function createObstacleMeshes(source: ObstacleSource, detail: VehicleDeta
   const group = new Group();
   group.name = 'obstacles';
   const environment = source.environment ?? 'open_lot';
-  const material = new MeshStandardMaterial({
-    color: 0xffffff,
-    roughness: MODEL_ROUGHNESS,
-    vertexColors: true,
-  });
+  // 每種障礙物一種表面（各部分的顏色仍在頂點顏色裡）；同一種表面共用一個材質。
+  const materials = new Map<SurfaceId, MeshStandardMaterial>();
+  const materialFor = (surface: SurfaceId): MeshStandardMaterial => {
+    const existing = materials.get(surface);
+    if (existing !== undefined) {
+      return existing;
+    }
+    const created = createScenerySurface(surface, {
+      color: 0xffffff,
+      roughness: MODEL_ROUGHNESS,
+      // 模型上的金屬是上了漆的：金屬度壓低，顏色才是頂點顏色，不是一面鏡子。
+      metalness: Math.min(SURFACE_SPECS[surface].metalness, OBSTACLE_METALNESS_MAX),
+      // 巷子與郵局的舊磚牆：灰縫也跟著暗，不是一格一格的白線。
+      ...(surface === 'brick' ? { overlayTint: 0.6 } : {}),
+      parameters: { vertexColors: true },
+    });
+    materials.set(surface, created);
+    return created;
+  };
+  const wallSurface = WALL_SURFACES[environment];
 
   const indicesByType = new Map<ObstacleType, number[]>();
   source.obstaclesFt.forEach((obstacle, index) => {
@@ -546,7 +588,11 @@ export function createObstacleMeshes(source: ObstacleSource, detail: VehicleDeta
     }
     const geometry = createObstacleGeometry(type);
     geometry.computeBoundingBox();
-    const mesh = new InstancedMesh(geometry, material, indices.length);
+    const mesh = new InstancedMesh(
+      geometry,
+      materialFor(type === 'wall' ? wallSurface : OBSTACLE_SURFACES[type]),
+      indices.length,
+    );
     const wall = WALL_STYLES[environment];
     // 夠高、擋得住跟車鏡頭的才登記（牆、子母車、疊高的棧板、回收架…）；交通錐、推車這些矮的不淡。
     const heightM = (geometry.boundingBox?.max.y ?? 0) * (type === 'wall' ? ftToM(wall.heightFt) : 1);
@@ -593,8 +639,9 @@ export function createObstacleMeshes(source: ObstacleSource, detail: VehicleDeta
     const style = BOUNDS_STYLES[environment];
     const geometry = createObstacleGeometry('wall');
     const boxes = boundsVisualBoxesFt(source.boundsFt, style.depthFt);
-    const mesh = new InstancedMesh(geometry, material, boxes.length);
+    // 矮路緣是水泥；巷子的邊界是兩旁建築的牆，與 JSON 的牆同一種表面。
     const tall = style.heightFt > 10;
+    const mesh = new InstancedMesh(geometry, materialFor(tall ? wallSurface : 'concrete'), boxes.length);
     boxes.forEach((wallBox, instance) => {
       const variation = BOUNDS_SIDE_VARIATION[instance];
       const heightFt = style.heightFt * (tall ? (variation?.height ?? 1) : 1);

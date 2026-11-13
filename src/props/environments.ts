@@ -18,6 +18,8 @@ import {
 } from 'three';
 import { forward, headingToRotationY } from '../core/heading';
 import { ftToM } from '../core/units';
+import { createScenerySurface } from '../materials/surfaceMaterial';
+import type { SurfaceId } from '../materials/surfaces';
 import type { ParkingSpot } from '../level/parkingJudge';
 import type { PropsQualitySettings } from '../render/quality';
 import {
@@ -25,14 +27,13 @@ import {
   OCCLUSION_FADE_CONFIG as FADE,
   SPOT_MARKING_CONFIG,
 } from '../render/renderConfig';
-import type { EnvironmentLayout } from './environmentLayout';
+import type { EnvironmentLayout, EnvironmentSlab } from './environmentLayout';
 import { createSpotFrame } from './lotEdges';
 import { createLotProps } from './lotProps';
 import { occluderBox, registerOccluders, type Occluder } from './occluders';
 import { createCappedShadowDepthMaterial } from './shadowReach';
 import { createSignMesh } from './signs';
 
-const SLAB_ROUGHNESS = 0.9;
 /** 方向箭頭：比標線再高一點點，不與車位的漆共面。 */
 const ARROW_LIFT_M = SPOT_MARKING_CONFIG.liftM * 1.5;
 const ARROW_OPACITY = 0.55;
@@ -108,16 +109,24 @@ export function createEnvironment(
     ),
   );
 
-  // 立體的方塊與平貼地面的標線：一個 InstancedMesh。
+  // 立體的方塊與平貼地面的標線：每種表面（水泥、磚、塗裝鋼、粉刷、磨損的漆…）一個 InstancedMesh，
+  // 一個環境只有四到六種。全部叫 environmentSlabs；含最高那一塊（主建築）的排第一個。
   const boxes = layout.slabs.filter((slab) => slab.facingRad === undefined);
-  let slabMesh: InstancedMesh | undefined;
-  if (boxes.length > 0) {
+  const tallest = (surface: SurfaceId): number =>
+    Math.max(...boxes.filter((slab) => slab.surface === surface).map((slab) => slab.maxY));
+  const boxSurfaces = [...new Set(boxes.map((slab) => slab.surface))].sort(
+    (first, second) => tallest(second) - tallest(first),
+  );
+  /** 每一塊方塊畫在哪一個網格的第幾個實例（遮擋半透明要用）。 */
+  const slabParts = new Map<EnvironmentSlab, { mesh: InstancedMesh; index: number }>();
+  for (const surface of boxSurfaces) {
+    const members = boxes.filter((slab) => slab.surface === surface);
     const mesh = new InstancedMesh(
       new BoxGeometry(1, 1, 1),
-      new MeshStandardMaterial({ color: 0xffffff, roughness: SLAB_ROUGHNESS }),
-      boxes.length,
+      createScenerySurface(surface, { color: 0xffffff }),
+      members.length,
     );
-    boxes.forEach((slab, index) => {
+    members.forEach((slab, index) => {
       mesh.setMatrixAt(
         index,
         new Matrix4()
@@ -129,26 +138,34 @@ export function createEnvironment(
           .scale(new Vector3(slab.maxX - slab.minX, slab.maxY - slab.minY, slab.maxZ - slab.minZ)),
       );
       mesh.setColorAt(index, new Color(slab.color));
+      slabParts.set(slab, { mesh, index });
     });
     mesh.instanceMatrix.needsUpdate = true;
     mesh.name = 'environmentSlabs';
+    mesh.userData.surface = surface;
     // 主建築、雨棚、招牌柱、人行道都投影。太陽很低時影子的長度有上限（shadowReach.ts），
-    // 樓前的地面有影子，但不會把整個場地罩進影子裡。
-    mesh.castShadow = true;
-    if (Number.isFinite(buildingShadowHeightM)) {
+    // 樓前的地面有影子，但不會把整個場地罩進影子裡。平貼地面的標線不投影（薄到沒有影子）。
+    mesh.castShadow = surface !== 'wornPaint';
+    if (mesh.castShadow && Number.isFinite(buildingShadowHeightM)) {
       mesh.customDepthMaterial = createCappedShadowDepthMaterial(buildingShadowHeightM);
     }
     mesh.receiveShadow = true;
     group.add(mesh);
-    slabMesh = mesh;
   }
 
   // 貼在牆面上的薄片（門、捲門、窗）：只有朝外那一面的平面。吃光的（門）與不吃光的（窗、門燈）各一個 InstancedMesh。
   const lit = LOT.buildingWindowLitColor;
   const dark = LOT.buildingWindowDarkColor;
-  for (const glowing of [false, true]) {
-    const decals = layout.slabs.filter(
-      (slab) => slab.facingRad !== undefined && (slab.lit !== undefined) === glowing,
+  const thin = layout.slabs.filter((slab) => slab.facingRad !== undefined);
+  // 門與捲門依表面分（塗裝鋼、瓦楞）；亮著的窗與門燈（lit）是不吃光的那一個，維持原樣。
+  const decalKinds: readonly (SurfaceId | 'glow')[] = [
+    ...new Set(thin.filter((slab) => slab.lit === undefined).map((slab) => slab.surface)),
+    'glow',
+  ];
+  for (const kind of decalKinds) {
+    const glowing = kind === 'glow';
+    const decals = thin.filter((slab) =>
+      glowing ? slab.lit !== undefined : slab.lit === undefined && slab.surface === kind,
     );
     if (decals.length === 0) {
       continue;
@@ -157,7 +174,7 @@ export function createEnvironment(
       new PlaneGeometry(1, 1),
       glowing
         ? new MeshBasicMaterial({ color: 0xffffff })
-        : new MeshStandardMaterial({ color: 0xffffff, roughness: SLAB_ROUGHNESS }),
+        : createScenerySurface(kind, { color: 0xffffff }),
       decals.length,
     );
     decals.forEach((slab, index) => {
@@ -206,30 +223,30 @@ export function createEnvironment(
 
   // 擋到跟車鏡頭時淡掉的方塊：立體、夠高的每一塊各自淡（人行道、路緣、地上的標線不淡）。
   // 招牌柱：桿子與牌面一起淡。
-  if (slabMesh !== undefined) {
-    const mesh = slabMesh;
-    const occluders: Occluder[] = [];
-    boxes.forEach((slab, index) => {
-      if (slab.kind !== 'solid' || slab.maxY < FADE.minHeightM) {
-        return;
-      }
-      const poleSign = layout.poleSigns.find((entry) => layout.slabs[entry.slab] === slab);
-      const signMesh = poleSign === undefined ? undefined : signMeshes[poleSign.sign];
-      occluders.push({
-        boxes: [
-          occluderBox(
-            {
-              x: (slab.minX + slab.maxX) / 2,
-              y: (slab.minY + slab.maxY) / 2,
-              z: (slab.minZ + slab.maxZ) / 2,
-            },
-            { x: slab.maxX - slab.minX, y: slab.maxY - slab.minY, z: slab.maxZ - slab.minZ },
-          ),
-        ],
-        parts: [{ mesh, index }],
-        ...(signMesh === undefined ? {} : { meshes: [signMesh] }),
-      });
+  const occluders: Occluder[] = [];
+  for (const slab of boxes) {
+    const part = slabParts.get(slab);
+    if (part === undefined || slab.kind !== 'solid' || slab.maxY < FADE.minHeightM) {
+      continue;
+    }
+    const poleSign = layout.poleSigns.find((entry) => layout.slabs[entry.slab] === slab);
+    const signMesh = poleSign === undefined ? undefined : signMeshes[poleSign.sign];
+    occluders.push({
+      boxes: [
+        occluderBox(
+          {
+            x: (slab.minX + slab.maxX) / 2,
+            y: (slab.minY + slab.maxY) / 2,
+            z: (slab.minZ + slab.maxZ) / 2,
+          },
+          { x: slab.maxX - slab.minX, y: slab.maxY - slab.minY, z: slab.maxZ - slab.minZ },
+        ),
+      ],
+      parts: [part],
+      ...(signMesh === undefined ? {} : { meshes: [signMesh] }),
     });
+  }
+  if (occluders.length > 0) {
     registerOccluders(group, occluders);
   }
   group.add(createSpotArrow(spot));
