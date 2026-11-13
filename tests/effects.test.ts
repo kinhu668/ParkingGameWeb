@@ -695,6 +695,34 @@ describe('效果的畫質級別 createSceneEffects', () => {
     expect(positions.array).not.toEqual(still);
   });
 
+  test('centerRainOn：雨絲改以指定的點（定格的鏡頭）為中心；下一次 update 回到跟著車；沒下雨不出錯', () => {
+    const options = { rainStreaks: 120, leaves: false, dust: false };
+    const effects = createSceneEffects(HIGH, SPOT, START, DEFAULT_SEED, options);
+    const positions = (effects.root.getObjectByName('rain') as LineSegments).geometry.getAttribute('position');
+    effects.update(poseAt(0, 0), 0);
+    const aroundCar = positions.array.slice();
+
+    // 鏡頭在 200 m 外：以車為中心的那一箱雨一條都落不到那裡。
+    effects.centerRainOn(200, -150);
+    for (let index = 0; index < positions.count; index += 2) {
+      expect(Math.abs(positions.getX(index) - 200)).toBeLessThanOrEqual(RAIN_CONFIG.boxSizeM / 2);
+      expect(Math.abs(positions.getZ(index) + 150)).toBeLessThanOrEqual(RAIN_CONFIG.boxSizeM / 2);
+    }
+    expect(positions.array).not.toEqual(aroundCar);
+    // 同一個點、同一個時間：位置相同（定格可重現）。
+    const aroundCamera = positions.array.slice();
+    effects.centerRainOn(200, -150);
+    expect(positions.array).toEqual(aroundCamera);
+
+    effects.update(poseAt(0, 0), 0);
+    expect(positions.array).toEqual(aroundCar);
+
+    const dry = createSceneEffects(HIGH, SPOT, START, DEFAULT_SEED);
+    expect(() => {
+      dry.centerRainOn(5, 5);
+    }).not.toThrow();
+  });
+
   test('?fx=off（不要落葉）：落葉不建立，其餘照常', () => {
     const effects = createSceneEffects(HIGH, SPOT, START, DEFAULT_SEED, { leaves: false });
     expect(effects.root.children.map((child) => child.name).sort()).toEqual(['dust', 'tireMarks']);

@@ -148,6 +148,11 @@ export interface GameScene {
    */
   showWeatherAt(timeSeconds: number): void;
   /**
+   * 定格截圖用：雨絲改以 (x, z)（鏡頭的位置）為中心，而不是車。鏡頭離車很遠的定格（車位旁的低角度、車位正上方的俯視）
+   * 才看得到雨。下一次 update 又回到跟著車。
+   */
+  centerRainOn(x: number, z: number): void;
+  /**
    * 目前畫的是第幾道閃電的電弧（0 = 第一道）；沒有在閃、沒有閃電的天氣、`?fx=off` 都是 undefined。唯讀；e2e 與除錯用。
    */
   lightningStrike(): number | undefined;
@@ -698,6 +703,9 @@ export function createGameScene(
     showWeatherAt(timeSeconds) {
       weatherSeconds = Math.max(weatherSeconds, timeSeconds);
       showLightning();
+    },
+    centerRainOn(x, z) {
+      effects.centerRainOn(x, z);
     },
     lightningStrike() {
       const shown = arcs?.shown();

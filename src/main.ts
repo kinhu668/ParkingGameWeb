@@ -433,6 +433,8 @@ function runCameraShot(
   // 這一張定格裡畫的是第幾道閃電的電弧（沒有在閃是 none）：寫在 <html data-lightning>，方便除錯與 e2e 確認。
   document.documentElement.dataset.lightning = String(gameScene.lightningStrike() ?? 'none');
   const camera = createPresetCamera(preset, vehicle.x, vehicle.z, spot);
+  // 雨絲平常跟著車；定格的鏡頭可能離車很遠（車位旁、車位正上方），改成以鏡頭為中心才看得到雨。
+  gameScene.centerRainOn(camera.position.x, camera.position.z);
 
   const draw = (): void => {
     pipeline.render(gameScene.scene, camera);

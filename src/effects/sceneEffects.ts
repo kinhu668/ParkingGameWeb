@@ -19,6 +19,12 @@ export interface SceneEffects {
    */
   update(pose: VehiclePose, frameSeconds: number): void;
   /**
+   * 把雨絲的長方體改以 (x, z) 為中心（平常跟著車）。定格截圖用：鏡頭離車很遠時（`?cam=spot_low`、`?cam=top` 而車還在起點），
+   * 以車為中心的那一箱雨落不到鏡頭前面，畫面上看不出在下雨。雨絲釘在世界座標上，換中心只是換「畫哪一塊的雨」。
+   * 下一次 update 又回到跟著車。沒有下雨就什麼都不做。
+   */
+  centerRainOn(x: number, z: number): void;
+  /**
    * 不畫灰塵地跑 draw（跑完恢復）。倒車輔助層的小畫面用：後視鏡沿著車身往後看，後輪揚起的灰塵就在視線正中間，
    * 窄視角下幾顆半透明的粒子就蓋滿整個畫面；而且 three 用主畫布的高度算粒子的像素大小，
    * 畫進小的離屏緩衝區時粒子會大上好幾倍。小畫面是看路用的，不畫這個裝飾效果。
@@ -101,6 +107,9 @@ export function createSceneEffects(
       dust?.update(pose, frameSeconds);
       leaves?.setTime(elapsedSeconds);
       rain?.update(elapsedSeconds, pose.x, pose.z);
+    },
+    centerRainOn(x, z) {
+      rain?.update(elapsedSeconds, x, z);
     },
     drawWithoutDust(draw) {
       if (dust === undefined || !dust.points.visible) {
