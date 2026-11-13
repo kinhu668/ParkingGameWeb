@@ -38,6 +38,7 @@ import { vehicleOnRouteAt } from './level/levelRoutes';
 import { PROTOTYPE_WORLD, type LevelDefinition } from './level/levelSchema';
 import { recordResult } from './level/progress';
 import { PROTOTYPE_LEVEL } from './level/prototypeLayout';
+import type { SpotBeaconSnapshot } from './props/spotBeacon';
 import { stepsToSeconds } from './level/scoring';
 import {
   restartSession,
@@ -78,6 +79,8 @@ declare global {
       /** 這一局的關卡 id。 */
       readonly levelId: string;
       readonly snapshot: () => SessionSnapshot;
+      /** 目標車位上方的天空箭頭：位置（ft）、不透明度、有沒有在畫。 */
+      readonly spotBeacon: () => SpotBeaconSnapshot;
     };
   }
 }
@@ -228,6 +231,7 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
   window.__parkingGame = Object.freeze({
     levelId: level.id,
     snapshot: () => sessionSnapshot(session),
+    spotBeacon: () => gameScene.spotBeacon(),
   });
 
   function frame(nowMs: number): void {
@@ -336,6 +340,8 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
       isChaseView(gameCamera.view()),
       frameSeconds,
     );
+    // 目標車位上方的天空箭頭：停妥後淡出，重來後回來（暫停時也照真實時間淡）。
+    gameScene.updateSpotBeacon(session.parked, gameCamera.camera.position, frameSeconds);
     pipeline.render(gameScene.scene, gameCamera.camera);
     hud.update(session, gearbox);
     // 觸控層只在能開車的時候顯示：暫停、結算、按鍵設定開著時收起來，不擋面板上的按鈕。

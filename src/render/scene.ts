@@ -36,6 +36,7 @@ import {
   createObstacleMeshes,
   type ObstacleSource,
 } from '../props/obstacleMeshes';
+import { createSpotBeacon, type SpotBeaconSnapshot } from '../props/spotBeacon';
 import { createSpotMarkings } from '../props/spotMarkings';
 import type { VehiclePose } from '../vehicle/bicycleModel';
 import { createCarHeadlights } from '../vehicle/carHeadlights';
@@ -103,9 +104,20 @@ export interface GameScene {
    * 用「倒車輔助層的小畫面該看到的場景」跑 draw（跑完恢復）：
    * - 沒有遮擋淡出：那些鏡頭不是跟車鏡頭，看到的鄰車與燈柱不該是半透明的（淡掉的擺設暫時放回不透明）。
    * - 沒有車輪揚起的灰塵：它就在後視鏡的視線上，會把整個小畫面蓋成一片白霧（見 SceneEffects.drawWithoutDust）。
+   * - 沒有目標車位上方的天空箭頭：後視鏡與倒後鏡頭裡吊在天上的箭頭只會擋路（見 SpotBeacon.drawHidden）。
    * 倒車燈與車尾的光斑照常畫。
    */
   drawAssistViews(draw: () => void): void;
+  /**
+   * 目標車位上方的天空箭頭的顯示狀態走一幀：停妥後淡出、重來後回來；俯視而且靠近車位時淡成看得穿。
+   * 每個畫面幀、鏡頭就位之後呼叫。沒呼叫過（定格截圖、關卡選擇的背景）就是完全顯示。
+   * @param parked 這一局是不是已經停妥（session.parked）
+   * @param cameraPosition 鏡頭位置（世界座標）
+   * @param frameSeconds 距離上一幀多久
+   */
+  updateSpotBeacon(parked: boolean, cameraPosition: Point3, frameSeconds: number): void;
+  /** 天空箭頭目前的位置與不透明度（唯讀；e2e 與除錯用）。 */
+  spotBeacon(): SpotBeaconSnapshot;
 }
 
 /** 場景的燈光：半球補光 + 會投影的太陽。 */
@@ -400,6 +412,11 @@ export function createGameScene(
     scene.add(createObstacleMeshes(level, quality.props.meshDetail));
   }
 
+  // 目標車位上方的天空箭頭：每一關都有（原型關沒有環境模組，所以不能掛在 createEnvironment 裡）。
+  // 它是玩法標記，`?fx=off` 也顯示，只是不浮動、不自轉。加在遮擋半透明收集擺設之前也沒關係：它沒有登記。
+  const beacon = createSpotBeacon(spot, ambientFx);
+  scene.add(beacon.root);
+
   const car = createCarMesh(quality.vehicleDetail);
   scene.add(car.root);
   // 頭燈照地：掛在車底下，跟著車走、跟著車頭轉。只有遊戲場景的車有，展示台的沒有。
@@ -440,17 +457,24 @@ export function createGameScene(
       occlusion?.update(cameraPosition, pose, enabled, frameSeconds);
     },
     drawAssistViews(draw) {
-      effects.drawWithoutDust(() => {
-        if (occlusion === undefined) {
-          draw();
-        } else {
-          occlusion.drawUnfaded(draw);
-        }
+      beacon.drawHidden(() => {
+        effects.drawWithoutDust(() => {
+          if (occlusion === undefined) {
+            draw();
+          } else {
+            occlusion.drawUnfaded(draw);
+          }
+        });
       });
     },
+    updateSpotBeacon(parked, cameraPosition, frameSeconds) {
+      beacon.show(parked, cameraPosition, frameSeconds);
+    },
+    spotBeacon: () => beacon.snapshot(),
     update(pose, frameSeconds = 0) {
       updateCarMesh(car, pose);
       effects.update(pose, frameSeconds);
+      beacon.advance(frameSeconds);
       if (lightning !== undefined) {
         weatherSeconds += frameSeconds;
         const flash = lightning.flashAt(weatherSeconds);
