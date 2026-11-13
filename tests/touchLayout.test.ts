@@ -1,6 +1,13 @@
 // 觸控層的版面：每種手機／平板畫面大小下，七個控制項都在畫面內、夠大、互不重疊，而且不壓到倒車輔助的四個小窗。
 import { describe, expect, test } from 'vitest';
-import { ASSIST_VIEW_IDS, assistLayout, type Rect } from '../src/core/assistLayout';
+import {
+  ASSIST_VIEW_ASPECT,
+  ASSIST_VIEW_IDS,
+  assistLayout,
+  assistViewScale,
+  isPhoneViewport,
+  type Rect,
+} from '../src/core/assistLayout';
 import { TOUCH_CONTROL_IDS, touchLayout } from '../src/core/touchLayout';
 
 /** 常見的畫面大小（CSS 像素）：手機橫向、手機直向、平板、桌機。 */
@@ -126,5 +133,87 @@ describe('assistLayout 在很窄的畫面', () => {
     for (const [width, height] of LANDSCAPE) {
       expect(assistLayout(width, height).bird.y).toBe(92);
     }
+  });
+});
+
+/** 上一版（縮小之前）的小窗大小：上排高 = 畫面高 × 0.27（90–230），後視鏡寬 = 畫面寬 × 0.17（100–250），都受畫面寬度限制。 */
+function previousAssistSize(width: number, height: number): { rowHeight: number; mirrorWidth: number } {
+  const usable = width - 2 * 16;
+  const rowAspect = ASSIST_VIEW_ASPECT.bird + ASSIST_VIEW_ASPECT.rear;
+  return {
+    rowHeight: Math.floor(Math.min(Math.min(Math.max(height * 0.27, 90), 230), (usable - 10) / rowAspect)),
+    mirrorWidth: Math.round(Math.min(Math.min(Math.max(width * 0.17, 100), 250), (usable - 10) / 2)),
+  };
+}
+
+describe('手機上的輔助小窗比較小', () => {
+  const PHONES: readonly (readonly [number, number])[] = [
+    [844, 390],
+    [390, 844],
+    [667, 375],
+    [932, 430],
+    [360, 740],
+    [430, 932],
+  ];
+  const DESKTOPS: readonly (readonly [number, number])[] = [
+    [1280, 720],
+    [1920, 1080],
+    [1024, 768],
+    [768, 1024],
+  ];
+
+  test('看短邊：手機橫向與直向都算手機，平板與桌面不算', () => {
+    for (const [width, height] of PHONES) {
+      expect(isPhoneViewport(width, height), `${width}×${height}`).toBe(true);
+      expect(assistViewScale(width, height)).toBeLessThanOrEqual(0.7);
+    }
+    for (const [width, height] of DESKTOPS) {
+      expect(isPhoneViewport(width, height), `${width}×${height}`).toBe(false);
+      expect(assistViewScale(width, height)).toBe(1);
+    }
+  });
+
+  test.each(PHONES)('手機 %i×%i：後視鏡與倒後鏡頭每一邊至少少 30%，但仍看得清楚', (width, height) => {
+    const before = previousAssistSize(width, height);
+    const assist = assistLayout(width, height);
+    // 倒後鏡頭與鳥瞰（上排同高）。
+    expect(assist.rear.height).toBeLessThanOrEqual(before.rowHeight * 0.7);
+    expect(assist.bird.height).toBe(assist.rear.height);
+    expect(assist.rear.width).toBeLessThanOrEqual(before.rowHeight * ASSIST_VIEW_ASPECT.rear * 0.7);
+    // 左右後視鏡。
+    expect(assist.mirrorLeft.width).toBeLessThanOrEqual(before.mirrorWidth * 0.7);
+    expect(assist.mirrorRight.width).toBe(assist.mirrorLeft.width);
+    // 面積不到原本的一半。
+    expect(assist.rear.width * assist.rear.height).toBeLessThan(
+      before.rowHeight * ASSIST_VIEW_ASPECT.rear * before.rowHeight * 0.5,
+    );
+    // 不是小點：倒後鏡頭至少 100×60、後視鏡至少 64×42，長寬比不變。
+    expect(assist.rear.width).toBeGreaterThanOrEqual(100);
+    expect(assist.rear.height).toBeGreaterThanOrEqual(60);
+    expect(assist.mirrorLeft.width).toBeGreaterThanOrEqual(64);
+    expect(assist.mirrorLeft.height).toBeGreaterThanOrEqual(42);
+    for (const id of ASSIST_VIEW_IDS) {
+      expect(Math.abs(assist[id].width / assist[id].height - ASSIST_VIEW_ASPECT[id]), id).toBeLessThan(0.03);
+    }
+  });
+
+  test.each(DESKTOPS)('桌面／平板 %i×%i：維持原本的大小', (width, height) => {
+    const before = previousAssistSize(width, height);
+    const assist = assistLayout(width, height);
+    expect(assist.rear.height).toBe(before.rowHeight);
+    expect(assist.mirrorLeft.width).toBe(before.mirrorWidth);
+  });
+
+  test('1280×720 的小窗是 194 px 高的上排與 218 px 寬的後視鏡（沒有被一起縮小）', () => {
+    const assist = assistLayout(1280, 720);
+    expect(assist.rear.height).toBe(194);
+    expect(assist.rear.width).toBe(310);
+    expect(assist.mirrorLeft.width).toBe(218);
+  });
+
+  test('小窗變小之後，手機橫向的方向盤與踏板有更多空間（不比原本小）', () => {
+    const { wheel, gas } = touchLayout(844, 390);
+    expect(wheel.width).toBeGreaterThanOrEqual(143);
+    expect(gas.height).toBeGreaterThanOrEqual(143);
   });
 });

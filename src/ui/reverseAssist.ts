@@ -5,6 +5,7 @@
 import {
   ASSIST_VIEW_IDS,
   assistLayout,
+  isPhoneViewport,
   type AssistLayout,
   type AssistViewId,
 } from '../core/assistLayout';
@@ -167,6 +168,8 @@ export function createReverseAssist(
     layoutWidth = canvas.clientWidth;
     layoutHeight = canvas.clientHeight;
     const next = assistLayout(layoutWidth, layoutHeight);
+    // 手機上小窗比較小：名稱與警告的字級跟著縮（樣式看 data-compact）。
+    container.dataset.compact = String(isPhoneViewport(layoutWidth, layoutHeight));
     for (const view of ASSIST_VIEW_IDS) {
       const rect = next[view];
       const { style } = frames[view];

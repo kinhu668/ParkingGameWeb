@@ -1035,6 +1035,33 @@ body {
   color: #ffd76a;
 }
 
+/* 手機上輔助小窗比較小（assistLayout.ts 的 phoneScale）：名稱與警告的字跟著縮。 */
+.assist[data-compact='true'] .assist-label {
+  left: 3px;
+  bottom: 2px;
+  padding: 0 4px;
+  font-size: 9px;
+}
+
+/* 小窗只有一百多像素寬：警告只留英文那一行（一行放得下的字級），中文那一行與後視鏡的名稱不顯示
+   （會蓋掉大半個畫面；左右兩塊一看就知道是後視鏡）。 */
+.assist[data-compact='true'] .assist-warning {
+  padding: 1px 2px;
+  font-size: 7px;
+  line-height: 1.2;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.assist[data-compact='true'] #assist-warning-local,
+.assist[data-compact='true'] .assist-view[data-view^='mirror'] .assist-label {
+  display: none;
+}
+
+.assist[data-compact='true'] .assist-guide {
+  stroke-width: 2;
+}
+
 /* 觸控層開著：左下角是方向盤，鍵盤的操作說明收起來（按鍵設定仍可從暫停面板進去）；
    鏡頭名稱往上讓，不壓在暫停／重來鍵上。 */
 #hud[data-touch='on'] .hud-controls {

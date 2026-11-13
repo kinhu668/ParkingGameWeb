@@ -45,6 +45,14 @@ const LAYOUT = {
   mirrorMaxWidthPx: 250,
   /** 後視鏡中心的高度（畫面高的比例）。 */
   mirrorCenterYFraction: 0.44,
+  /**
+   * 手機（畫面短邊不超過 phoneShortSideMaxPx）：四個小窗照上面的算法算完再乘這個比例，
+   * 每一邊少三分之一（面積不到一半），把畫面留給車；再小就看不清楚倒後鏡頭的距離帶。
+   */
+  phoneShortSideMaxPx: 500,
+  phoneScale: 0.66,
+  /** 手機上後視鏡最窄也有這麼寬（直向時寬度已經在下限，再乘比例會太小）。 */
+  phoneMirrorMinWidthPx: 70,
 } as const;
 
 function clamp(value: number, min: number, max: number): number {
@@ -52,10 +60,25 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 /**
+ * 這個畫面大小算不算手機（直向、橫向都算）：看短邊。手機的短邊是 360–430 px，
+ * 平板與桌面視窗（768 以上）不算，所以 1280×720 的小窗維持原本的大小。
+ */
+export function isPhoneViewport(widthPx: number, heightPx: number): boolean {
+  return Math.min(widthPx, heightPx) <= LAYOUT.phoneShortSideMaxPx;
+}
+
+/** 四個小窗的縮放比例：手機是 phoneScale，其餘是 1。 */
+export function assistViewScale(widthPx: number, heightPx: number): number {
+  return isPhoneViewport(widthPx, heightPx) ? LAYOUT.phoneScale : 1;
+}
+
+/**
  * 依畫面大小排四個視口：鳥瞰與倒後鏡頭在上方並排置中，左右後視鏡貼在左右兩邊。
- * 畫面很窄時上排整排等比縮小；後視鏡若會壓到上排就往下讓。座標都是整數像素。
+ * 畫面很窄時上排整排等比縮小；後視鏡若會壓到上排就往下讓。手機上四個小窗再整體縮小（assistViewScale）。
+ * 座標都是整數像素。
  */
 export function assistLayout(widthPx: number, heightPx: number): AssistLayout {
+  const scale = assistViewScale(widthPx, heightPx);
   const usableWidthPx = Math.max(widthPx - 2 * LAYOUT.marginPx, 1);
   const topRowYPx = widthPx <= LAYOUT.narrowWidthPx ? LAYOUT.narrowTopRowYPx : LAYOUT.topRowYPx;
 
@@ -67,7 +90,7 @@ export function assistLayout(widthPx: number, heightPx: number): AssistLayout {
     LAYOUT.topRowMaxHeightPx,
   );
   const rowHeightPx = Math.max(
-    Math.floor(Math.min(wantedHeightPx, (usableWidthPx - LAYOUT.gapPx) / rowAspect)),
+    Math.floor(Math.min(wantedHeightPx, (usableWidthPx - LAYOUT.gapPx) / rowAspect) * scale),
     1,
   );
   const birdWidthPx = Math.max(Math.round(rowHeightPx * ASSIST_VIEW_ASPECT.bird), 1);
@@ -75,11 +98,14 @@ export function assistLayout(widthPx: number, heightPx: number): AssistLayout {
   const rowX = Math.round((widthPx - (birdWidthPx + LAYOUT.gapPx + rearWidthPx)) / 2);
 
   // 後視鏡：左右各一塊。
+  const fullMirrorWidthPx = Math.min(
+    clamp(widthPx * LAYOUT.mirrorWidthFraction, LAYOUT.mirrorMinWidthPx, LAYOUT.mirrorMaxWidthPx),
+    (usableWidthPx - LAYOUT.gapPx) / 2,
+  );
   const mirrorWidthPx = Math.round(
-    Math.min(
-      clamp(widthPx * LAYOUT.mirrorWidthFraction, LAYOUT.mirrorMinWidthPx, LAYOUT.mirrorMaxWidthPx),
-      (usableWidthPx - LAYOUT.gapPx) / 2,
-    ),
+    scale < 1
+      ? Math.min(Math.max(fullMirrorWidthPx * scale, LAYOUT.phoneMirrorMinWidthPx), fullMirrorWidthPx)
+      : fullMirrorWidthPx,
   );
   const mirrorHeightPx = Math.max(Math.round(mirrorWidthPx / ASSIST_VIEW_ASPECT.mirrorLeft), 1);
   const centeredY = Math.round(heightPx * LAYOUT.mirrorCenterYFraction - mirrorHeightPx / 2);
