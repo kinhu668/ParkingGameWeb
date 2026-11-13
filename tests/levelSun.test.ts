@@ -72,8 +72,10 @@ describe('個別關卡的太陽方位 sunAzimuthDeg', () => {
     expect(facingSide(level?.startFt.headingDeg ?? 0)).toBe('e');
     const preset = shadowDirection(WEATHER_PRESETS.dusk.sun.azimuthDeg);
     expect(-preset.x).toBeLessThan(0.7);
-    expect(shadowIntoLot('w1_l06', 'dusk')).toBeGreaterThan(0.95);
-    expect(shadowDirection(sunAzimuthDeg('dusk', 'w1_l06')).x).toBeLessThan(-0.95);
+    expect(shadowIntoLot('w1_l06', 'dusk')).toBeGreaterThan(0.9);
+    expect(shadowDirection(sunAzimuthDeg('dusk', 'w1_l06')).x).toBeLessThan(-0.9);
+    // 不在正東：起點的車頭朝東，夕陽偏到樓的一側，不會正好壓在樓頂上把整個畫面洗白。
+    expect(Math.abs(sunAzimuthDeg('dusk', 'w1_l06') - 90)).toBeGreaterThanOrEqual(15);
   });
 
   test('`?weather=` 換了天氣，這兩關的方位覆寫仍然適用（樓的位置沒變）', () => {
@@ -81,7 +83,7 @@ describe('個別關卡的太陽方位 sunAzimuthDeg', () => {
       expect(sunAzimuthDeg(weather, 'w1_l03')).toBe(LEVEL_SUN_AZIMUTH_DEG.w1_l03);
       expect(sunAzimuthDeg(weather, 'w1_l06')).toBe(LEVEL_SUN_AZIMUTH_DEG.w1_l06);
       expect(shadowIntoLot('w1_l03', weather), weather).toBeGreaterThan(0.85);
-      expect(shadowIntoLot('w1_l06', weather), weather).toBeGreaterThan(0.95);
+      expect(shadowIntoLot('w1_l06', weather), weather).toBeGreaterThan(0.9);
     }
   });
 
