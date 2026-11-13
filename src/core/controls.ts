@@ -138,20 +138,63 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/** 舊版存檔裡一個已移除動作的鍵：只留能綁的字串，其他的不看（那一項本來就要丟掉，不因為它算壞檔）。 */
+function legacyCodes(value: unknown): readonly string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return (value as readonly unknown[]).filter(
+    (code): code is string => typeof code === 'string' && isBindableCode(code),
+  );
+}
+
+/** A–Z 的字母鍵：舊存檔補「切換檔位」時最後的候選，一定挑得到一個沒人用的。 */
+const LETTER_CODES: readonly string[] = Array.from(
+  { length: 26 },
+  (_, index) => `Key${String.fromCharCode('A'.charCodeAt(0) + index)}`,
+);
+
+/**
+ * 舊存檔（沒有 `gearToggle`）補上「切換檔位」的鍵，不能與已經讀進來的鍵衝突。依序挑第一個沒人用的：
+ * 預設的 R → 玩家原本掛 R 檔的鍵 → 原本掛 D 檔的鍵 → G → 字母鍵 A–Z。
+ */
+function legacyGearToggleCode(
+  saved: Readonly<Record<string, unknown>>,
+  used: ReadonlySet<string>,
+): string | undefined {
+  const candidates = [
+    ...DEFAULT_BINDINGS.gearToggle,
+    ...legacyCodes(saved.gearReverse),
+    ...legacyCodes(saved.gearDrive),
+    'KeyG',
+    ...LETTER_CODES,
+  ];
+  return candidates.find((code) => !used.has(code));
+}
+
 /**
  * 驗證 JSON.parse 出來的內容。任何一處不合格就整份不要（回傳 undefined）：
  * 少了動作、鍵數不對、不能綁的鍵、同一個鍵出現兩次都算壞檔。多出來的欄位會被丟掉。
- * 舊版存檔裡已經移除的動作 `handbrake` 就是這樣遷移的：那一項不看也不留（不算壞檔），
- * 其他綁定照舊，它原本佔的鍵空出來可以重綁；下次存檔寫的是這裡回傳的內容，不會再有它。
+ * 舊版存檔裡已經移除的動作就是這樣遷移的：那一項不留（不算壞檔），其他綁定照舊；
+ * 下次存檔寫的是這裡回傳的內容，不會再有它們。
+ * - `handbrake`：不看也不留，它原本佔的鍵空出來可以重綁。
+ * - 沒有 `gearToggle` 的存檔是「油門／倒車油門、掛 D、掛 R」那一版的：
+ *   `reverse`（倒車油門）的鍵現在是剎車，接在玩家原本的剎車鍵後面，放得下幾個算幾個（原本的剎車鍵不動）；
+ *   `gearDrive`、`gearReverse` 丟掉，補上 `gearToggle`（見 legacyGearToggleCode）。
  */
 export function parseBindings(raw: unknown): ControlBindings | undefined {
   if (!isPlainObject(raw) || raw.version !== CONTROLS_VERSION || !isPlainObject(raw.bindings)) {
     return undefined;
   }
+  const saved = raw.bindings;
+  const legacy = saved.gearToggle === undefined;
   const seen = new Set<string>();
-  const parsed: Partial<Record<ControlAction, readonly string[]>> = {};
+  const parsed: Partial<Record<ControlAction, string[]>> = {};
   for (const action of CONTROL_ACTIONS) {
-    const codes: unknown = raw.bindings[action];
+    if (legacy && action === 'gearToggle') {
+      continue;
+    }
+    const codes: unknown = saved[action];
     if (!Array.isArray(codes) || codes.length < 1 || codes.length > MAX_KEYS_PER_ACTION) {
       return undefined;
     }
@@ -164,6 +207,20 @@ export function parseBindings(raw: unknown): ControlBindings | undefined {
       accepted.push(code);
     }
     parsed[action] = accepted;
+  }
+  if (legacy) {
+    const brake = parsed.brake ?? [];
+    for (const code of legacyCodes(saved.reverse)) {
+      if (brake.length < MAX_KEYS_PER_ACTION && !seen.has(code)) {
+        seen.add(code);
+        brake.push(code);
+      }
+    }
+    const toggle = legacyGearToggleCode(saved, seen);
+    if (toggle === undefined) {
+      return undefined;
+    }
+    parsed.gearToggle = [toggle];
   }
   // 每個動作都填過了，才走得到這裡。
   return parsed as ControlBindings;

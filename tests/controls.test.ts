@@ -393,6 +393,160 @@ describe('舊存檔遷移：已移除的動作 handbrake', () => {
   });
 });
 
+describe('舊存檔遷移：倒車油門、掛 D、掛 R 改成一個切換檔位', () => {
+  /** 改成單鍵切換之前的預設表：S／↓ 是倒車油門，剎車只有逗號，Q 掛 D、R 掛 R。 */
+  const OLD_DEFAULTS = {
+    throttle: ['KeyW', 'ArrowUp'],
+    reverse: ['KeyS', 'ArrowDown'],
+    steerLeft: ['KeyA', 'ArrowLeft'],
+    steerRight: ['KeyD', 'ArrowRight'],
+    brake: ['Comma'],
+    gearDrive: ['KeyQ'],
+    gearReverse: ['KeyR'],
+    restart: ['Backspace', 'KeyT'],
+    toggleCamera: ['KeyV'],
+    pause: ['Escape'],
+  };
+  const REMOVED = ['reverse', 'gearDrive', 'gearReverse'] as const;
+
+  function parseOld(overrides: Record<string, unknown> = {}): ControlBindings | undefined {
+    return parseBindings({ version: CONTROLS_VERSION, bindings: { ...OLD_DEFAULTS, ...overrides } });
+  }
+
+  test('舊的預設表：每個鍵做的事與新的預設相同（S／↓ 併進剎車、R 切換檔位、Q 空出來）', () => {
+    const loaded = parseOld();
+    expect(loaded).toEqual({
+      ...DEFAULT_BINDINGS,
+      // 玩家原本的剎車鍵（逗號）仍是主要鍵，倒車油門的鍵接在後面。
+      brake: ['Comma', 'KeyS', 'ArrowDown'],
+      gearToggle: ['KeyR'],
+    });
+    const migrated = loaded ?? DEFAULT_BINDINGS;
+    for (const code of CONTROL_ACTIONS.flatMap((action) => DEFAULT_BINDINGS[action])) {
+      expect(actionBoundTo(migrated, code), code).toBe(actionBoundTo(DEFAULT_BINDINGS, code));
+    }
+    expect(actionBoundTo(migrated, 'KeyQ')).toBeUndefined();
+    for (const removed of REMOVED) {
+      expect(migrated).not.toHaveProperty(removed);
+    }
+  });
+
+  test('讀得進來、不算壞檔：存檔還在，玩家改過的鍵照舊', () => {
+    const legacy = { ...OLD_DEFAULTS, throttle: ['KeyI', 'ArrowUp'], restart: ['Enter', 'KeyT'] };
+    const storage = memoryStorage({ [CONTROLS_STORAGE_KEY]: stored(legacy) });
+    const loaded = loadBindings(storage);
+    expect(storage.items.has(CONTROLS_STORAGE_KEY)).toBe(true);
+    expect(loaded.throttle).toEqual(['KeyI', 'ArrowUp']);
+    expect(loaded.restart).toEqual(['Enter', 'KeyT']);
+    expect(loaded.gearToggle).toEqual(['KeyR']);
+    expect(Object.keys(loaded).sort()).toEqual([...CONTROL_ACTIONS].sort());
+  });
+
+  test('玩家自訂的剎車鍵不動：倒車油門的鍵接在後面，放得下幾個算幾個', () => {
+    expect(parseOld({ brake: ['Space'] })?.brake).toEqual(['Space', 'KeyS', 'ArrowDown']);
+    // 原本就有兩個剎車鍵：只放得下一個，↓ 空出來。
+    const two = parseOld({ brake: ['Comma', 'Space'] });
+    expect(two?.brake).toEqual(['Comma', 'Space', 'KeyS']);
+    expect(actionBoundTo(two ?? DEFAULT_BINDINGS, 'ArrowDown')).toBeUndefined();
+    // 倒車油門改綁過：跟著過來的是玩家綁的那個鍵。
+    const custom = parseOld({ reverse: ['KeyK'] });
+    expect(custom?.brake).toEqual(['Comma', 'KeyK']);
+    expect(actionBoundTo(custom ?? DEFAULT_BINDINGS, 'KeyS')).toBeUndefined();
+  });
+
+  test('R 沒人用：切換檔位補上預設的 R（即使掛 R 檔原本改綁到別的鍵）', () => {
+    const loaded = parseOld({ gearReverse: ['KeyE'], gearDrive: ['KeyG'] });
+    expect(loaded?.gearToggle).toEqual(['KeyR']);
+    expect(actionBoundTo(loaded ?? DEFAULT_BINDINGS, 'KeyE')).toBeUndefined();
+    expect(actionBoundTo(loaded ?? DEFAULT_BINDINGS, 'KeyG')).toBeUndefined();
+  });
+
+  test('R 已經綁給別的動作：不製造衝突，改用玩家原本掛 R 檔的鍵', () => {
+    const loaded = parseOld({ gearReverse: ['KeyE'], restart: ['KeyR', 'KeyT'] });
+    expect(loaded?.restart).toEqual(['KeyR', 'KeyT']);
+    expect(loaded?.gearToggle).toEqual(['KeyE']);
+    const codes = CONTROL_ACTIONS.flatMap((action) => (loaded ?? DEFAULT_BINDINGS)[action]);
+    expect(new Set(codes).size).toBe(codes.length);
+  });
+
+  test('R 被倒車油門佔著：R 變成剎車鍵，切換檔位用原本掛 R 檔的鍵', () => {
+    const loaded = parseOld({ reverse: ['KeyR'], gearReverse: ['KeyE'] });
+    expect(loaded?.brake).toEqual(['Comma', 'KeyR']);
+    expect(loaded?.gearToggle).toEqual(['KeyE']);
+  });
+
+  test('候選的順序：R → 原本掛 R 檔的鍵 → 原本掛 D 檔的鍵 → G → 字母鍵 A–Z 裡第一個沒人用的', () => {
+    const taken = { restart: ['KeyR', 'KeyT'] };
+    // 掛 R 檔那一項壞了（不看）：用掛 D 檔的鍵。
+    expect(parseOld({ ...taken, gearReverse: 'KeyE' })?.gearToggle).toEqual(['KeyQ']);
+    // 兩項都沒有：G。
+    expect(parseOld({ ...taken, gearReverse: undefined, gearDrive: undefined })?.gearToggle).toEqual(['KeyG']);
+    // G 也被佔了：A 是左轉，B 是第一個沒人用的字母。
+    expect(
+      parseOld({ ...taken, gearReverse: undefined, gearDrive: undefined, pause: ['Escape', 'KeyG'] })
+        ?.gearToggle,
+    ).toEqual(['KeyB']);
+  });
+
+  test.each<[string, unknown]>([
+    ['不是陣列', 'KeyS'],
+    ['空的', []],
+    ['不是字串', [7]],
+    ['不能綁的鍵', ['Tab']],
+    ['null', null],
+    ['沒有這一項', undefined],
+  ])('已移除動作那幾項的內容壞了（%s）：不算壞檔，只是沒有鍵可以帶過來', (_name, value) => {
+    const loaded = parseOld({ reverse: value, gearDrive: value, gearReverse: value });
+    expect(loaded).toEqual({ ...DEFAULT_BINDINGS, brake: ['Comma'], gearToggle: ['KeyR'] });
+  });
+
+  test('倒車油門的鍵與留下來的鍵重複（手改過的存檔）：那個鍵不帶過來，不算壞檔', () => {
+    const loaded = parseOld({ reverse: ['KeyW', 'ArrowDown'] });
+    expect(loaded?.throttle).toEqual(['KeyW', 'ArrowUp']);
+    expect(loaded?.brake).toEqual(['Comma', 'ArrowDown']);
+  });
+
+  test('現有的動作有問題仍然是壞檔', () => {
+    expect(parseOld({ brake: undefined })).toBeUndefined();
+    expect(parseOld({ brake: [] })).toBeUndefined();
+    expect(parseOld({ restart: ['KeyW'] })).toBeUndefined();
+    const storage = memoryStorage({ [CONTROLS_STORAGE_KEY]: stored({ ...OLD_DEFAULTS, pause: ['Tab'] }) });
+    expect(loadBindings(storage)).toBe(DEFAULT_BINDINGS);
+    expect(storage.items.has(CONTROLS_STORAGE_KEY)).toBe(false);
+  });
+
+  test('更舊的存檔同時還有 handbrake：一樣讀得進來', () => {
+    const loaded = parseOld({ handbrake: ['Slash', 'Space'], brake: ['KeyB'] });
+    expect(loaded).toEqual({
+      ...DEFAULT_BINDINGS,
+      brake: ['KeyB', 'KeyS', 'ArrowDown'],
+      gearToggle: ['KeyR'],
+    });
+  });
+
+  test('已經有 gearToggle 的存檔：多出來的舊欄位只是丟掉，不會再併進剎車', () => {
+    const current = { ...DEFAULT_BINDINGS, brake: ['KeyB'], gearToggle: ['KeyG'] };
+    expect(
+      parseBindings({ version: CONTROLS_VERSION, bindings: { ...current, reverse: ['KeyK'], gearReverse: ['KeyE'] } }),
+    ).toEqual(current);
+  });
+
+  test('讀進來再存：寫回去的內容沒有已移除的動作，有 gearToggle，再讀一次還是一樣', () => {
+    const legacy = { ...OLD_DEFAULTS, gearReverse: ['KeyE'], restart: ['KeyR', 'KeyT'] };
+    const storage = memoryStorage({ [CONTROLS_STORAGE_KEY]: stored(legacy) });
+    const loaded = loadBindings(storage);
+    saveBindings(storage, loaded);
+    const text = storage.items.get(CONTROLS_STORAGE_KEY) ?? 'null';
+    const saved = JSON.parse(text) as { readonly bindings: Record<string, unknown> };
+    expect(Object.keys(saved.bindings).sort()).toEqual([...CONTROL_ACTIONS].sort());
+    for (const removed of REMOVED) {
+      expect(saved.bindings).not.toHaveProperty(removed);
+    }
+    expect(saved.bindings.gearToggle).toEqual(['KeyE']);
+    expect(loadBindings(storage)).toEqual(loaded);
+  });
+});
+
 describe('keyLabel：鍵帽上的字', () => {
   test('字母與數字直接寫；方向鍵是箭頭；符號鍵寫符號', () => {
     expect(keyLabel('KeyW')).toEqual({ text: 'W' });
