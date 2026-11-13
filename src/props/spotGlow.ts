@@ -156,6 +156,20 @@ export function glowVeilHeightFade(cameraYM: number): number {
 }
 
 /**
+ * 光幕每一面在 along（0 = 這一邊的起點、1 = 終點）還剩多少（0–1）：
+ * 靠近兩端的 edgeFade 這一段淡到 0，所以四個面疊在一起時不是一塊硬邊的矩形。
+ * 與著色器裡的 smoothstep(0.0, edgeFade, along) 相同。
+ */
+export function glowVeilEdgeFade(along: number): number {
+  const edge = CONFIG.veil.edgeFade;
+  const smooth = (x: number): number => {
+    const u = Math.min(Math.max(edge <= 0 ? 1 : x / edge, 0), 1);
+    return u * u * (3 - 2 * u);
+  };
+  return smooth(along) * smooth(1 - along);
+}
+
+/**
  * 光幕的幾何（車位本地座標）：車位輪廓的四個邊各一片直立的面，從光牆的頂端到 veil.heightM，
  * 分成幾層，每層的不透明度照 glowVeilAlpha（存在 alpha 屬性裡）。沒有頂蓋。
  */
@@ -170,6 +184,7 @@ export function createVeilGeometry(spot: Pick<ParkingSpot, 'widthM' | 'lengthM'>
   ];
   const positions: number[] = [];
   const alphas: number[] = [];
+  const alongs: number[] = [];
   const { layers } = CONFIG.veil;
   for (let side = 0; side < corners.length; side += 1) {
     const from = corners[side];
@@ -184,23 +199,26 @@ export function createVeilGeometry(spot: Pick<ParkingSpot, 'widthM' | 'lengthM'>
       const y1 = CONFIG.heightM + t1 * (CONFIG.veil.heightM - CONFIG.heightM);
       const alpha0 = glowVeilAlpha(t0);
       const alpha1 = glowVeilAlpha(t1);
-      const quad: readonly (readonly [number, number, number, number])[] = [
-        [from[0], y0, from[1], alpha0],
-        [to[0], y0, to[1], alpha0],
-        [to[0], y1, to[1], alpha1],
-        [from[0], y0, from[1], alpha0],
-        [to[0], y1, to[1], alpha1],
-        [from[0], y1, from[1], alpha1],
+      // 每個頂點：(x, y, z, 高度不透明度, 沿邊 0–1)
+      const quad: readonly (readonly [number, number, number, number, number])[] = [
+        [from[0], y0, from[1], alpha0, 0],
+        [to[0], y0, to[1], alpha0, 1],
+        [to[0], y1, to[1], alpha1, 1],
+        [from[0], y0, from[1], alpha0, 0],
+        [to[0], y1, to[1], alpha1, 1],
+        [from[0], y1, from[1], alpha1, 0],
       ];
-      for (const [x, y, z, alpha] of quad) {
+      for (const [x, y, z, alpha, along] of quad) {
         positions.push(x, y, z);
         alphas.push(alpha);
+        alongs.push(along);
       }
     }
   }
   const geometry = new BufferGeometry();
   geometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
   geometry.setAttribute('alpha', new Float32BufferAttribute(alphas, 1));
+  geometry.setAttribute('along', new Float32BufferAttribute(alongs, 1));
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
   return geometry;
@@ -208,10 +226,13 @@ export function createVeilGeometry(spot: Pick<ParkingSpot, 'widthM' | 'lengthM'>
 
 const VEIL_VERTEX_SHADER = /* glsl */ `
   attribute float alpha;
+  attribute float along;
   varying float vAlpha;
+  varying float vAlong;
   varying float vDistance;
   void main() {
     vAlpha = alpha;
+    vAlong = along;
     vec4 view = modelViewMatrix * vec4( position, 1.0 );
     vDistance = length( view.xyz );
     gl_Position = projectionMatrix * view;
@@ -225,14 +246,18 @@ const VEIL_FRAGMENT_SHADER = /* glsl */ `
   uniform float fadeFar;
   uniform float cameraLow;
   uniform float cameraHigh;
+  uniform float edgeFade;
   varying float vAlpha;
+  varying float vAlong;
   varying float vDistance;
   void main() {
     // 貼近鏡頭的部分不畫：鏡頭在光幕的範圍裡時，眼前沒有東西。
     float nearFade = smoothstep( fadeNear, fadeFar, vDistance );
     // 高處的鏡頭（遠距跟車、俯視）不畫：它們看得到整個車位，光幕只會蓋住旁邊的東西。
     float heightFade = 1.0 - smoothstep( cameraLow, cameraHigh, cameraPosition.y );
-    gl_FragColor = vec4( veilColor, vAlpha * veilOpacity * nearFade * heightFade );
+    // 每一面的左右兩端淡掉：夜晚從正面看時不是一塊矩形色板。
+    float sideFade = smoothstep( 0.0, edgeFade, vAlong ) * smoothstep( 0.0, edgeFade, 1.0 - vAlong );
+    gl_FragColor = vec4( veilColor, vAlpha * veilOpacity * nearFade * heightFade * sideFade );
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
   }
@@ -333,6 +358,7 @@ export function createSpotGlow(spot: GlowSpot, animate = true): SpotGlow {
       fadeFar: { value: CONFIG.veil.fadeFarM },
       cameraLow: { value: CONFIG.veil.cameraLowM },
       cameraHigh: { value: CONFIG.veil.cameraHighM },
+      edgeFade: { value: CONFIG.veil.edgeFade },
     },
     vertexShader: VEIL_VERTEX_SHADER,
     fragmentShader: VEIL_FRAGMENT_SHADER,

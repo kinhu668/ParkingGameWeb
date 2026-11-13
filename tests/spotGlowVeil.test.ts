@@ -11,6 +11,7 @@ import {
   createVeilGeometry,
   glowVeilAlpha,
   glowVeilCameraFade,
+  glowVeilEdgeFade,
   glowVeilHeightFade,
   glowWallAlpha,
 } from '../src/props/spotGlow';
@@ -55,12 +56,26 @@ describe('光幕很淡：不是實心的東西', () => {
     expect(glowWallAlpha(1)).toBe(0);
   });
 
+  test('每一面的左右兩端淡到 0，中段全濃：不是一塊硬邊的矩形', () => {
+    expect(glowVeilEdgeFade(0)).toBe(0);
+    expect(glowVeilEdgeFade(1)).toBe(0);
+    expect(glowVeilEdgeFade(0.5)).toBe(1);
+    expect(glowVeilEdgeFade(VEIL.edgeFade)).toBe(1);
+    expect(glowVeilEdgeFade(1 - VEIL.edgeFade)).toBe(1);
+    expect(glowVeilEdgeFade(VEIL.edgeFade / 2)).toBeGreaterThan(0);
+    expect(glowVeilEdgeFade(VEIL.edgeFade / 2)).toBeLessThan(1);
+    expect(VEIL.edgeFade).toBeGreaterThan(0.2);
+    expect(VEIL.edgeFade).toBeLessThan(0.5);
+  });
+
   test('幾何：四個邊各一片、從光牆的頂端到 veil.heightM、沒有頂蓋；每個頂點的不透明度照高度', () => {
     const { spot } = PROTOTYPE_LAYOUT;
     const geometry = createVeilGeometry(spot);
     const position = geometry.getAttribute('position');
     const alpha = geometry.getAttribute('alpha');
+    const along = geometry.getAttribute('along');
     expect(position.count).toBe(4 * VEIL.layers * 6);
+    expect(along.count).toBe(position.count);
     let maxAlpha = 0;
     for (let index = 0; index < position.count; index += 1) {
       const x = position.getX(index);
@@ -74,6 +89,8 @@ describe('光幕很淡：不是實心的東西', () => {
       expect(y).toBeLessThanOrEqual(VEIL.heightM + 1e-6);
       const t = (y - CONFIG.heightM) / (VEIL.heightM - CONFIG.heightM);
       expect(alpha.getX(index)).toBeCloseTo(glowVeilAlpha(t), 6);
+      const alongValue = along.getX(index);
+      expect(alongValue === 0 || alongValue === 1).toBe(true);
       maxAlpha = Math.max(maxAlpha, alpha.getX(index));
     }
     expect(maxAlpha).toBeCloseTo(VEIL.opacity, 6);
@@ -178,6 +195,7 @@ describe('光幕的網格與狀態', () => {
       expect(glow.veil.userData[SKIP_AMBIENT_OCCLUSION]).toBe(true);
       expect(uniformOf(glow.veil, 'fadeNear')).toBe(VEIL.fadeNearM);
       expect(uniformOf(glow.veil, 'fadeFar')).toBe(VEIL.fadeFarM);
+      expect(uniformOf(glow.veil, 'edgeFade')).toBe(VEIL.edgeFade);
     }
   });
 

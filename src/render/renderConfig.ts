@@ -689,10 +689,12 @@ export const SPOT_GLOW_CONFIG = {
    * 所以鏡頭就算在光幕的範圍裡（遠距跟車的鏡頭會飛到車位上空），眼前也沒有東西。
    */
   veil: {
-    heightM: ftToM(15),
-    opacity: 0.2,
-    falloff: 1.4,
+    heightM: ftToM(13),
+    opacity: 0.11,
+    falloff: 2,
     layers: 6,
+    /** 每一面左右兩端各佔這一段比例的寬度淡到 0：夜晚從正面看時不像一塊矩形色板。 */
+    edgeFade: 0.4,
     fadeNearM: ftToM(22),
     fadeFarM: ftToM(48),
     /**
