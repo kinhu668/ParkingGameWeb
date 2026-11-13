@@ -441,6 +441,11 @@ export const SUN_CONFIG = {
   shadowNormalBias: 0.03,
   /** 陰影貼圖一個像素比這個值乘出來的還大時，法線偏移跟著放大（範圍大、貼圖小的級別才不會有條紋）。 */
   shadowNormalBiasTexels: 1.2,
+  /**
+   * 陰影貼圖的法線偏移超過「東西的高度 × 這個比例」時，這麼矮的東西（假車位的車擋）在貼圖裡畫不出影子，
+   * 改由地面的著色器直接算（scene.ts 的 lotGroundEdgeBoxes）。
+   */
+  shadowBiasPerCasterHeight: 0.4,
   /** 場地的固定陰影範圍：路緣內緣往外多留這麼寬（圍欄、路緣外的路燈與樹），以及會投影的東西最高多高。 */
   lotShadowMarginM: ftToM(18),
   lotShadowMaxHeightM: ftToM(27),

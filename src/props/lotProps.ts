@@ -705,7 +705,8 @@ export function createLotProps(
   add(
     instanced(createWheelStopGeometry(), createWheelStopMaterial(), layout.wheelStops.map(atPlacement), {
       name: 'wheelStops',
-      castShadow: props.detailShadows,
+      // 假車位的車擋在每個畫質級別都投影（不跟 detailShadows）：少了影子它們像浮在地面上的色塊。
+      castShadow: true,
     }),
   );
 

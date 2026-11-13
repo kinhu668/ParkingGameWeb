@@ -22,8 +22,9 @@ import {
   createWheelStop,
   curbInnerBounds,
   edgeShadowBoxes,
+  wheelStopShadowBoxes,
 } from '../props/lotEdges';
-import { createLotLayout, spotLocalToWorld } from '../props/lotLayout';
+import { createLotLayout, spotLocalToWorld, type PropPlacement } from '../props/lotLayout';
 import type { GroundEdgeBox } from '../props/groundShader';
 import type { BoundsFt } from '../level/collision';
 import { ftToM } from '../core/units';
@@ -54,6 +55,7 @@ import {
   HEMISPHERE_LIGHT_CONFIG,
   SKY_CONFIG,
   SUN_CONFIG,
+  WHEEL_STOP_CONFIG,
 } from './renderConfig';
 import { createOcclusionFade, type Point3 } from './occlusionFade';
 import { fitShadowBox, type ShadowBox } from './shadowArea';
@@ -227,6 +229,23 @@ export function boundsShadowBox(
   );
 }
 
+/**
+ * 原型關的地面著色器要直接算影子的箱子：路緣石與目標車位的車擋；陰影貼圖太粗、畫不出車擋影子的畫質級別
+ * （low、medium）再加上假車位的車擋。貼圖夠細的級別（high、ultra）假車擋的影子照舊由貼圖來，著色器不多算。
+ * @param wheelStops 假車位的車擋（createLotLayout 的 wheelStops）
+ * @param normalBiasM 這個級別、這個陰影範圍的法線偏移（shadowNormalBias）
+ */
+export function lotGroundEdgeBoxes(
+  spot: ParkingSpot,
+  wheelStops: readonly PropPlacement[],
+  normalBiasM: number,
+): readonly GroundEdgeBox[] {
+  const boxes = edgeShadowBoxes(spot);
+  return normalBiasM > WHEEL_STOP_CONFIG.heightM * SUN_CONFIG.shadowBiasPerCasterHeight
+    ? [...boxes, ...wheelStopShadowBoxes(wheelStops)]
+    : boxes;
+}
+
 /** 邊界的矮路緣落在地面上的影子（由地面著色器直接算）；高牆（巷子）不算，回傳空的。 */
 function boundsEdgeBoxes(bounds: BoundsFt, level: ObstacleSource): GroundEdgeBox[] {
   const style = BOUNDS_STYLES[level.environment ?? 'open_lot'];
@@ -373,27 +392,41 @@ export function createGameScene(
   const lotMinZ = Math.min(...lotCorners.map((corner) => corner.z));
   const lotMaxZ = Math.max(...lotCorners.map((corner) => corner.z));
 
+  // 原型關的停車場擺設（固定種子）；有環境模組的關卡不用。
+  const lotLayout =
+    environmentLayout === undefined
+      ? createLotLayout(spot, start, DEFAULT_SEED, quality.props)
+      : undefined;
   const ground = createGround(
     DEFAULT_SEED,
     quality.ground,
     renderer.capabilities.getMaxAnisotropy(),
     // 路緣石與車擋又矮又長，低角度的太陽下陰影貼圖畫不完整；它們落在地面上的影子由地面著色器直接算。
     bounds === undefined || level === undefined
-      ? groundEdgeShadows(spot, spot.headingRad, sunDirection, edgeShadowBoxes(spot))
+      ? groundEdgeShadows(
+          spot,
+          spot.headingRad,
+          sunDirection,
+          lotGroundEdgeBoxes(
+            spot,
+            lotLayout?.wheelStops ?? [],
+            shadowNormalBias(shadowBox.right - shadowBox.left, quality.shadowMapSize),
+          ),
+        )
       : groundEdgeShadows({ x: 0, z: 0 }, 0, sunDirection, boundsEdgeBoxes(bounds, level)),
     preset.ground,
   );
   scene.add(ground);
 
   scene.add(createSpotMarkings(spot));
-  if (environmentLayout === undefined) {
+  if (lotLayout !== undefined) {
     // 路緣石與車擋只是擺設：沒有碰撞，也不進停車判定。
     scene.add(createCurbs(spot), createWheelStop(spot));
     // 場地擺設（路燈、柱子、建築、圍欄、樹、背景車、小細節）同樣只是擺設：固定種子、全部用 InstancedMesh。
     scene.add(
       createLotProps(
         spot,
-        createLotLayout(spot, start, DEFAULT_SEED, quality.props),
+        lotLayout,
         quality.props,
         usesHdrChain(quality),
         preset.lampsOn,
@@ -401,7 +434,7 @@ export function createGameScene(
         buildingShadowHeightM,
       ),
     );
-  } else {
+  } else if (environmentLayout !== undefined) {
     // bounds 外面的建築、招牌、背景車、路燈…；bounds 裡面沒有穿得過去的東西。
     scene.add(
       createEnvironment(

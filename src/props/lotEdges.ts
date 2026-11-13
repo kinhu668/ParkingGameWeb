@@ -13,6 +13,7 @@ import { headingToRotationY } from '../core/heading';
 import type { ParkingSpot } from '../level/parkingJudge';
 import { CURB_CONFIG, WHEEL_STOP_CONFIG } from '../render/renderConfig';
 import type { GroundEdgeBox } from './groundShader';
+import type { PropPlacement } from './lotLayout';
 
 /** 車位本地座標裡的一個矩形（公尺）；本地 −Z 是車位前方、+X 是右方。 */
 export interface LocalRect {
@@ -73,6 +74,39 @@ export function edgeShadowBoxes(spot: ParkingSpot): readonly GroundEdgeBox[] {
       heightM: WHEEL_STOP_CONFIG.heightM,
     },
   ];
+}
+
+/** 朝向離 90° 的倍數在這個角度內，才當成與座標軸平行。 */
+const AXIS_ALIGNED_EPSILON_RAD = 1e-3;
+
+/**
+ * 假車位的車擋（createLotLayout 的 wheelStops，車位本地座標）當成箱子，給地面的著色器直接算影子。
+ * 車擋只有十一公分高：陰影貼圖粗的畫質級別（low、medium）法線偏移比它還大，貼圖裡完全畫不出它的影子。
+ * 箱子是軸對齊的，所以只收朝向是 90° 倍數的（假車位都是）；其餘的略過，留給陰影貼圖。
+ */
+export function wheelStopShadowBoxes(placements: readonly PropPlacement[]): GroundEdgeBox[] {
+  const stopInsetM = (WHEEL_STOP_CONFIG.baseDepthM - WHEEL_STOP_CONFIG.topDepthM) / 4;
+  const boxes: GroundEdgeBox[] = [];
+  for (const placement of placements) {
+    const quarterTurns = placement.headingRad / (Math.PI / 2);
+    if (Math.abs(quarterTurns - Math.round(quarterTurns)) > AXIS_ALIGNED_EPSILON_RAD) {
+      continue;
+    }
+    // 長邊沿本地 X（sizeX）；轉了奇數個 90° 就換成沿 Z。斷面是梯形，深度取頂面與底面的平均。
+    const turned = Math.abs(Math.round(quarterTurns)) % 2 === 1;
+    const halfLongM = placement.sizeX / 2;
+    const halfDepthM = placement.sizeZ / 2 - stopInsetM;
+    const halfX = turned ? halfDepthM : halfLongM;
+    const halfZ = turned ? halfLongM : halfDepthM;
+    boxes.push({
+      minX: placement.x - halfX,
+      maxX: placement.x + halfX,
+      minZ: placement.z - halfZ,
+      maxZ: placement.z + halfZ,
+      heightM: placement.sizeY,
+    });
+  }
+  return boxes;
 }
 
 /** 擺到車位的位置與朝向的空群組；子物件用車位本地座標。 */
