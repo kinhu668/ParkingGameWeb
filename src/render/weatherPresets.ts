@@ -352,11 +352,12 @@ export const LIGHTNING_CONFIG = {
   /** 一下閃光淡掉的時間常數（秒）與整道閃電的長度（之後當作 0）。 */
   decayS: 0.09,
   durationS: 0.7,
-  /** 閃光最亮時：半球補光與環境光各乘上（1 + 這個值）；霧色與天空往 flashColor 靠這個比例。幅度刻意壓低。 */
-  hemisphereBoost: 2.2,
-  environmentBoost: 3,
-  fogBlend: 0.15,
-  skyBoost: 1.6,
+  /** 閃光最亮時：半球補光與環境光各乘上（1 + 這個值）；霧色與天空往 flashColor 靠這個比例。
+   * 幅度要看得出「打雷了」，但不能把整張畫面洗成一片白（後製鏈的泛光在 high／ultra 會再放大這個提升）。 */
+  hemisphereBoost: 1.0,
+  environmentBoost: 1.1,
+  fogBlend: 0.12,
+  skyBoost: 0.7,
   flashColor: 0xb9c6e6,
 
   /**
