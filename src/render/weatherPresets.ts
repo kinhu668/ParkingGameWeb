@@ -88,6 +88,8 @@ export interface WeatherPreset {
   readonly lightning: boolean;
   /** 路燈亮不亮（白天不亮）。 */
   readonly lampsOn: boolean;
+  /** 建築、金屬、人行道（材質庫的表面）有多濕（0 乾、1 正在下大雨）：顏色變深、反光變亮、雨痕更明顯。 */
+  readonly surfaceWetness: number;
 }
 
 /** 黃昏：基準畫面，全部引用既有設定。 */
@@ -100,6 +102,7 @@ const DUSK: WeatherPreset = {
   rain: 0,
   lightning: false,
   lampsOn: true,
+  surfaceWetness: 0,
 };
 
 /** 門檻放在噪聲值域（0–1）之外：整片都不濕。 */
@@ -157,6 +160,7 @@ export const WEATHER_PRESETS: Readonly<Record<WeatherId, WeatherPreset>> = {
     rain: 0,
     lightning: false,
     lampsOn: false,
+    surfaceWetness: 0,
   },
   dusk: DUSK,
   // 雨天：灰雲蓋滿、太陽很弱偏冷、近而灰的霧、全面潮濕＋積水、雨絲、路燈亮。
@@ -169,6 +173,7 @@ export const WEATHER_PRESETS: Readonly<Record<WeatherId, WeatherPreset>> = {
     rain: 0.6,
     lightning: false,
     lampsOn: true,
+    surfaceWetness: 0.85,
   },
   // 雨後：雲散了一半、低角度的暖陽、大片潮濕與積水（粗糙度低，逆光看反光明顯）、路燈不亮。
   wet: {
@@ -199,6 +204,7 @@ export const WEATHER_PRESETS: Readonly<Record<WeatherId, WeatherPreset>> = {
     rain: 0,
     lightning: false,
     lampsOn: false,
+    surfaceWetness: 0.5,
   },
   // 雷雨：比雨天更暗、霧更近、雨更密，加上閃光。
   storm: {
@@ -210,6 +216,7 @@ export const WEATHER_PRESETS: Readonly<Record<WeatherId, WeatherPreset>> = {
     rain: 1,
     lightning: true,
     lampsOn: true,
+    surfaceWetness: 1,
   },
   // 夜晚：很暗的天空（白天的天空壓到很暗）、冷色的弱月光、深藍的近霧、乾地；路燈與車頭燈是主要光源。
   night: {
@@ -230,6 +237,7 @@ export const WEATHER_PRESETS: Readonly<Record<WeatherId, WeatherPreset>> = {
     rain: 0,
     lightning: false,
     lampsOn: true,
+    surfaceWetness: 0,
   },
 };
 

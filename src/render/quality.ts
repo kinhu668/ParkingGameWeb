@@ -1,6 +1,7 @@
 // 畫質級別：級別 id、`?quality=` 解析、自動選擇、各級別的開關與數值。
 // 不碰 DOM、不 import three：查詢字串與裝置線索（hints）由呼叫端傳入，全部可以純函式測試。
 // `?quality=` 不是啟動模式，所以不在 urlParams.parseUrlMode 裡處理，可與任何模式並用。
+import type { MaterialQualitySettings } from '../materials/surfaces';
 import { QUALITY_PRESETS } from './renderConfig';
 
 /** 畫質級別 id，由低到高。 */
@@ -140,6 +141,8 @@ export interface QualitySettings {
   readonly smaa: boolean;
   /** 地面（柏油）的細節。 */
   readonly ground: GroundQualitySettings;
+  /** 材質庫（建築、擺設、車身的程序化 PBR 貼圖）的細節。 */
+  readonly materials: MaterialQualitySettings;
   /** 車模的細分程度（CAR_DETAIL_CONFIG）。 */
   readonly vehicleDetail: VehicleDetail;
   /** 場景擺設的密度。 */

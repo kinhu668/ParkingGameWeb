@@ -2,12 +2,15 @@
 // 之後新增模型、材質或道具時，在 SHOWCASE_OBJECTS 登錄一筆就能單獨檢視。
 import {
   Box3,
+  BoxGeometry,
   CircleGeometry,
   Color,
   Mesh,
   MeshStandardMaterial,
   Scene,
   Sphere,
+  SphereGeometry,
+  Group,
   type Object3D,
 } from 'three';
 import { forward } from '../core/heading';
@@ -16,6 +19,9 @@ import { degToRad } from '../core/units';
 import { parkingSpotFromFt } from '../level/parkingJudge';
 import { PROTOTYPE_LAYOUT_FT } from '../level/prototypeLayout';
 import { OBSTACLE_TYPES } from '../level/obstacleTypes';
+import { prepareSurfaceLibrary, surfaceChecksum } from '../materials/surfaceLibrary';
+import { createSurfaceMaterial } from '../materials/surfaceMaterial';
+import { SURFACE_IDS, type SurfaceId } from '../materials/surfaces';
 import { createObstacleShowcase } from '../props/obstacleMeshes';
 import { createSpotMarkings } from '../props/spotMarkings';
 import { showChoicesNotice } from '../ui/notice';
@@ -25,6 +31,44 @@ import type { VehicleDetail } from './quality';
 import { SHOWCASE_CONFIG } from './renderConfig';
 import type { RenderContext } from './renderContext';
 import { addLights, addSkyEnvironment } from './scene';
+
+/** 一種表面的樣本：一塊方塊（看三面投影在平面上的樣子）＋旁邊一顆球（看曲面上的反光）。 */
+function createSurfaceSample(id: SurfaceId): Group {
+  const sample = new Group();
+  const sizeM = 1.4;
+  const material = createSurfaceMaterial(id, {
+    overlays: { dirt: 0.5, streaks: 0.5, oil: 0.5, tireMarks: 0.5 },
+  });
+  const box = new Mesh(new BoxGeometry(sizeM, sizeM, sizeM), material);
+  box.position.y = sizeM / 2;
+  const ball = new Mesh(new SphereGeometry(0.42, 48, 24), material);
+  ball.position.set(sizeM * 0.9, 0.42, sizeM * 0.2);
+  for (const mesh of [box, ball]) {
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+  }
+  sample.add(box, ball);
+  sample.name = `surface:${id}`;
+  return sample;
+}
+
+/** 整個材質庫：每種表面一個樣本，排成四欄。 */
+function createSurfaceGrid(): Group {
+  const grid = new Group();
+  const columns = 4;
+  const pitchM = 3;
+  SURFACE_IDS.forEach((id, index) => {
+    const sample = createSurfaceSample(id);
+    sample.position.set(
+      ((index % columns) - (columns - 1) / 2) * pitchM,
+      0,
+      (Math.floor(index / columns) - 1.5) * pitchM,
+    );
+    grid.add(sample);
+  });
+  grid.name = 'surfaceGrid';
+  return grid;
+}
 
 /** 展示登錄表：id → 建立物件（擺在原點、車頭／車位前方朝 −Z）。用 Map，`toString` 之類的 id 才不會誤中。 */
 const SHOWCASE_OBJECTS: ReadonlyMap<string, (detail: VehicleDetail) => Object3D> = new Map([
@@ -36,6 +80,11 @@ const SHOWCASE_OBJECTS: ReadonlyMap<string, (detail: VehicleDetail) => Object3D>
         parkingSpotFromFt({ ...PROTOTYPE_LAYOUT_FT.spot, centerXFt: 0, centerZFt: 0 }),
       ),
   ],
+  // 材質庫：`materials` 是全部表面，`material_<id>` 是單一種表面的特寫。
+  ['materials', (): Object3D => createSurfaceGrid()],
+  ...SURFACE_IDS.map(
+    (id) => [`material_${id}`, (): Object3D => createSurfaceSample(id)] as const,
+  ),
   // 關卡的障礙物：`obstacle_cone`、`obstacle_shopping_cart`…每種一筆。
   ...OBSTACLE_TYPES.map(
     (type) =>
@@ -75,6 +124,11 @@ function createFloor(): Mesh {
 
 /** 啟動展示模式。畫出完整的一幀後在 `<body>` 設 `data-shot-ready="true"`。 */
 export function runShowcase({ renderer, quality, pipeline }: RenderContext, id: string): void {
+  // 材質庫的貼圖在這裡用 GPU 烘一次；展示台把檢查碼寫在 <body> 上（同一個種子每次都要相同）。
+  prepareSurfaceLibrary(renderer, quality.materials);
+  if (id === 'materials') {
+    document.body.dataset.surfaceChecksum = String(surfaceChecksum(renderer));
+  }
   const scene = new Scene();
   scene.background = new Color(SHOWCASE_CONFIG.backgroundColor);
   // 背景是深色展示台，但反射與補光用遊戲裡同一片黃昏天空，物件在這裡與在遊戲裡的質感才一致。

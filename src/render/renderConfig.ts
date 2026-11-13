@@ -17,6 +17,7 @@ export const RENDERER_CONFIG = {
  * - ultra：high 的全部再加強，另加 SMAA。對準高階顯示卡，只能由 `?quality=ultra` 開啟。
  * 黃昏的色調分級併在色調映射裡，四個級別都有。
  * 車模（vehicleDetail）：low、medium 用較少的細分，high、ultra 用較多。
+ * 材質庫（materials）：low 貼圖 128、沒有法線、只取樣最正對的一面；medium 256＋法線；high 512＋三面混合；ultra 1024。
  * 地面（ground）：low 的噪聲貼圖小、沒有潮濕反光；medium 加上潮濕反光；high、ultra 再加上法線（裂縫與顆粒的立體感）。
  * 頭燈（headlights）：low 只有發光的燈殼；medium 在車頭前方的地上加一片光斑；high、ultra 再加不投影的真光源。
  * 輪胎痕（tireMarks）與粒子（particles）：low 只有少量輪胎痕、沒有粒子；級別越高，痕留得越久、灰塵與落葉越多。
@@ -26,6 +27,7 @@ export const RENDERER_CONFIG = {
 export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = {
   low: {
     level: 'low',
+    materials: { textureSizePx: 128, normals: false, triplanarBlend: false, maxAnisotropy: 2 },
     tireMarks: { maxSegments: 60, lifetimeS: 6 },
     particles: { dust: 0, leaves: 0 },
     headlights: { groundPool: false, spotLights: 0 },
@@ -57,6 +59,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = 
   },
   medium: {
     level: 'medium',
+    materials: { textureSizePx: 256, normals: true, triplanarBlend: false, maxAnisotropy: 4 },
     tireMarks: { maxSegments: 160, lifetimeS: 10 },
     particles: { dust: 64, leaves: 36 },
     headlights: { groundPool: true, spotLights: 0 },
@@ -88,6 +91,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = 
   },
   high: {
     level: 'high',
+    materials: { textureSizePx: 512, normals: true, triplanarBlend: true, maxAnisotropy: 8 },
     tireMarks: { maxSegments: 360, lifetimeS: 16 },
     particles: { dust: 110, leaves: 100 },
     headlights: { groundPool: true, spotLights: 1 },
@@ -119,6 +123,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = 
   },
   ultra: {
     level: 'ultra',
+    materials: { textureSizePx: 1024, normals: true, triplanarBlend: true, maxAnisotropy: 16 },
     tireMarks: { maxSegments: 600, lifetimeS: 24 },
     particles: { dust: 160, leaves: 160 },
     headlights: { groundPool: true, spotLights: 2 },

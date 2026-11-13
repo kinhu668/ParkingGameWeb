@@ -15,6 +15,7 @@ import type { WeatherId } from '../core/weather';
 import { createLightning } from '../effects/lightning';
 import { createSceneEffects } from '../effects/sceneEffects';
 import type { ParkingSpot } from '../level/parkingJudge';
+import { prepareSurfaceLibrary, setSurfaceWetness } from '../materials/surfaceLibrary';
 import { createGround } from '../props/ground';
 import { groundEdgeShadows } from '../props/groundShader';
 import {
@@ -349,6 +350,11 @@ export function createGameScene(
     degToRad(preset.sun.azimuthDeg),
     degToRad(preset.sun.elevationDeg),
   );
+
+  // 材質庫：建築、擺設、車身的程序化 PBR 貼圖用 GPU 烘一次（同一個算圖器只烘一次）；
+  // 建築與金屬的潮濕程度跟著天氣（地面另有自己的潮濕分布）。
+  prepareSurfaceLibrary(renderer, quality.materials);
+  setSurfaceWetness(preset.surfaceWetness);
 
   const scene = new Scene();
   const skyDome = addSkyEnvironment(scene, renderer, quality, { ...preset, sunDirection }).dome;
