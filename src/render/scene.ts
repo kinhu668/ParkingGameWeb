@@ -70,6 +70,7 @@ import {
 import {
   LIGHTNING_CONFIG,
   RAIN_CONFIG,
+  sunAzimuthDeg,
   weatherPreset,
   type HemispherePreset,
   type WeatherPreset,
@@ -340,14 +341,15 @@ export function createGameScene(
   quality: QualitySettings,
   spot: ParkingSpot,
   start: GroundVector,
-  level?: ObstacleSource & EnvironmentSource,
+  level?: ObstacleSource & EnvironmentSource & { readonly id?: string },
   weather: WeatherId = 'dusk',
   ambientFx = true,
 ): GameScene {
   // 這種天氣的全部數值；太陽（夜晚是月亮）的方向與天空裡的圓盤位置是同一個向量。
   const preset = weatherPreset(weather);
   const sunDirection = directionToSun(
-    degToRad(preset.sun.azimuthDeg),
+    // 少數關卡的太陽方位另外指定（樓的影子才落得到場地上）；其餘是這種天氣的預設。
+    degToRad(sunAzimuthDeg(weather, level?.id)),
     degToRad(preset.sun.elevationDeg),
   );
 

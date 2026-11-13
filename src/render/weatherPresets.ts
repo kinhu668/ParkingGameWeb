@@ -153,9 +153,11 @@ export const WEATHER_PRESETS: Readonly<Record<WeatherId, WeatherPreset>> = {
       environmentIntensity: 0.34,
       overcast: 0,
     },
-    sun: { color: 0xfff3dc, intensity: 3.1, azimuthDeg: -38, elevationDeg: 42 },
+    // 強度 3.45：仰角從 52° 降到 42° 之後受光的地面暗了約 15%（sin 42° ÷ sin 52°），補回大約一半；
+    // 仰角不動，樓的影子長度不變。
+    sun: { color: 0xfff3dc, intensity: 3.45, azimuthDeg: -38, elevationDeg: 42 },
     fog: { color: 0xa9bfd6, nearM: ftToM(260), farM: ftToM(1400), groundColor: 0x4a4744 },
-    hemisphere: { skyColor: 0xbcd4ff, groundColor: 0x6e675f, intensity: 0.5 },
+    hemisphere: { skyColor: 0xbcd4ff, groundColor: 0x6e675f, intensity: 0.53 },
     ground: DRY_GROUND,
     rain: 0,
     lightning: false,
@@ -240,6 +242,24 @@ export const WEATHER_PRESETS: Readonly<Record<WeatherId, WeatherPreset>> = {
     surfaceWetness: 0,
   },
 };
+
+/**
+ * 個別關卡的太陽方位（heading 約定：0 = 北 = −Z，順時針為正）。只蓋掉方位，仰角、顏色、強度仍是這種天氣的。
+ * 這兩關的主建築在場地的南邊／東邊，預設方位的影子落在樓後面；太陽改從樓的那一側過來，
+ * 樓的影子才落在場地上。`?weather=` 換了天氣也照用（樓的位置沒變）。
+ * - w1_l03（大賣場，樓在南 +Z）：160° = 南南東，影子斜向西北掃進場地。
+ * - w1_l06（郵局黃昏，樓在東 +X）：97° = 東，影子朝西落進場地。
+ */
+export const LEVEL_SUN_AZIMUTH_DEG: Readonly<Record<string, number>> = {
+  w1_l03: 160,
+  w1_l06: 97,
+};
+
+/** 這一關、這種天氣的太陽方位（度）：關卡有覆寫就用覆寫的，否則是天氣預設的。 */
+export function sunAzimuthDeg(weather: WeatherId, levelId?: string): number {
+  const override = levelId === undefined ? undefined : LEVEL_SUN_AZIMUTH_DEG[levelId];
+  return override ?? WEATHER_PRESETS[weather].sun.azimuthDeg;
+}
 
 /** 這種天氣的數值。 */
 export function weatherPreset(weather: WeatherId): WeatherPreset {
