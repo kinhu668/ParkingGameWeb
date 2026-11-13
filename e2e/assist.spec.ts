@@ -6,11 +6,11 @@ import { expect, OUTPUT_DIR, test } from './fixtures';
 
 const VIEW_IDS = ['assist-bird', 'assist-rear', 'assist-mirror-left', 'assist-mirror-right'] as const;
 
-/** 拉手煞車到車完全停住；這一局必須還在進行（沒有撞到失敗）。 */
+/** 踩剎車到車完全停住；這一局必須還在進行（沒有撞到失敗）。 */
 async function stop(page: Page): Promise<void> {
-  await page.keyboard.down('Space');
+  await page.keyboard.down('Comma');
   await expect.poll(async () => (await nextSnapshot(page)).speedMph).toBe(0);
-  await page.keyboard.up('Space');
+  await page.keyboard.up('Comma');
   expect((await nextSnapshot(page)).status).toBe('driving');
 }
 
@@ -22,7 +22,7 @@ test('倒車時顯示輔助層，回到前進檔收起，重來後回到 D 檔',
   await expect(assist).toHaveAttribute('data-visible', 'false');
   await expect(assist).toBeHidden();
 
-  // 按 S：掛倒檔 → 淡入到完全顯示。一掛上就放開並拉手煞車：軟體算圖幀率低，一直倒下去會撞到東西；
+  // 按 S：掛倒檔 → 淡入到完全顯示。一掛上就放開並踩剎車：軟體算圖幀率低，一直倒下去會撞到東西；
   // 停著但仍掛倒檔，輔助層要留著。
   await page.keyboard.down('KeyS');
   await expect(gear).toHaveAttribute('data-gear', 'reverse');

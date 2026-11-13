@@ -4,18 +4,18 @@
 import type { Page } from '@playwright/test';
 import type { SessionSnapshot } from '../src/level/session';
 
-/** 車身中心離車位中心（縱向）在這個距離內就放開油門、拉手煞車；要比車位餘裕小。 */
+/** 車身中心離車位中心（縱向）在這個距離內就放開油門、踩剎車；要比車位餘裕小。 */
 const STOP_BAND_FT = 0.5;
 /** 接近車位時的目標車速 = 剩餘距離 × 這個係數，再夾在下面兩個值之間：越近越慢。 */
 const APPROACH_MPH_PER_FT = 0.4;
 const MIN_APPROACH_MPH = 1.5;
 const MAX_APPROACH_MPH = 10;
-/** 比目標車速快超過這麼多就拉手煞車，否則只放開油門滑行。 */
+/** 比目標車速快超過這麼多就踩剎車，否則只放開油門滑行。 */
 const OVERSPEED_MPH = 1;
 /** 整段駕駛的真實時間上限；軟體算圖幀率低也綽綽有餘。 */
 const DRIVE_DEADLINE_MS = 90_000;
 
-const DRIVE_KEYS = ['KeyW', 'KeyS', 'Space'] as const;
+const DRIVE_KEYS = ['KeyW', 'KeyS', 'Comma'] as const;
 type DriveKey = (typeof DRIVE_KEYS)[number];
 
 /** 等遊戲畫完下一幀，再讀唯讀狀態：每幀最多判斷一次，不靠寫死的毫秒數。 */
@@ -40,7 +40,7 @@ function keysToHold(snapshot: SessionSnapshot, spotCenterZFt: number): readonly 
   // 車朝 −Z 開：正值 = 車位還在前方，負值 = 開過頭了。
   const aheadFt = snapshot.zFt - spotCenterZFt;
   if (Math.abs(aheadFt) <= STOP_BAND_FT) {
-    return ['Space'];
+    return ['Comma'];
   }
 
   const towardKey: DriveKey = aheadFt > 0 ? 'KeyW' : 'KeyS';
@@ -52,7 +52,7 @@ function keysToHold(snapshot: SessionSnapshot, spotCenterZFt: number): readonly 
   );
 
   if (towardSpeedMph > targetSpeedMph + OVERSPEED_MPH) {
-    return ['Space'];
+    return ['Comma'];
   }
   if (towardSpeedMph < targetSpeedMph) {
     return [towardKey];

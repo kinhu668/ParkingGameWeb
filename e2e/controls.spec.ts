@@ -1,5 +1,5 @@
 // 自訂按鍵的 e2e：HUD 操作說明顯示目前綁定、按鍵設定面板（中英文、重綁、同一鍵不能綁兩個動作、
-// 多加／拿掉備用鍵、恢復預設）、存檔（parkinggame.controls.v1；壞檔丟掉回到預設）、
+// 多加／拿掉備用鍵、恢復預設）、存檔（parkinggame.controls.v1；壞檔丟掉回到預設；舊存檔裡已移除的動作不留）、
 // 掛 D／R 檔（手排：D 只能向前、R 只能向後）、逗號腳剎、Backspace／T 重來。
 import type { Page } from '@playwright/test';
 import { nextSnapshot } from './driving';
@@ -59,18 +59,30 @@ test('HUD 顯示預設綁定；按鍵設定可重綁、擋同一鍵、存檔、�
   await expect(page.locator('#hud-speed')).toHaveText('0.0');
   await expect(panel).toBeHidden();
 
-  // 操作說明列的是預設綁定：重來是 Backspace／T（不是 R），剎車是逗號，手煞車是 / 與空白鍵，掛檔是 Q／R。
+  // 操作說明列的是預設綁定：重來是 Backspace／T（不是 R），剎車是逗號，掛檔是 Q／R；空白鍵與 / 沒有動作，不列。
   expect(await hudKeys(page, 'throttle')).toEqual(['W']);
   expect(await hudKeys(page, 'reverse')).toEqual(['S']);
   expect(await hudKeys(page, 'steerLeft')).toEqual(['A']);
   expect(await hudKeys(page, 'steerRight')).toEqual(['D']);
   expect(await hudKeys(page, 'brake')).toEqual([',']);
-  expect(await hudKeys(page, 'handbrake')).toEqual(['/', '空白鍵']);
   expect(await hudKeys(page, 'gearDrive')).toEqual(['Q']);
   expect(await hudKeys(page, 'gearReverse')).toEqual(['R']);
   expect(await hudKeys(page, 'restart')).toEqual(['Backspace', 'T']);
   expect(await hudKeys(page, 'toggleCamera')).toEqual(['V']);
   expect(await hudKeys(page, 'pause')).toEqual(['Esc']);
+  expect(await page.locator('.hud-controls .hud-key').allTextContents()).toEqual([
+    'W',
+    'S',
+    'A',
+    'D',
+    ',',
+    'Q',
+    'R',
+    'Backspace',
+    'T',
+    'V',
+    'Esc',
+  ]);
   expect(await storedControls(page)).toBeNull();
 
   // 從操作說明進入設定：遊戲先暫停，設定面板蓋住暫停面板。
@@ -78,9 +90,9 @@ test('HUD 顯示預設綁定；按鍵設定可重綁、擋同一鍵、存檔、�
   await expect(panel).toBeVisible();
   await expect(pause).toBeHidden();
   await expect(panel.locator('.controls-title')).toHaveText('按鍵設定');
-  await expect(panel.locator('.controls-row')).toHaveCount(11);
+  await expect(panel.locator('.controls-row')).toHaveCount(10);
   await expect(panel.locator('.controls-row[data-action="brake"] .controls-action')).toHaveText(
-    '剎車（腳剎）',
+    '剎車',
   );
   await expect(panel.locator('.controls-row[data-action="gearReverse"] .controls-action')).toHaveText(
     '掛 R 檔',
@@ -88,7 +100,6 @@ test('HUD 顯示預設綁定；按鍵設定可重綁、擋同一鍵、存檔、�
   await expect(panel.locator('.controls-note')).toContainText('可以自行改綁');
   await expect(page.locator('#bind-restart-0')).toHaveText('Backspace');
   await expect(page.locator('#bind-restart-1')).toHaveText('T');
-  await expect(page.locator('#bind-handbrake-1')).toHaveText('空白鍵');
   await page.screenshot({ path: `${OUTPUT_DIR}/controls-settings-zh-TW.png` });
 
   // 同一個鍵不能綁兩個動作：重來想用 R，但 R 是掛 R 檔 → 擋下來並說明，綁定與存檔都沒變。
@@ -121,6 +132,12 @@ test('HUD 顯示預設綁定；按鍵設定可重綁、擋同一鍵、存檔、�
   await expect(page.locator('#bind-brake-1')).toHaveText('＋');
   expect(await hudKeys(page, 'brake')).toEqual([',']);
 
+  // 空白鍵預設沒有動作，可以直接拿來綁（這裡當剎車的備用鍵）；鍵帽寫的是翻譯過的名字。
+  await bind(page, 'brake', 1, 'Space');
+  await expect(message).toHaveAttribute('data-kind', 'info');
+  await expect(page.locator('#bind-brake-1')).toHaveText('空白鍵');
+  expect(await hudKeys(page, 'brake')).toEqual([',', '空白鍵']);
+
   // 等按鍵時按 Esc 是取消：綁定不變，面板也還開著。
   await page.locator('#bind-toggleCamera-0').click();
   await page.keyboard.press('Escape');
@@ -135,19 +152,19 @@ test('HUD 顯示預設綁定；按鍵設定可重綁、擋同一鍵、存檔、�
   expect(saved.version).toBe(1);
   expect(saved.bindings.restart).toEqual(['KeyR', 'KeyT']);
   expect(saved.bindings.gearReverse).toEqual(['KeyE']);
-  expect(saved.bindings.brake).toEqual(['Comma']);
-  expect(saved.bindings.handbrake).toEqual(['Slash', 'Space']);
+  expect(saved.bindings.brake).toEqual(['Comma', 'Space']);
+  expect(Object.keys(saved.bindings)).toHaveLength(10);
 
   // 英文介面：同一個面板就地換成英文。
   await page.locator('#hud-language').click();
   await expect(panel.locator('.controls-title')).toHaveText('Key Bindings');
   await expect(panel.locator('.controls-row[data-action="brake"] .controls-action')).toHaveText(
-    'Brake (foot)',
+    'Brake',
   );
   await expect(panel.locator('.controls-row[data-action="gearDrive"] .controls-action')).toHaveText(
     'Shift to D',
   );
-  await expect(page.locator('#bind-handbrake-1')).toHaveText('Space');
+  await expect(page.locator('#bind-brake-1')).toHaveText('Space');
   await expect(page.locator('#controls-reset')).toHaveText('Restore defaults');
   await expect(panel.locator('.controls-note')).toContainText('rebind it if you like');
   await page.locator('#bind-gearDrive-0').click();
@@ -213,7 +230,6 @@ for (const [name, text] of [
         steerLeft: ['KeyA'],
         steerRight: ['KeyD'],
         brake: ['Comma'],
-        handbrake: ['Space'],
         gearDrive: ['KeyQ'],
         gearReverse: ['KeyR'],
         restart: ['KeyR'],
@@ -237,10 +253,78 @@ for (const [name, text] of [
 
     expect(await hudKeys(page, 'restart')).toEqual(['Backspace', 'T']);
     expect(await hudKeys(page, 'gearReverse')).toEqual(['R']);
-    expect(await hudKeys(page, 'handbrake')).toEqual(['/', '空白鍵']);
+    expect(await hudKeys(page, 'brake')).toEqual([',']);
     expect(await storedControls(page)).toBeNull();
   });
 }
+
+test('舊存檔還帶著已移除的 handbrake：照常讀進來，那一項不留，空出來的鍵可以重綁', async ({ page }) => {
+  // 舊版存的內容：重來改成 R／T、掛 R 檔改成 E，另外還有一項 handbrake 佔著 / 與空白鍵。
+  const legacy = JSON.stringify({
+    version: 1,
+    bindings: {
+      throttle: ['KeyW', 'ArrowUp'],
+      reverse: ['KeyS', 'ArrowDown'],
+      steerLeft: ['KeyA', 'ArrowLeft'],
+      steerRight: ['KeyD', 'ArrowRight'],
+      brake: ['Comma'],
+      handbrake: ['Slash', 'Space'],
+      gearDrive: ['KeyQ'],
+      gearReverse: ['KeyE'],
+      restart: ['KeyR', 'KeyT'],
+      toggleCamera: ['KeyV'],
+      pause: ['Escape'],
+    },
+  });
+  await page.goto('/?level=w1_l01&lang=zh-TW&touch=off');
+  await expect(page.locator('#hud-speed')).toHaveText('0.0');
+  await page.evaluate(
+    ({ key, value }) => {
+      window.localStorage.setItem(key, value);
+    },
+    { key: CONTROLS_KEY, value: legacy },
+  );
+  await page.reload();
+  await expect(page.locator('#hud-speed')).toHaveText('0.0');
+
+  // 不算壞檔：改過的鍵都還在，存檔沒有被刪掉；操作說明裡沒有 / 與空白鍵。
+  expect(await hudKeys(page, 'restart')).toEqual(['R', 'T']);
+  expect(await hudKeys(page, 'gearReverse')).toEqual(['E']);
+  expect(await hudKeys(page, 'brake')).toEqual([',']);
+  const hudTexts = await page.locator('.hud-controls .hud-key').allTextContents();
+  expect(hudTexts).not.toContain('/');
+  expect(hudTexts).not.toContain('空白鍵');
+  expect(await storedControls(page)).toBe(legacy);
+
+  // 按鍵設定裡沒有那一列；它原本佔的空白鍵可以綁給剎車。
+  await page.locator('#hud-controls-edit').click();
+  const panel = page.locator('#controls-panel');
+  await expect(panel).toBeVisible();
+  await expect(panel.locator('.controls-row')).toHaveCount(10);
+  await expect(panel.locator('.controls-row[data-action="handbrake"]')).toHaveCount(0);
+  await bind(page, 'brake', 1, 'Space');
+  await expect(page.locator('#controls-message')).toHaveAttribute('data-kind', 'info');
+  await expect(page.locator('#bind-brake-1')).toHaveText('空白鍵');
+
+  // 這一次存檔寫回去的內容不再有 handbrake，其他鍵照舊。
+  const saved = JSON.parse((await storedControls(page)) ?? 'null') as {
+    version: number;
+    bindings: Record<string, string[]>;
+  };
+  expect(saved.bindings).not.toHaveProperty('handbrake');
+  expect(saved.bindings.brake).toEqual(['Comma', 'Space']);
+  expect(saved.bindings.restart).toEqual(['KeyR', 'KeyT']);
+  expect(saved.bindings.gearReverse).toEqual(['KeyE']);
+
+  // 新綁的空白鍵真的是剎車：開起來之後按住它會停住。
+  await page.locator('#controls-done').click();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#hud-pause')).toBeHidden();
+  const moving = await holdUntil(page, 'KeyW', (snapshot) => snapshot.speedMph > 3);
+  expect(moving.status).toBe('driving');
+  const stopped = await holdUntil(page, 'Space', (snapshot) => snapshot.speedMph === 0);
+  expect(stopped.status).toBe('driving');
+});
 
 test('掛 R／D 檔進入手排、逗號腳剎、Backspace 重來後回到自排 D 檔', async ({ page }) => {
   await page.goto('/?level=w1_l05&view=chase_near&lang=zh-TW');
@@ -324,7 +408,7 @@ test('掛 R／D 檔進入手排、逗號腳剎、Backspace 重來後回到自排
   await expect(gear).toHaveAttribute('data-gear', 'reverse');
   await page.keyboard.up('KeyS');
   await expect(gear).toHaveAttribute('data-mode', 'auto');
-  const end = await holdUntil(page, 'Slash', (snapshot) => snapshot.speedMph === 0);
+  const end = await holdUntil(page, 'Comma', (snapshot) => snapshot.speedMph === 0);
   expect(end.status).toBe('driving');
 });
 
@@ -362,7 +446,7 @@ test('重來一律回到自排 D 檔：按著轉向或油門重來、T、暫停�
   // 自排倒車（按 S）後停住，檔位留在 R；按著右轉不放時按 T（備用的重來鍵）：同樣回到 D。
   const reversing = await holdUntil(page, 'KeyS', (snapshot) => snapshot.speedMph < -0.5);
   expect(reversing.status).toBe('driving');
-  const stopped = await holdUntil(page, 'Space', (snapshot) => snapshot.speedMph === 0);
+  const stopped = await holdUntil(page, 'Comma', (snapshot) => snapshot.speedMph === 0);
   expect(stopped.status).toBe('driving');
   await expect(gear).toHaveAttribute('data-gear', 'reverse');
   await expect(gear).toHaveAttribute('data-mode', 'auto');
@@ -388,7 +472,7 @@ test('重來一律回到自排 D 檔：按著轉向或油門重來、T、暫停�
   await expect.poll(async () => (await nextSnapshot(page)).speedMph).toBeGreaterThan(0.5);
   expect(await gear.getAttribute('data-gear')).toBe('forward');
   await page.keyboard.up('KeyW');
-  const rolled = await holdUntil(page, 'Space', (snapshot) => snapshot.speedMph === 0);
+  const rolled = await holdUntil(page, 'Comma', (snapshot) => snapshot.speedMph === 0);
   expect(rolled.status).toBe('driving');
   expect(rolled.zFt).toBeLessThan(start.zFt);
   await staysInDrive();

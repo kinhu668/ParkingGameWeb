@@ -203,14 +203,14 @@ test('「車位在後方」的提示：w1_l05 一進場就有，掛倒檔後收�
   await expect(hint).toHaveText('▼ 車位在後方');
   await page.screenshot({ path: `${OUTPUT_DIR}/spot-hint-w1_l05-cockpit.png` });
 
-  // 掛倒檔：倒車輔助層接手看後面，提示收起。一掛上就放開、拉手煞車停住（軟體算圖幀率低，別倒到撞東西）。
+  // 掛倒檔：倒車輔助層接手看後面，提示收起。一掛上就放開、踩剎車停住（軟體算圖幀率低，別倒到撞東西）。
   await page.keyboard.down('KeyS');
   await expect(gear).toHaveAttribute('data-gear', 'reverse');
   await page.keyboard.up('KeyS');
   await expect(hint).toBeHidden();
-  await page.keyboard.down('Space');
+  await page.keyboard.down('Comma');
   await expect.poll(async () => (await nextSnapshot(page)).speedMph).toBe(0);
-  await page.keyboard.up('Space');
+  await page.keyboard.up('Comma');
 
   // 英文介面也有。
   await page.goto('/?level=w1_l05&view=chase_near&lang=en');

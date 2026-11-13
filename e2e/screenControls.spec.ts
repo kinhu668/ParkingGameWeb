@@ -108,7 +108,7 @@ test.describe('桌面：滑鼠與鍵盤', () => {
     for (const id of ['touch-wheel', 'touch-brake', 'touch-gas', 'touch-camera']) {
       await expect(page.locator(`#${id}`)).toBeVisible();
     }
-    // 鍵帽寫的是預設綁定：方向盤左右是 A／D，油門 W，剎車是腳剎的逗號（不是手煞車）。
+    // 鍵帽寫的是預設綁定：方向盤左右是 A／D，油門 W，剎車是逗號。
     for (const [action, text] of [
       ['steerLeft', 'A'],
       ['steerRight', 'D'],
@@ -174,7 +174,7 @@ test.describe('桌面：滑鼠與鍵盤', () => {
     await page.mouse.up();
     await expect(wheel).toHaveAttribute('data-held', 'false');
     await expect.poll(async () => Number(await wheel.getAttribute('aria-valuenow'))).toBe(0);
-    await keyHoldUntil(page, 'Space', '停住', (snapshot) => snapshot.speedMph === 0);
+    await keyHoldUntil(page, 'Comma', '停住', (snapshot) => snapshot.speedMph === 0);
     expect((await nextSnapshot(page)).status).toBe('driving');
 
     // 滑鼠點「鏡頭」：與 V 同一個循環。
@@ -342,7 +342,7 @@ test.describe('桌面：滑鼠與鍵盤', () => {
     );
     await page.keyboard.up('KeyJ');
     expect(turned.xFt).toBeLessThan(before.xFt);
-    await keyHoldUntil(page, 'Space', '停住', (snapshot) => snapshot.speedMph === 0);
+    await keyHoldUntil(page, 'Comma', '停住', (snapshot) => snapshot.speedMph === 0);
     expect((await nextSnapshot(page)).status).toBe('driving');
   });
 });
