@@ -943,7 +943,7 @@ export const LOT_PROPS_CONFIG = {
   lampConeBottomRadiusM: ftToM(13),
   lampConeColor: 0xffc98a,
   /** 光錐沿光軸的亮度：燈頭下方很快亮起來，往地面淡到 0；越張越稀（半徑的這個冪次）。 */
-  lampCone: { riseFraction: 0.03, falloffExponent: 0.85, spreadExponent: 0.25 },
+  lampCone: { riseFraction: 0.03, falloffExponent: 1, spreadExponent: 0.25 },
   /**
    * 光錐與光暈是加色混合。走後製鏈的級別加在色調映射之前（場景亮度），直接畫到畫面上的級別加在色調映射之後
    * （顯示亮度，同樣的數值看起來亮得多），所以兩邊各有自己的亮度。
@@ -1130,12 +1130,15 @@ export const LIGHT_SHAFT_CONFIG = {
   /** 圓錐沿光軸切成幾段（頂點只用來定形狀，亮度是每個像素算的，不必多）。 */
   heightSegments: 2,
   /** 邊緣的柔和度：亮度 ∝（弦長 ÷ 這一處的直徑）的這個冪次。1 = 照實（邊緣收得很急）；越大邊緣越柔。 */
-  edgeExponent: 1.8,
+  edgeExponent: 2.2,
   /** 順著光軸看（俯視路燈、從車後看頭燈）弦長比直徑長得多；亮度最多算到「橫著看正中間」的這個倍數，不洗白。 */
-  maxThickness: 1.5,
-  /** 光柱的表面離鏡頭這麼近以內完全不畫、到這麼遠才是全亮：鏡頭穿進光柱的瞬間不會整片跳掉。 */
+  maxThickness: 1.25,
+  /**
+   * 光柱的表面離鏡頭這麼近以內完全不畫、到這麼遠才是全亮：鏡頭穿進光柱的瞬間不會整片跳掉，
+   * 貼在鏡頭旁邊的那一盞（近看只是一大片沒有形狀的亮面）也跟著淡。
+   */
   cameraFadeNearM: ftToM(1.5),
-  cameraFadeFarM: ftToM(12),
+  cameraFadeFarM: ftToM(34),
   /** 遠處的光柱被線性遠霧吃掉的比例（1 = 到霧的遠端完全看不見）。 */
   fogFade: 0.85,
   /** 霧氣流動的噪聲：亮度上下的幅度（0–1）、一格的大小、流動的速度（世界座標，公尺／秒）。 */
