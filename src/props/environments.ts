@@ -29,6 +29,7 @@ import type { EnvironmentLayout } from './environmentLayout';
 import { createSpotFrame } from './lotEdges';
 import { createLotProps } from './lotProps';
 import { occluderBox, registerOccluders, type Occluder } from './occluders';
+import { createCappedShadowDepthMaterial } from './shadowReach';
 import { createSignMesh } from './signs';
 
 const SLAB_ROUGHNESS = 0.9;
@@ -81,6 +82,7 @@ export function createSpotArrow(spot: ParkingSpot): Group {
  * @param props 這個畫質級別的擺設設定
  * @param hdr 這個級別是不是走高動態範圍的後製鏈（決定路燈光錐與光暈的亮度）
  * @param lampsLit 路燈亮不亮（跟著天氣）；白天路燈不亮，招牌也不自發光
+ * @param buildingShadowHeightM 建築在陰影貼圖裡最高算多高（shadowReach.ts）；不給 = 不設限，照實投影
  */
 export function createEnvironment(
   spot: ParkingSpot,
@@ -88,13 +90,22 @@ export function createEnvironment(
   props: PropsQualitySettings,
   hdr: boolean,
   lampsLit = true,
+  buildingShadowHeightM = Infinity,
 ): Group {
   const group = new Group();
   group.name = 'environment';
   // 佈局已經是世界座標：給 createLotProps 一個在原點、不轉向的座標框。
   group.add(
     // 路燈用 braced：桿、臂、燈頭連成一體的那一種。
-    createLotProps({ ...spot, x: 0, z: 0, headingRad: 0 }, layout.lot, props, hdr, lampsLit, 'braced'),
+    createLotProps(
+      { ...spot, x: 0, z: 0, headingRad: 0 },
+      layout.lot,
+      props,
+      hdr,
+      lampsLit,
+      'braced',
+      buildingShadowHeightM,
+    ),
   );
 
   // 立體的方塊與平貼地面的標線：一個 InstancedMesh。
@@ -121,8 +132,12 @@ export function createEnvironment(
     });
     mesh.instanceMatrix.needsUpdate = true;
     mesh.name = 'environmentSlabs';
-    // 主建築不投影：太陽很低，會把整個場地罩進影子裡（與背景建築相同）。
-    mesh.castShadow = false;
+    // 主建築、雨棚、招牌柱、人行道都投影。太陽很低時影子的長度有上限（shadowReach.ts），
+    // 樓前的地面有影子，但不會把整個場地罩進影子裡。
+    mesh.castShadow = true;
+    if (Number.isFinite(buildingShadowHeightM)) {
+      mesh.customDepthMaterial = createCappedShadowDepthMaterial(buildingShadowHeightM);
+    }
     mesh.receiveShadow = true;
     group.add(mesh);
     slabMesh = mesh;

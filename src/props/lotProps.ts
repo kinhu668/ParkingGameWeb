@@ -33,6 +33,7 @@ import { createSpotFrame, createWheelStopGeometry, createWheelStopMaterial } fro
 import type { LotLayout, PropPlacement } from './lotLayout';
 import { occluderBox, registerOccluders, type OccluderPart } from './occluders';
 import { createParkedCars } from './parkedCars';
+import { createCappedShadowDepthMaterial } from './shadowReach';
 
 /** 光暈離地的高度：高過標線，又低到看不出浮起來。 */
 const LAMP_POOL_LIFT_M = ftToM(0.08);
@@ -588,6 +589,7 @@ function createSignGeometry(): BufferGeometry {
  * @param hdr 這個級別是不是走高動態範圍的後製鏈（決定光錐與光暈的亮度）
  * @param lampsLit 路燈亮不亮（白天的天氣不亮）；不給 = 亮
  * @param lampStyle 路燈的樣式；不給 = 原型關的 classic
+ * @param buildingShadowHeightM 背景建築在陰影貼圖裡最高算多高（shadowReach.ts）；不給 = 不設限，照實投影
  */
 export function createLotProps(
   spot: ParkingSpot,
@@ -596,6 +598,7 @@ export function createLotProps(
   hdr: boolean,
   lampsLit = true,
   lampStyle: LampStyle = 'classic',
+  buildingShadowHeightM = Infinity,
 ): Group {
   const frame = createSpotFrame(spot);
   frame.name = 'lotProps';
@@ -645,16 +648,23 @@ export function createLotProps(
     concrete,
   );
 
-  // 背景建築不投影：太陽很低，會把整個場地罩進影子裡。
-  addBoxes(
-    instanced(box, standard(0xffffff, LOT.buildingRoughness), layout.buildings.map(boxAt), {
+  // 背景建築也投影。太陽很低時影子的長度有上限（shadowReach.ts）：樓腳前面有影子，但不會拉過整個場地。
+  const buildings = instanced(
+    box,
+    standard(0xffffff, LOT.buildingRoughness),
+    layout.buildings.map(boxAt),
+    {
       name: 'buildings',
+      castShadow: true,
       colors: layout.buildings.map((building) =>
         pick(LOT.buildingColors, building.variant, secondary(building.variant)),
       ),
-    }),
-    layout.buildings,
+    },
   );
+  if (buildings !== undefined && Number.isFinite(buildingShadowHeightM)) {
+    buildings.customDepthMaterial = createCappedShadowDepthMaterial(buildingShadowHeightM);
+  }
+  addBoxes(buildings, layout.buildings);
   // 窗：不吃光的材質，顏色就是亮度。亮著的是暖黃，沒亮的是深色玻璃。
   const lit = LOT.buildingWindowLitColor;
   const dark = LOT.buildingWindowDarkColor;

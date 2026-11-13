@@ -446,6 +446,17 @@ export const SUN_CONFIG = {
   lotShadowMaxHeightM: ftToM(27),
   /** 陰影相機的近、遠平面在算出來的範圍之外各多留這麼多。 */
   lotShadowDepthMarginM: ftToM(10),
+  /**
+   * 會投影的東西（建築、巷子的高牆）最高算多高：只用來把陰影相機的近平面往太陽那邊推，
+   * 比 lotShadowMaxHeightM 高的樓頂才不會被近平面切掉。不影響陰影範圍的寬高（解析度不變）。
+   */
+  lotShadowCasterHeightM: ftToM(70),
+  /**
+   * 建築的影子最長多長（props/shadowReach.ts）。黃昏的太陽很低，照實投影整塊場地都在樓的影子裡；
+   * 建築在陰影貼圖裡被壓矮到「這個長度 × tan(仰角)」，影子只蓋到樓前這一段。
+   * 晴天、雨天、夜晚的太陽（月亮）夠高，算出來的上限比樓還高，影子是照實的。
+   */
+  buildingShadowReachM: ftToM(60),
 } as const;
 
 /** 鏡頭效果與後製鏈裡不隨畫質級別改變的數值。 */

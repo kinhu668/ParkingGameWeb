@@ -233,6 +233,10 @@ function createStandIn(part: OccluderPart): StandIn | undefined {
   mesh.matrix.copy(original);
   // 影子照舊：東西還在那裡，只是看得穿。
   mesh.castShadow = part.mesh.castShadow;
+  // 影子的長度有上限的建築（shadowReach.ts）：替身用同一個深度材質，淡掉時影子不會突然變長。
+  if (part.mesh.customDepthMaterial !== undefined) {
+    mesh.customDepthMaterial = part.mesh.customDepthMaterial;
+  }
   mesh.receiveShadow = part.mesh.receiveShadow;
   mesh.renderOrder = STAND_IN_RENDER_ORDER;
   mesh.visible = false;

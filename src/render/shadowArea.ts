@@ -24,8 +24,6 @@ export interface ShadowBox {
 /** 光的方向與鉛直線的夾角小到水平分量不到這個比例，就當作正上方。 */
 const MIN_SIDE_LENGTH = 1e-6;
 
-/** 近平面最少離光源這麼遠。 */
-const MIN_NEAR_M = 0.1;
 
 /**
  * 蓋住一塊地面的陰影範圍。
@@ -34,6 +32,7 @@ const MIN_NEAR_M = 0.1;
  * @param maxHeightM 地面上會投影的東西最高多高
  * @param lightDistanceM 光源離目標點多遠
  * @param depthMarginM 近、遠平面各多留多少
+ * @param casterHeightM 範圍內會投影的東西最高多高（只把近平面往太陽推，不改範圍的寬高）；不給 = maxHeightM
  */
 export function fitShadowBox(
   directionToSun: ShadowDirection,
@@ -41,6 +40,7 @@ export function fitShadowBox(
   maxHeightM: number,
   lightDistanceM: number,
   depthMarginM: number,
+  casterHeightM: number = maxHeightM,
 ): ShadowBox {
   const length = Math.hypot(directionToSun.x, directionToSun.y, directionToSun.z);
   // 相機的三個軸：back 指向太陽；side = 上 × back；up = back × side。
@@ -84,6 +84,11 @@ export function fitShadowBox(
       nearest = Math.max(nearest, towardSun);
       farthest = Math.min(farthest, towardSun);
     }
+    // 比 maxHeightM 高的投影物（樓頂、高牆的上緣）：不在要蓋住的範圍裡，但也不能被近平面切掉。
+    nearest = Math.max(
+      nearest,
+      (corner.x - targetX) * back.x + casterHeightM * back.y + (corner.z - targetZ) * back.z,
+    );
   }
   return {
     targetX,
@@ -92,7 +97,8 @@ export function fitShadowBox(
     right,
     bottom,
     top,
-    near: Math.max(lightDistanceM - nearest - depthMarginM, MIN_NEAR_M),
+    // 正交相機的近平面可以在光源後面（負值）：場地很大或投影物很高時，不能為了讓它是正的而把樓頂切掉。
+    near: lightDistanceM - nearest - depthMarginM,
     far: lightDistanceM - farthest + depthMarginM,
   };
 }

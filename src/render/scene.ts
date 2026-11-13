@@ -28,6 +28,7 @@ import type { GroundEdgeBox } from '../props/groundShader';
 import type { BoundsFt } from '../level/collision';
 import { ftToM } from '../core/units';
 import { createLotProps } from '../props/lotProps';
+import { buildingShadowMaxHeightM } from '../props/shadowReach';
 import { createEnvironmentLayout, type EnvironmentSource } from '../props/environmentLayout';
 import { createEnvironment } from '../props/environments';
 import {
@@ -193,6 +194,7 @@ export function lotShadowBox(spot: ParkingSpot, sunDirection: Direction3 = SUN_D
     SUN_CONFIG.lotShadowMaxHeightM,
     SUN_CONFIG.distanceM,
     SUN_CONFIG.lotShadowDepthMarginM,
+    SUN_CONFIG.lotShadowCasterHeightM,
   );
 }
 
@@ -221,6 +223,7 @@ export function boundsShadowBox(
     SUN_CONFIG.lotShadowMaxHeightM,
     SUN_CONFIG.distanceM,
     SUN_CONFIG.lotShadowDepthMarginM,
+    SUN_CONFIG.lotShadowCasterHeightM,
   );
 }
 
@@ -340,6 +343,8 @@ export function createGameScene(
   const bounds = level?.boundsFt;
   const environmentLayout =
     level === undefined ? undefined : createEnvironmentLayout(level, quality.props);
+  // 建築的影子長度有上限：太陽很低時樓的影子不會拉過整個場地（props/shadowReach.ts）。
+  const buildingShadowHeightM = buildingShadowMaxHeightM(sunDirection);
 
   // 陰影範圍固定蓋住整塊場地。
   const shadowBox =
@@ -392,6 +397,8 @@ export function createGameScene(
         quality.props,
         usesHdrChain(quality),
         preset.lampsOn,
+        'classic',
+        buildingShadowHeightM,
       ),
     );
   } else {
@@ -403,6 +410,7 @@ export function createGameScene(
         quality.props,
         usesHdrChain(quality),
         preset.lampsOn,
+        buildingShadowHeightM,
       ),
     );
   }
