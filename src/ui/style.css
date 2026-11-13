@@ -101,6 +101,26 @@ body {
   white-space: nowrap;
 }
 
+/* 「車位在後方」：行車資訊下面一行小字。低調：比其他面板小、半透明的琥珀色字（與車位的發光標記同色）。 */
+.hud-spot-hint {
+  position: absolute;
+  top: calc(max(var(--ui-gap), env(safe-area-inset-top)) + 76px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 5px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  color: #ffc45c;
+  opacity: 0.92;
+  pointer-events: none;
+}
+
+.hud-spot-hint[hidden] {
+  display: none;
+}
+
 .hud-stat {
   display: grid;
   justify-items: center;
@@ -820,6 +840,12 @@ body {
   .hud-stat-value {
     min-width: 0;
     font-size: 18px;
+  }
+
+  /* 行車資訊在第二排，提示跟著往下。 */
+  .hud-spot-hint {
+    top: calc(max(var(--ui-gap), env(safe-area-inset-top)) + 108px);
+    font-size: 13px;
   }
 
   /* 結算與暫停面板：不超出畫面，按鈕放不下就換行。 */

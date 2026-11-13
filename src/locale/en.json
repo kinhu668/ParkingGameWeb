@@ -21,6 +21,7 @@
   "hud.gearReverse": "Reverse",
   "hud.gearManual": "Manual shift",
   "hud.angle": "Angle off",
+  "hud.spotBehind": "▼ Spot is behind you",
   "camera.chase_near": "Chase Cam (Near)",
   "camera.chase_far": "Chase Cam (Far)",
   "camera.hood": "Hood Cam",

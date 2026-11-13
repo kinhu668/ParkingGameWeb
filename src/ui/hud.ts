@@ -1,10 +1,11 @@
-// 疊在畫布上的 HTML HUD：車速（mph）、倒數計時、碰撞次數、檔位、角度誤差、簡要操作說明、
+// 疊在畫布上的 HTML HUD：車速（mph）、倒數計時、碰撞次數、檔位、角度誤差、「車位在後方」的提示、簡要操作說明、
 // 語言切換按鈕、關卡選擇按鈕、目前鏡頭名稱、結算面板（results.ts）、暫停面板（pausePanel.ts）、
 // 按鍵設定面板（controlsPanel.ts）。操作說明列的是目前的按鍵綁定，不寫死。
 // 所有文字都走翻譯鍵；語言切換時就地更新，不重新載入頁面。
 import type { GameCameraView } from '../core/cameraView';
 import type { ControlAction, ControlBindings } from '../core/controls';
 import { onLocaleChange, t, type TranslationKey } from '../core/i18n';
+import { spotBehindHint } from '../core/spotHint';
 import { mpsToMph } from '../core/units';
 import { angleErrorRad } from '../level/parkingJudge';
 import { UNLIMITED_RULES, stepsToSeconds, type FailReason } from '../level/scoring';
@@ -117,6 +118,15 @@ export function hudReadout(session: Session): HudReadout {
   };
 }
 
+/**
+ * 「車位在後方」的提示要不要顯示：這一局還在進行、掛著前進檔，而且車位在車的後方（core/spotHint.ts）。
+ * @param shown 上一幀有沒有在顯示（方位在門檻附近時維持原狀）
+ */
+export function spotHintVisible(session: Session, gear: Gear, shown: boolean): boolean {
+  const running = session.status === 'ready' || session.status === 'driving';
+  return running && gear === 'forward' && spotBehindHint(session.vehicle, session.layout.spot, shown);
+}
+
 export interface Hud {
   /**
    * 每幀呼叫；顯示的文字有變才動 DOM。
@@ -175,6 +185,14 @@ export function createHud(
   const collisionsValue = stat('hud-collisions', 'hud.collisions');
   const gearValue = stat('hud-gear', 'hud.gear');
   const angleValue = stat('hud-angle', 'hud.angle');
+
+  // 「車位在後方」：行車資訊下面一行低調的提示。車位在車後方、掛著前進檔（朝前看不到車位）時才顯示；
+  // 掛倒檔時倒車輔助層已經在看後面了，不顯示。
+  const spotHint = translatedElement('div', 'hud-panel hud-spot-hint', root, 'hud.spotBehind');
+  spotHint.id = 'hud-spot-hint';
+  spotHint.setAttribute('role', 'status');
+  spotHint.hidden = true;
+  let spotHintShown = false;
 
   // 右上角：語言按鈕（顯示「會切到的語言」的名稱），下面是回關卡選擇的按鈕。
   const cornerButtons = element('div', 'hud-corner', root);
@@ -286,6 +304,11 @@ export function createHud(
       }
       if (next.angle !== previous?.angle) {
         angleValue.textContent = next.angle;
+      }
+      const hintNow = spotHintVisible(session, gearbox.gear, spotHintShown);
+      if (hintNow !== spotHintShown) {
+        spotHintShown = hintNow;
+        spotHint.hidden = !hintNow;
       }
       if (gearbox.gear !== shownGear || gearbox.manual !== shownManual) {
         shownGear = gearbox.gear;

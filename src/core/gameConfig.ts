@@ -37,3 +37,13 @@ export const SCORING_RULES = {
   /** 3 星：停妥當下的角度誤差要嚴格小於這個值。 */
   threeStarMaxAngleDeg: 3,
 } as const;
+
+/**
+ * 「車位在後方」的 HUD 提示（core/spotHint.ts）：車位中心相對車頭的方位超過 showBeyondDeg 才出現，
+ * 回到 hideWithinDeg 以內才收起；車離車位中心不到 minDistanceM（已經在車位上或正要進去）不顯示。
+ */
+export const SPOT_HINT_RULES = {
+  showBeyondDeg: 120,
+  hideWithinDeg: 100,
+  minDistanceM: 3.6576,
+} as const;

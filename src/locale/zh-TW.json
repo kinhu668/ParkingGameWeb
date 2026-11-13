@@ -21,6 +21,7 @@
   "hud.gearReverse": "倒車",
   "hud.gearManual": "手排",
   "hud.angle": "角度誤差",
+  "hud.spotBehind": "▼ 車位在後方",
   "camera.chase_near": "近距離跟車",
   "camera.chase_far": "遠距離跟車",
   "camera.hood": "引擎蓋",

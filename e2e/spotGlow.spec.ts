@@ -192,3 +192,33 @@ test.describe('手機直向 390×844：w1_l05（直線倒車，車位在起點�
     });
   }
 });
+
+test('「車位在後方」的提示：w1_l05 一進場就有，掛倒檔後收起；車位在前方的關卡沒有', async ({ page }) => {
+  // w1_l05（直線倒車）：車位在起點正後方，朝前看不到發光標記。
+  await page.goto('/?level=w1_l05&view=cockpit&lang=zh-TW');
+  const hint = page.locator('#hud-spot-hint');
+  const gear = page.locator('#hud-gear');
+  await expect(gear).toHaveAttribute('data-gear', 'forward');
+  await expect(hint).toBeVisible();
+  await expect(hint).toHaveText('▼ 車位在後方');
+  await page.screenshot({ path: `${OUTPUT_DIR}/spot-hint-w1_l05-cockpit.png` });
+
+  // 掛倒檔：倒車輔助層接手看後面，提示收起。一掛上就放開、拉手煞車停住（軟體算圖幀率低，別倒到撞東西）。
+  await page.keyboard.down('KeyS');
+  await expect(gear).toHaveAttribute('data-gear', 'reverse');
+  await page.keyboard.up('KeyS');
+  await expect(hint).toBeHidden();
+  await page.keyboard.down('Space');
+  await expect.poll(async () => (await nextSnapshot(page)).speedMph).toBe(0);
+  await page.keyboard.up('Space');
+
+  // 英文介面也有。
+  await page.goto('/?level=w1_l05&view=chase_near&lang=en');
+  await expect(page.locator('#hud-spot-hint')).toHaveText('▼ Spot is behind you');
+  await expect(page.locator('#hud-spot-hint')).toBeVisible();
+
+  // 車位在正前方的關卡不顯示。
+  await page.goto('/?level=prototype&view=cockpit&lang=zh-TW');
+  await expect(page.locator('#hud-gear')).toHaveAttribute('data-gear', 'forward');
+  await expect(page.locator('#hud-spot-hint')).toBeHidden();
+});
