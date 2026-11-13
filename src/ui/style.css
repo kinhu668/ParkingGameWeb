@@ -411,7 +411,7 @@ body {
 .controls-panel {
   touch-action: pan-y;
   box-sizing: border-box;
-  max-width: min(760px, calc(100vw - 2 * var(--ui-gap)));
+  max-width: min(600px, calc(100vw - 2 * var(--ui-gap)));
   max-height: 88vh;
   overflow-y: auto;
   padding: 20px 28px 22px;
@@ -432,30 +432,30 @@ body {
   text-align: center;
 }
 
-/* 兩欄，由上往下排完第一欄再排第二欄。 */
+/* 一欄，每個動作一列。 */
 .controls-rows {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: repeat(6, auto);
-  grid-auto-flow: column;
-  gap: 8px 36px;
+  gap: 8px;
   margin-top: 16px;
 }
 
-@media (max-width: 760px) {
-  .controls-rows {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: none;
-    grid-auto-flow: row;
-  }
-}
-
-/* 一列：動作名稱、主要鍵、備用鍵、拿掉備用鍵。 */
+/* 一列：動作名稱、最多三個鍵（主要鍵與兩個備用鍵）、拿掉最後一個備用鍵。 */
 .controls-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 6.5em 6.5em 24px;
+  grid-template-columns: minmax(0, 1fr) repeat(3, 6.5em) 24px;
   align-items: center;
   gap: 6px;
+}
+
+/* 窄畫面（手機直向）：動作名稱自己一行，三個鍵平分下面那一行。 */
+@media (max-width: 560px) {
+  .controls-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) 24px;
+  }
+
+  .controls-action {
+    grid-column: 1 / -1;
+  }
 }
 
 .controls-key {
@@ -469,6 +469,8 @@ body {
   font-size: 14px;
   font-weight: 600;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   cursor: pointer;
   transition: background-color 0.15s ease;
 }
@@ -511,7 +513,8 @@ body {
   color: inherit;
 }
 
-/* 沒有備用鍵可以拿掉：留著位置，各列才對得齊。 */
+/* 還輪不到的空格、沒有備用鍵可以拿掉的按鈕：留著位置，各列才對得齊。 */
+.controls-key[data-available='false'],
 .controls-clear[data-available='false'] {
   visibility: hidden;
 }

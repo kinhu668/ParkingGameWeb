@@ -1,5 +1,5 @@
 // 按鍵設定面板：每個動作一列，點鍵帽後按新的鍵就重綁；同一個鍵不能綁兩個動作（擋下來並說明是誰的）；
-// 可以多加一個備用鍵、拿掉備用鍵、恢復預設。從暫停面板或 HUD 的操作說明進入。
+// 每個動作最多三個鍵：可以多加備用鍵、拿掉最後一個備用鍵、恢復預設。從暫停面板或 HUD 的操作說明進入。
 // 掛在 HUD 的 `#controls-panel` 裡，平常隱藏。
 import {
   CONTROL_ACTIONS,
@@ -253,7 +253,9 @@ export function createControlsPanel(
     for (const { action, slot, button } of slotButtons) {
       const code = bindings[action][slot];
       const waiting = listening?.action === action && listening.slot === slot;
-      // 第二格還沒有鍵：顯示「＋」，點了就是多加一個備用鍵。
+      // 緊接在最後一個鍵後面的空格顯示「＋」，點了就是多加一個備用鍵；再後面的空格先藏起來（留著位置，各列才對得齊）。
+      button.dataset.available = String(slot <= bindings[action].length);
+      button.disabled = slot > bindings[action].length;
       button.textContent = waiting ? t('controls.listening') : code === undefined ? '＋' : keyText(code);
       button.dataset.listening = String(waiting);
       button.dataset.code = code ?? '';
