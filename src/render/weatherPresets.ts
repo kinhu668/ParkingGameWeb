@@ -137,7 +137,8 @@ const RAIN_SKY: SkyPreset = {
 };
 
 export const WEATHER_PRESETS: Readonly<Record<WeatherId, WeatherPreset>> = {
-  // 晴天：高仰角的白色太陽、藍天、少雲、遠而淡的霧、乾地、路燈不亮。
+  // 晴天：白色的太陽、藍天、少雲、遠而淡的霧、乾地、路燈不亮。
+  // 仰角 42°（下午）：一層樓高的建築影子比樓高略長，蓋過人行道、落到路面上，看得出是影子。
   clear: {
     sky: {
       ...SKY_CONFIG,
@@ -149,7 +150,7 @@ export const WEATHER_PRESETS: Readonly<Record<WeatherId, WeatherPreset>> = {
       environmentIntensity: 0.34,
       overcast: 0,
     },
-    sun: { color: 0xfff3dc, intensity: 3.1, azimuthDeg: -38, elevationDeg: 52 },
+    sun: { color: 0xfff3dc, intensity: 3.1, azimuthDeg: -38, elevationDeg: 42 },
     fog: { color: 0xa9bfd6, nearM: ftToM(260), farM: ftToM(1400), groundColor: 0x4a4744 },
     hemisphere: { skyColor: 0xbcd4ff, groundColor: 0x6e675f, intensity: 0.5 },
     ground: DRY_GROUND,
