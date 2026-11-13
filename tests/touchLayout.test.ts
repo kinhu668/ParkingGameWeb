@@ -1,4 +1,5 @@
-// 觸控層的版面：每種手機／平板畫面大小下，七個控制項都在畫面內、夠大、互不重疊，而且不壓到倒車輔助的四個小窗。
+// 螢幕操作層的版面：每種手機／平板／桌面畫面大小下，八個控制項（含切換鏡頭）都在畫面內、夠大、互不重疊，
+// 而且不壓到倒車輔助的四個小窗；手機上的輔助小窗明顯比桌面的算法小。
 import { describe, expect, test } from 'vitest';
 import {
   ASSIST_VIEW_ASPECT,
@@ -92,6 +93,11 @@ describe('touchLayout', () => {
     expect(layout.gearDrive.y + layout.gearDrive.height).toBeLessThan(layout.gearReverse.y);
     expect(layout.pause.x).toBeGreaterThan(layout.wheel.x + layout.wheel.width);
     expect(layout.restart.x + layout.restart.width).toBeLessThan(layout.gearDrive.x);
+    // 鏡頭鍵排在暫停、重來的右邊，同一排、同樣大小，仍在掛檔的左邊。
+    expect(layout.camera.y).toBe(layout.pause.y);
+    expect(layout.camera.x).toBeGreaterThan(layout.restart.x + layout.restart.width);
+    expect(layout.camera.x + layout.camera.width).toBeLessThan(layout.gearDrive.x);
+    expect(layout.camera.width).toBe(layout.pause.width);
     const center: Rect = { x: width / 2 - 40, y: height / 2 - 20, width: 80, height: 40 };
     for (const id of TOUCH_CONTROL_IDS) {
       expect(overlaps(layout[id], center), id).toBe(false);
@@ -100,12 +106,13 @@ describe('touchLayout', () => {
 
   test.each(PORTRAIT)('直向 %i×%i：小鍵在方向盤與踏板的上面一排，下半部以外留給車', (width, height) => {
     const layout = touchLayout(width, height);
-    for (const id of ['pause', 'restart', 'gearDrive', 'gearReverse'] as const) {
+    for (const id of ['pause', 'restart', 'camera', 'gearDrive', 'gearReverse'] as const) {
       expect(layout[id].y + layout[id].height).toBeLessThan(layout.wheel.y);
       expect(layout[id].y).toBe(layout.pause.y);
     }
     expect(layout.pause.x).toBeLessThan(layout.restart.x);
-    expect(layout.restart.x + layout.restart.width).toBeLessThan(layout.gearDrive.x);
+    expect(layout.restart.x + layout.restart.width).toBeLessThan(layout.camera.x);
+    expect(layout.camera.x + layout.camera.width).toBeLessThan(layout.gearDrive.x);
     expect(layout.gearDrive.x).toBeLessThan(layout.gearReverse.x);
     // 控制項只佔畫面下面不到 35%。
     expect(layout.pause.y).toBeGreaterThan(height * 0.65);
@@ -132,6 +139,22 @@ describe('assistLayout 在很窄的畫面', () => {
   test('比較寬的畫面（手機橫向、桌機）上排位置不變', () => {
     for (const [width, height] of LANDSCAPE) {
       expect(assistLayout(width, height).bird.y).toBe(92);
+    }
+  });
+});
+
+describe('切換鏡頭鍵', () => {
+  test('排進了版面，而且每種畫面大小都不與輔助小窗相交', () => {
+    expect(TOUCH_CONTROL_IDS).toContain('camera');
+    expect(TOUCH_CONTROL_IDS).toHaveLength(8);
+    for (const [width, height] of ALL_SIZES) {
+      const { camera } = touchLayout(width, height);
+      const assist = assistLayout(width, height);
+      expect(camera.width, `${width}×${height}`).toBeGreaterThanOrEqual(MIN_TAP_PX);
+      expect(camera.height, `${width}×${height}`).toBeGreaterThanOrEqual(MIN_TAP_PX);
+      for (const view of ASSIST_VIEW_IDS) {
+        expect(overlaps(camera, assist[view]), `${width}×${height} ${view}`).toBe(false);
+      }
     }
   });
 });

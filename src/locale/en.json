@@ -99,5 +99,6 @@
   "touch.gearDrive": "Shift to D",
   "touch.gearReverse": "Shift to R",
   "touch.pause": "Pause",
-  "touch.restart": "Restart"
+  "touch.restart": "Restart",
+  "touch.camera": "Camera"
 }

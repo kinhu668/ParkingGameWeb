@@ -99,5 +99,6 @@
   "touch.gearDrive": "掛 D 檔",
   "touch.gearReverse": "掛 R 檔",
   "touch.pause": "暫停",
-  "touch.restart": "重來"
+  "touch.restart": "重來",
+  "touch.camera": "鏡頭"
 }

@@ -18,10 +18,12 @@ import type { DriveInput } from '../vehicle/bicycleModel';
 import type { Gear, Gearbox } from '../vehicle/gearbox';
 import { createUiBuilder } from './dom';
 
-/** 觸控層上的按鈕要做的事（暫停、重來）；怎麼做由 main.ts 決定。 */
+/** 操作層上的按鈕要做的事（暫停、重來、切換鏡頭）；怎麼做由 main.ts 決定。 */
 export interface TouchActions {
   readonly pause: () => void;
   readonly restart: () => void;
+  /** 換到循環順序的下一個鏡頭（與切換鏡頭鍵同一條路）。 */
+  readonly camera: () => void;
 }
 
 /** 每幀交給觸控層的遊戲狀態。 */
@@ -55,6 +57,7 @@ const CONTROLS: Readonly<
   },
   pause: { id: 'touch-pause', className: 'touch-button', label: 'touch.pause' },
   restart: { id: 'touch-restart', className: 'touch-button', label: 'touch.restart' },
+  camera: { id: 'touch-camera', className: 'touch-button', label: 'touch.camera' },
 };
 
 /** 方向盤角度量化到這個刻度（度）才改 DOM。 */
@@ -123,6 +126,7 @@ export function createTouchControls(
   ui.translatedElement('span', 'touch-gear-name', elements.gearReverse, 'hud.gearReverse');
   ui.translatedElement('span', 'touch-label', elements.pause, 'touch.pause');
   ui.translatedElement('span', 'touch-label', elements.restart, 'touch.restart');
+  ui.translatedElement('span', 'touch-label', elements.camera, 'touch.camera');
 
   function renderTexts(): void {
     ui.refreshTexts();
@@ -262,6 +266,7 @@ export function createTouchControls(
   });
   onPress(elements.pause, actions.pause);
   onPress(elements.restart, actions.restart);
+  onPress(elements.camera, actions.camera);
 
   // ── 每幀 ────────────────────────────────────────────────────
   let shownActive = false;

@@ -63,6 +63,7 @@ import { createHud } from './ui/hud';
 import { createLevelSelect, levelCards } from './ui/levelSelect';
 import { showChoicesNotice } from './ui/notice';
 import { createReverseAssist } from './ui/reverseAssist';
+import type { ControlsAccess } from './ui/controlsPanel';
 import './ui/style.css';
 import { createTouchControls, preventPageGestures } from './ui/touchControls';
 import { interpolateVehiclePose, type DriveInput } from './vehicle/bicycleModel';
@@ -134,7 +135,7 @@ function createLevelScene(
 
 /**
  * 一般遊戲：固定步長物理迴圈 + 算圖內插 + 鍵盤開車（按鍵可自訂）+ 碰撞／計時／停車判定 + 可切換的鏡頭 + HUD
- * + 暫停 + 過關寫存檔 + 倒車輔助層 + 掛檔（按了掛 D／掛 R 才進入手排）+ 觸控層（手機的方向盤、踏板與掛檔鍵）。
+ * + 暫停 + 過關寫存檔 + 倒車輔助層 + 掛檔（按了掛 D／掛 R 才進入手排）+ 螢幕操作層（方向盤、踏板、掛檔與鏡頭鍵；滑鼠或手指）。
  */
 function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDefinition): void {
   const { layout } = level;
@@ -153,6 +154,21 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
   let restartRequested = false;
   let paused = false;
   const nextId = nextLevelId(level.id);
+  // 按鍵綁定的存取：HUD（操作說明、按鍵設定面板）與螢幕操作層（鍵帽）用同一份。
+  const controlsAccess: ControlsAccess = {
+    current: () => bindings,
+    apply: (next) => {
+      bindings = next;
+      saveBindings(storage, next);
+    },
+    captureNextKey: input.captureNextKey,
+    // 從操作說明開啟按鍵設定：這一局還在進行就先暫停，改完鍵回到暫停面板。
+    hold: () => {
+      if (session.status === 'ready' || session.status === 'driving') {
+        setPaused(true);
+      }
+    },
+  };
   const hud = createHud(
     hudRoot,
     {
@@ -172,38 +188,12 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
     () => {
       setPaused(false);
     },
-    {
-      current: () => bindings,
-      apply: (next) => {
-        bindings = next;
-        saveBindings(storage, next);
-      },
-      captureNextKey: input.captureNextKey,
-      // 從操作說明開啟按鍵設定：這一局還在進行就先暫停，改完鍵回到暫停面板。
-      hold: () => {
-        if (session.status === 'ready' || session.status === 'driving') {
-          setPaused(true);
-        }
-      },
-    },
+    controlsAccess,
   );
   function setPaused(next: boolean): void {
     paused = next;
     hud.setPaused(next);
   }
-
-  // 觸控層（方向盤、剎車、油門、掛 D／R、暫停、重來）：手機與平板才顯示，`?touch=on`／`off` 蓋過偵測。
-  // 暫停與重來走與鍵盤、面板按鈕相同的路；暫停後用暫停面板上的按鈕繼續。
-  const touch = createTouchControls(hudRoot, parseTouchParam(window.location.search), {
-    pause: () => {
-      if (session.status === 'ready' || session.status === 'driving') {
-        setPaused(true);
-      }
-    },
-    restart: () => {
-      restartRequested = true;
-    },
-  });
 
   // 進場的鏡頭：?view= > 上次存的 > 預設。
   const gameCamera = createGameCamera(
@@ -211,6 +201,32 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
     layout.startState,
   );
   hud.showCameraView(gameCamera.view());
+
+  /** 切換鏡頭：換到循環順序的下一個，記住選擇，HUD 顯示名稱。切換鏡頭鍵與螢幕上的「鏡頭」鍵都走這裡。 */
+  function cycleCamera(): void {
+    const view = nextGameCameraView(gameCamera.view());
+    gameCamera.setView(view);
+    storeView(storage, view);
+    hud.showCameraView(view);
+  }
+
+  // 觸控層（方向盤、剎車、油門、掛 D／R、暫停、重來、鏡頭）：手機與平板才顯示，`?touch=on`／`off` 蓋過偵測。
+  // 暫停、重來、切換鏡頭走與鍵盤、面板按鈕相同的路；暫停後用暫停面板上的按鈕繼續。
+  const touch = createTouchControls(
+    hudRoot,
+    parseTouchParam(window.location.search),
+    {
+      pause: () => {
+        if (session.status === 'ready' || session.status === 'driving') {
+          setPaused(true);
+        }
+      },
+      restart: () => {
+        restartRequested = true;
+      },
+      camera: cycleCamera,
+    },
+  );
 
   // 倒車輔助層（左右後視鏡、鳥瞰、倒後鏡頭）：預設開；`?assist=off`、`?fx=off` 不建立。
   // 四個小畫面用沒有遮擋淡出的場景畫（跟車鏡頭的主畫面才淡）。
@@ -283,21 +299,19 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
       canShift: running && !paused,
     });
 
-    // 切換鏡頭：換到循環順序的下一個，記住選擇，HUD 顯示名稱。
+    // 切換鏡頭（鍵盤；螢幕上的「鏡頭」鍵在按下去的當下就切了）。
     if (input.consumeToggleCamera()) {
-      const view = nextGameCameraView(gameCamera.view());
-      gameCamera.setView(view);
-      storeView(storage, view);
-      hud.showCameraView(view);
+      cycleCamera();
     }
 
     // 暫停時時間不前進：不跑物理（計時也跟著停）、特效不動；畫面照畫，鏡頭仍可切換。
-    const simSeconds = paused ? 0 : frameSeconds;
+    const held = paused;
+    const simSeconds = held ? 0 : frameSeconds;
     const loop = advanceFixedLoop(accumulatorSeconds, simSeconds);
     accumulatorSeconds = loop.accumulatorSeconds;
     // 玩家按的輸入先套上檔位：手排時反方向的油門只會剎車，不會把車推向另一邊。
     // 鍵盤與觸控層合在一起；觸控的油門踏板只有一顆，方向跟著目前的檔位（手排 R 檔才是倒車）。
-    const pressedInput = paused
+    const pressedInput = held
       ? NO_DRIVE_INPUT
       : mergeDriveInputs(input.driveInput(), touch.driveInput(gearbox));
     const driveInput = inputForGear(pressedInput, gearbox);
