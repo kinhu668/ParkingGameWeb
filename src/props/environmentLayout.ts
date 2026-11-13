@@ -1176,10 +1176,10 @@ const SLAB_SURFACES: ReadonlyMap<number, SurfaceId> = new Map<number, SurfaceId>
   [ALLEY.rollUp, 'corrugated'],
   [ALLEY.rollUpRib, 'galvanized'],
   [ALLEY.roofUnit, 'galvanized'],
-  // 步驟 5 剩項：減速丘、管線、海報。
-  [LOT_DETAIL.bumpColor, 'asphaltDry'],
-  [CONDUIT_COLOR, 'galvanized'],
-  ...POSTER_COLORS.map((color) => [color, 'plaster'] as const),
+  // 步驟 5 剩項：沿用這一關已經有的表面，不另外增加 InstancedMesh 種類（每關最多六種）。
+  [LOT_DETAIL.bumpColor, 'concrete'],
+  [CONDUIT_COLOR, 'paintedMetal'],
+  ...POSTER_COLORS.map((color) => [color, 'paintedMetal'] as const),
 ]);
 
 /** 這一塊方塊是什麼表面：平貼地面的標線是磨損的漆，其餘依顏色；沒登記的顏色當粉刷牆。 */
