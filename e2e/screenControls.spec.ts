@@ -108,14 +108,13 @@ test.describe('桌面：滑鼠與鍵盤', () => {
     for (const id of ['touch-wheel', 'touch-brake', 'touch-gas', 'touch-camera']) {
       await expect(page.locator(`#${id}`)).toBeVisible();
     }
-    // 鍵帽寫的是預設綁定：方向盤左右是 A／D，油門 W，剎車是逗號。
+    // 鍵帽寫的是預設綁定：方向盤左右是 A／D，油門 W，剎車 S，切換檔位 R。
     for (const [action, text] of [
       ['steerLeft', 'A'],
       ['steerRight', 'D'],
       ['throttle', 'W'],
-      ['brake', ','],
-      ['gearDrive', 'Q'],
-      ['gearReverse', 'R'],
+      ['brake', 'S'],
+      ['gearToggle', 'R'],
       ['pause', 'Esc'],
       ['restart', 'Backspace'],
       ['toggleCamera', 'V'],
@@ -123,13 +122,18 @@ test.describe('桌面：滑鼠與鍵盤', () => {
       await expect(page.locator(`#touch-key-${action}`)).toBeVisible();
       await expect(page.locator(`#touch-key-${action}`)).toHaveText(text);
     }
-    // 鍵帽疊在自己的控制項上：左右轉在方向盤上，W 在油門上，逗號在剎車上。
+    // 鍵帽疊在自己的控制項上：左右轉在方向盤上，W 在油門上，S 在剎車上，R 在切換檔位鈕上。
     const wheelBox = await boxOf(page, 'touch-wheel');
     expect(overlaps(await boxOf(page, 'touch-key-steerLeft'), wheelBox)).toBe(true);
     expect(overlaps(await boxOf(page, 'touch-key-steerRight'), wheelBox)).toBe(true);
     expect((await boxOf(page, 'touch-key-steerLeft')).x).toBeLessThan((await boxOf(page, 'touch-key-steerRight')).x);
     expect(overlaps(await boxOf(page, 'touch-key-throttle'), await boxOf(page, 'touch-gas'))).toBe(true);
     expect(overlaps(await boxOf(page, 'touch-key-brake'), await boxOf(page, 'touch-brake'))).toBe(true);
+    expect(overlaps(await boxOf(page, 'touch-key-gearToggle'), await boxOf(page, 'touch-gear'))).toBe(true);
+    // 沒有分開的掛 D、掛 R 鍵帽，也沒有倒車油門的鍵帽。
+    for (const removed of ['gearDrive', 'gearReverse', 'reverse']) {
+      await expect(page.locator(`#touch-key-${removed}`)).toHaveCount(0);
+    }
     await page.screenshot({ path: `${OUTPUT_DIR}/screen-controls-desktop-zh-TW.png` });
 
     const start = await nextSnapshot(page);
@@ -222,11 +226,11 @@ test.describe('桌面：滑鼠與鍵盤', () => {
     await expect(page.locator('#touch-gas')).toHaveAttribute('data-pressed', 'false');
     await page.screenshot({ path: `${OUTPUT_DIR}/screen-controls-listening-zh-TW.png` });
 
-    // 按 S（已經是倒車的鍵）：擋下來並說明是誰的，綁定與存檔不變——與按鍵設定面板同一條規則。
+    // 按 S（已經是剎車的鍵）：擋下來並說明是誰的，綁定與存檔不變——與按鍵設定面板同一條規則。
     await page.keyboard.press('KeyS');
     await expect(cap).toHaveAttribute('data-listening', 'false');
     await expect(message).toHaveAttribute('data-kind', 'warning');
-    await expect(message).toContainText('倒車');
+    await expect(message).toContainText('剎車');
     await expect(cap).toHaveText('W');
     expect(await storedBindings(page)).toBeNull();
     // 等按鍵時按下去的 S 不是遊戲輸入：車沒動、這一局還沒開始。
@@ -251,7 +255,8 @@ test.describe('桌面：滑鼠與鍵盤', () => {
     await expect(message).toContainText('I');
     const stored = await storedBindings(page);
     expect(stored?.throttle).toEqual(['KeyI', 'ArrowUp']);
-    expect(stored?.brake).toEqual(['Comma']);
+    expect(stored?.brake).toEqual(['KeyS', 'ArrowDown', 'Comma']);
+    expect(stored?.gearToggle).toEqual(['KeyR']);
     await page.screenshot({ path: `${OUTPUT_DIR}/screen-controls-rebound-zh-TW.png` });
 
     // 舊的 W 不再是油門：按住幾幀車都不動。
@@ -391,8 +396,9 @@ for (const [name, viewport, previous] of [
       await camera.tap();
       await expect(label).toHaveAttribute('data-view', 'chase_near');
 
-      // 掛 R：輔助小窗出現。
-      await page.locator('#touch-gear-reverse').tap();
+      // 點切換檔位鈕切到 R：輔助小窗出現。
+      await page.locator('#touch-gear').tap();
+      await expect(page.locator('#hud-gear')).toHaveAttribute('data-gear', 'reverse');
       await expect(page.locator('#reverse-assist')).toHaveAttribute('data-visible', 'true');
       await expect(page.locator('#reverse-assist')).toHaveCSS('opacity', '1');
       await expect(page.locator('#reverse-assist')).toHaveAttribute('data-compact', 'true');

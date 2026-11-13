@@ -65,8 +65,10 @@ test('w1_l03：倒車撞邊界會被擋住並計數，超過上限失敗，按 T
   expect(atStart.elapsedS).toBe(0);
   await page.screenshot({ path: `${OUTPUT_DIR}/collision-start.png` });
 
-  // 按住 S 倒車：車尾撞到北側邊界。
-  await page.keyboard.down('KeyS');
+  // 切到 R 檔再按住油門倒車：車尾撞到北側邊界。
+  await page.keyboard.press('KeyR');
+  await expect(gear).toHaveAttribute('data-gear', 'reverse');
+  await page.keyboard.down('KeyW');
   const firstHit = await watchUntil(page, (snapshot) => snapshot.collisions >= 1);
   expect(firstHit.status).toBe('driving');
   expect(firstHit.elapsedS).toBeGreaterThan(0);
@@ -79,7 +81,7 @@ test('w1_l03：倒車撞邊界會被擋住並計數，超過上限失敗，按 T
 
   // 繼續頂著：每 0.5 秒再計一次，超過上限就失敗。
   const failed = await watchUntil(page, (snapshot) => snapshot.status === 'failed');
-  await page.keyboard.up('KeyS');
+  await page.keyboard.up('KeyW');
   expect(failed.collisions).toBe(MAX_COLLISIONS + 1);
   expect(failed.failReason).toBe('collisions');
   expect(failed.parked).toBe(false);
@@ -101,11 +103,12 @@ test('w1_l03：倒車撞邊界會被擋住並計數，超過上限失敗，按 T
   expect(stillFailed.zFt).toBe(failed.zFt);
   expect(stillFailed.status).toBe('failed');
 
-  // 按 T（重來的備用鍵；R 現在是掛 R 檔）：面板消失，車回起點，計時與碰撞歸零。
+  // 按 T（重來的備用鍵；R 是切換 D／R 檔）：面板消失，車回起點，計時與碰撞歸零，檔位回到 D。
   await page.keyboard.press('KeyT');
   await expect(status).toBeHidden();
   await expect(collisions).toHaveText(`0 / ${MAX_COLLISIONS}`);
   await expect(page.locator('#hud-time')).toHaveText('1:15.0');
+  await expect(gear).toHaveAttribute('data-gear', 'forward');
   const afterRestart = await nextSnapshot(page);
   expect(afterRestart.status).toBe('ready');
   expect(afterRestart.collisions).toBe(0);

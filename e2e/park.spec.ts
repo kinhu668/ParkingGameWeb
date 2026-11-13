@@ -57,7 +57,7 @@ test('用鍵盤把車停進車位、切換語言、按 Backspace 重來', async 
   await expect(html).toHaveAttribute('lang', 'en');
   await page.screenshot({ path: `${OUTPUT_DIR}/park-success-en.png` });
 
-  // 提示寫的是目前綁在「重來」上的鍵。R 現在是掛 R 檔：按了不會重來，成功畫面還在。
+  // 提示寫的是目前綁在「重來」上的鍵。R 是切換 D／R 檔：按了不會重來，成功畫面還在。
   await expect(status.locator('.hud-status-hint')).toHaveText('Press Backspace / T to restart');
   await page.keyboard.press('KeyR');
   await nextSnapshot(page);

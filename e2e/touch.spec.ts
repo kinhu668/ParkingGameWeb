@@ -1,7 +1,8 @@
 // 螢幕操作層的 e2e（手機）：手機 viewport + hasTouch，用真實的觸控事件（CDP 的 Input.dispatchTouchEvent，可以多指）。
 // 桌面用滑鼠操作與點鍵帽改鍵在 screenControls.spec.ts。
 // 何時顯示（預設顯示、?touch=on／off）、拖方向盤轉向、踩油門前進、踩剎車減速（與油門同時踩）、
-// 掛 R 後輔助層出現並能倒車、掛 D／重來收起、暫停後能點繼續、橫向與直向的版面不與輔助小窗搶點。
+// 一顆切換檔位鈕（顯示目前是 D 或 R）：切到 R 後輔助層出現、油門是倒車；切回 D／重來收起、
+// 暫停後能點繼續、橫向與直向的版面不與輔助小窗搶點。
 import type { CDPSession, Page } from '@playwright/test';
 import { nextSnapshot } from './driving';
 import { expect, OUTPUT_DIR, test } from './fixtures';
@@ -13,8 +14,7 @@ const CONTROL_IDS = [
   'touch-wheel',
   'touch-brake',
   'touch-gas',
-  'touch-gear-drive',
-  'touch-gear-reverse',
+  'touch-gear',
   'touch-pause',
   'touch-restart',
   'touch-camera',
@@ -120,10 +120,12 @@ async function brakeToStop(page: Page, fingers: Fingers, id: number): Promise<vo
   expect((await nextSnapshot(page)).status).toBe('driving');
 }
 
-/** 掛 R 並等輔助層完全顯示。 */
+/** 目前是 D 檔時點切換檔位鈕切到 R，並等輔助層完全顯示。 */
 async function shiftToReverse(page: Page): Promise<void> {
-  await page.locator('#touch-gear-reverse').tap();
+  await expect(page.locator('#touch-gear')).toHaveAttribute('data-gear', 'forward');
+  await page.locator('#touch-gear').tap();
   await expect(page.locator('#hud-gear')).toHaveAttribute('data-gear', 'reverse');
+  await expect(page.locator('#touch-gear')).toHaveAttribute('data-gear', 'reverse');
   await expect(page.locator('#reverse-assist')).toHaveAttribute('data-visible', 'true');
   await expect(page.locator('#reverse-assist')).toHaveCSS('opacity', '1');
 }
@@ -176,10 +178,17 @@ test.describe('桌面（沒有觸控）', () => {
     await page.keyboard.up('Comma');
     expect(stopped.zFt).toBeLessThan(start.zFt);
 
-    // 滑鼠點掛 R：進入手排 R 檔。
-    await page.locator('#touch-gear-reverse').click();
+    // 滑鼠點切換檔位鈕：D → R，鈕上的字跟著換；再點一次回到 D。
+    const gearButton = page.locator('#touch-gear');
+    await expect(gearButton.locator('.touch-gear-letter')).toHaveText('D');
+    await expect(gearButton.locator('.touch-gear-name')).toHaveText('Drive');
+    await gearButton.click();
     await expect(page.locator('#hud-gear')).toHaveAttribute('data-gear', 'reverse');
-    await expect(page.locator('#hud-gear')).toHaveAttribute('data-mode', 'manual');
+    await expect(gearButton.locator('.touch-gear-letter')).toHaveText('R');
+    await expect(gearButton.locator('.touch-gear-name')).toHaveText('Reverse');
+    await gearButton.click();
+    await expect(page.locator('#hud-gear')).toHaveAttribute('data-gear', 'forward');
+    await expect(gearButton.locator('.touch-gear-letter')).toHaveText('D');
   });
 });
 
@@ -197,8 +206,12 @@ test.describe('手機橫向', () => {
     await expect(page.locator('#touch-pause')).toHaveText('暫停');
     await expect(page.locator('#touch-restart')).toHaveText('重來');
     await expect(page.locator('#touch-camera')).toHaveText('鏡頭');
-    await expect(page.locator('#touch-gear-drive')).toHaveAttribute('aria-label', '掛 D 檔');
-    await expect(page.locator('#touch-gear-reverse')).toHaveAttribute('aria-label', '掛 R 檔');
+    // 切換檔位只有一顆，上面寫著目前的檔位。
+    await expect(page.locator('#touch-gear')).toHaveAttribute('aria-label', '切換 D／R 檔');
+    await expect(page.locator('#touch-gear .touch-gear-letter')).toHaveText('D');
+    await expect(page.locator('#touch-gear .touch-gear-name')).toHaveText('前進');
+    await expect(page.locator('#touch-gear-drive')).toHaveCount(0);
+    await expect(page.locator('#touch-gear-reverse')).toHaveCount(0);
     // 頁面不捲動、不縮放。
     await expect(page.locator('body')).toHaveCSS('touch-action', 'none');
     await expect(page.locator('#touch-wheel')).toHaveCSS('touch-action', 'none');
@@ -219,10 +232,9 @@ test.describe('手機橫向', () => {
     await fingers.down(1, centerOf(await boxOf(page, 'touch-gas')));
     await expect(page.locator('#touch-gas')).toHaveAttribute('data-pressed', 'true');
     const moving = await waitFor(page, '前進', (snapshot) => snapshot.speedMph > 3);
-    // 起點朝 −Z：前進就是 z 變小。自排，檔位仍是 D。
+    // 起點朝 −Z：前進就是 z 變小。沒按切換檔位，檔位仍是 D。
     expect(moving.zFt).toBeLessThan(start.zFt);
     await expect(page.locator('#hud-gear')).toHaveAttribute('data-gear', 'forward');
-    await expect(page.locator('#hud-gear')).toHaveAttribute('data-mode', 'auto');
 
     // 油門還踩著，另一根手指踩剎車：腳剎優先，車慢下來直到停住。
     await fingers.down(2, centerOf(await boxOf(page, 'touch-brake')));
@@ -293,37 +305,42 @@ test.describe('手機橫向', () => {
     await expect.poll(async () => Number(await wheel.getAttribute('aria-valuenow'))).toBe(0);
   });
 
-  test('掛 R：輔助層出現、油門變成倒車；掛 D 收起；重來回到 D 檔', async ({ page }) => {
+  test('切到 R：輔助層出現、油門踏板是倒車（不是剎車）；切回 D 收起；重來回到 D 檔', async ({ page }) => {
     await page.goto('/?level=w1_l05&view=chase_near&lang=zh-TW');
     const gear = page.locator('#hud-gear');
     const assist = page.locator('#reverse-assist');
-    await expect(page.locator('#touch-gear-reverse')).toBeVisible();
+    const gearButton = page.locator('#touch-gear');
+    await expect(gearButton).toBeVisible();
     await expect(gear).toHaveAttribute('data-gear', 'forward');
     await expect(assist).toHaveAttribute('data-visible', 'false');
-    await expect(page.locator('#touch-gear-drive')).toHaveAttribute('data-active', 'true');
+    await expect(gearButton).toHaveAttribute('data-gear', 'forward');
+    await expect(gearButton.locator('.touch-gear-letter')).toHaveText('D');
     const fingers = await Fingers.on(page);
     const start = await nextSnapshot(page);
 
     await shiftToReverse(page);
-    await expect(gear).toHaveAttribute('data-mode', 'manual');
-    await expect(page.locator('#touch-gear-reverse')).toHaveAttribute('data-active', 'true');
-    await expect(page.locator('#touch-gear-drive')).toHaveAttribute('data-active', 'false');
+    await expect(gearButton.locator('.touch-gear-letter')).toHaveText('R');
+    await expect(gearButton.locator('.touch-gear-name')).toHaveText('倒車');
     for (const id of ASSIST_IDS) {
       await expect(page.locator(`#${id}`)).toBeVisible();
     }
 
-    // R 檔踩油門：往後走（起點朝 −Z，倒車是 z 變大）。一有速度就放開、剎停，免得幀率低時倒太遠。
+    // 回歸：R 檔踩油門踏板，車往後走（起點朝 −Z，倒車是 z 變大），不是減速或停在原地。
+    // 一有速度就放開、剎停，免得幀率低時倒太遠。
     await fingers.down(1, centerOf(await boxOf(page, 'touch-gas')));
     const reversing = await waitFor(page, '倒車', (snapshot) => snapshot.speedMph < -1.5);
     await fingers.up(1);
     expect(reversing.zFt).toBeGreaterThan(start.zFt);
+    // 剎車踏板只剎車：停住之後仍是 R 檔。
     await brakeToStop(page, fingers, 2);
+    await expect(gear).toHaveAttribute('data-gear', 'reverse');
     await expect(assist).toHaveAttribute('data-visible', 'true');
     await page.screenshot({ path: `${OUTPUT_DIR}/touch-landscape-reverse.png` });
 
-    // 掛 D：輔助層收起，油門又是向前。
-    await page.locator('#touch-gear-drive').tap();
+    // 再點一次切回 D：輔助層收起，油門又是向前。
+    await gearButton.tap();
     await expect(gear).toHaveAttribute('data-gear', 'forward');
+    await expect(gearButton.locator('.touch-gear-letter')).toHaveText('D');
     await expect(assist).toHaveAttribute('data-visible', 'false');
     await expect(assist).toBeHidden();
     const beforeForward = await nextSnapshot(page);
@@ -333,11 +350,11 @@ test.describe('手機橫向', () => {
     expect(forward.zFt).toBeLessThan(beforeForward.zFt);
     await brakeToStop(page, fingers, 4);
 
-    // 再掛 R，點重來：車回起點、自排 D 檔、輔助層收起。
+    // 再切到 R，點重來：車回起點、D 檔、輔助層收起，鈕上的字也回到 D。
     await shiftToReverse(page);
     await page.locator('#touch-restart').tap();
     await expect(gear).toHaveAttribute('data-gear', 'forward');
-    await expect(gear).toHaveAttribute('data-mode', 'auto');
+    await expect(gearButton.locator('.touch-gear-letter')).toHaveText('D');
     await expect(assist).toHaveAttribute('data-visible', 'false');
     const restarted = await nextSnapshot(page);
     expect(restarted.status).toBe('ready');
@@ -431,13 +448,13 @@ for (const [name, viewport] of [
       await expect(page.locator('#touch-controls')).toBeVisible();
       await expect(page.locator('#hud-gear')).toHaveAttribute('data-gear', 'reverse');
 
-      // 掛 D 收起輔助層；再掛 R 後重來也收起，回到自排 D 檔。
-      await page.locator('#touch-gear-drive').tap();
+      // 切回 D 收起輔助層；再切到 R 後重來也收起，回到 D 檔。
+      await page.locator('#touch-gear').tap();
+      await expect(page.locator('#hud-gear')).toHaveAttribute('data-gear', 'forward');
       await expect(page.locator('#reverse-assist')).toHaveAttribute('data-visible', 'false');
       await shiftToReverse(page);
       await page.locator('#touch-restart').tap();
       await expect(page.locator('#hud-gear')).toHaveAttribute('data-gear', 'forward');
-      await expect(page.locator('#hud-gear')).toHaveAttribute('data-mode', 'auto');
       await expect(page.locator('#reverse-assist')).toHaveAttribute('data-visible', 'false');
     });
   });

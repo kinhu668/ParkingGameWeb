@@ -1,5 +1,5 @@
-// 倒車輔助層的 e2e：用真實鍵盤倒車，確認四個小畫面（左右後視鏡、鳥瞰、倒後鏡頭）出現、
-// 警告文字與引導線都在；換回前進檔後收起；重來後檔位回到 D；`?assist=off`／`?fx=off` 不建立。
+// 倒車輔助層的 e2e：用真實鍵盤切到 R 檔倒車，確認四個小畫面（左右後視鏡、鳥瞰、倒後鏡頭）出現、
+// 警告文字與引導線都在；切回 D 檔後收起；重來後檔位回到 D；`?assist=off`／`?fx=off` 不建立。
 import type { Page } from '@playwright/test';
 import { nextSnapshot } from './driving';
 import { expect, OUTPUT_DIR, test } from './fixtures';
@@ -14,7 +14,7 @@ async function stop(page: Page): Promise<void> {
   expect((await nextSnapshot(page)).status).toBe('driving');
 }
 
-test('倒車時顯示輔助層，回到前進檔收起，重來後回到 D 檔', async ({ page }) => {
+test('R 檔顯示輔助層（油門是倒車），切回 D 檔收起，重來後回到 D 檔', async ({ page }) => {
   await page.goto('/?level=w1_l05&view=chase_near&lang=zh-TW');
   const assist = page.locator('#reverse-assist');
   const gear = page.locator('#hud-gear');
@@ -22,12 +22,17 @@ test('倒車時顯示輔助層，回到前進檔收起，重來後回到 D 檔',
   await expect(assist).toHaveAttribute('data-visible', 'false');
   await expect(assist).toBeHidden();
 
-  // 按 S：掛倒檔 → 淡入到完全顯示。一掛上就放開並踩剎車：軟體算圖幀率低，一直倒下去會撞到東西；
-  // 停著但仍掛倒檔，輔助層要留著。
-  await page.keyboard.down('KeyS');
+  // 按 R：切到 R 檔 → 淡入到完全顯示。按住油門（W）車往後走；一退起來就放開並踩剎車：
+  // 軟體算圖幀率低，一直倒下去會撞到東西。停著但仍是 R 檔，輔助層要留著。
+  const start = await nextSnapshot(page);
+  await page.keyboard.press('KeyR');
   await expect(gear).toHaveAttribute('data-gear', 'reverse');
-  await page.keyboard.up('KeyS');
+  await page.keyboard.down('KeyW');
+  await expect.poll(async () => (await nextSnapshot(page)).speedMph).toBeLessThan(-0.5);
+  await page.keyboard.up('KeyW');
   await stop(page);
+  // 車頭朝 −Z：往後走 z 變大。
+  expect((await nextSnapshot(page)).zFt).toBeGreaterThan(start.zFt);
   await expect(gear).toHaveAttribute('data-gear', 'reverse');
   await expect(assist).toHaveAttribute('data-visible', 'true');
   await expect(assist).toHaveCSS('opacity', '1');
@@ -66,20 +71,16 @@ test('倒車時顯示輔助層，回到前進檔收起，重來後回到 D 檔',
   );
   await expect(page.locator('#assist-warning [lang="en"]')).toBeVisible();
 
-  // 按 W：換成前進檔 → 收起。
-  await page.keyboard.down('KeyW');
+  // 再按 R：切回 D 檔 → 收起。
+  await page.keyboard.press('KeyR');
   await expect(gear).toHaveAttribute('data-gear', 'forward');
-  await page.keyboard.up('KeyW');
-  await stop(page);
   await expect(assist).toHaveAttribute('data-visible', 'false');
   await expect(assist).toBeHidden();
   await page.screenshot({ path: `${OUTPUT_DIR}/assist-forward-hidden.png` });
 
-  // 再掛倒檔後按 Backspace 重來：新的一局從 D 檔開始，輔助層收起。
-  await page.keyboard.down('KeyS');
+  // 再切到 R 檔後按 Backspace 重來：新的一局從 D 檔開始，輔助層收起。
+  await page.keyboard.press('KeyR');
   await expect(gear).toHaveAttribute('data-gear', 'reverse');
-  await page.keyboard.up('KeyS');
-  await stop(page);
   await expect(assist).toHaveAttribute('data-visible', 'true');
   await page.keyboard.press('Backspace');
   await expect(gear).toHaveAttribute('data-gear', 'forward');
@@ -87,13 +88,12 @@ test('倒車時顯示輔助層，回到前進檔收起，重來後回到 D 檔',
 });
 
 for (const param of ['assist=off', 'fx=off']) {
-  test(`?${param}：倒車也不建立輔助層`, async ({ page }) => {
+  test(`?${param}：R 檔也不建立輔助層`, async ({ page }) => {
     await page.goto(`/?level=w1_l05&view=chase_near&lang=zh-TW&${param}`);
     const gear = page.locator('#hud-gear');
     await expect(gear).toHaveAttribute('data-gear', 'forward');
-    await page.keyboard.down('KeyS');
+    await page.keyboard.press('KeyR');
     await expect(gear).toHaveAttribute('data-gear', 'reverse');
     await expect(page.locator('#reverse-assist')).toHaveCount(0);
-    await page.keyboard.up('KeyS');
   });
 }
