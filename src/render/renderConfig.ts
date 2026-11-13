@@ -1001,6 +1001,20 @@ export const LOT_PROPS_CONFIG = {
   signPlateColor: 0x1d4fa8,
   signMarkColor: 0xe9e9e4,
   drainColor: 0x26282b,
+
+  /** 監視器（掛在路燈桿上）：離地高度與各部分的顏色。 */
+  cameraMountHeightM: ftToM(13.5),
+  cameraBracketColor: 0x3a3d42,
+  cameraBodyColor: 0xd9dbd6,
+  cameraLensColor: 0x101216,
+  /** 繳費機：佔地與高度、各部分的顏色。 */
+  payStationSizeM: { x: ftToM(2.2), y: ftToM(5.2), z: ftToM(1.5) },
+  payStationBaseColor: 0x8f8b84,
+  payStationBodyColor: 0x27405e,
+  payStationCapColor: 0xe0b23a,
+  payStationScreenColor: 0x9fc4d8,
+  payStationKeypadColor: 0xb9bcc0,
+  payStationSlotColor: 0x15171a,
 } as const;
 
 /**

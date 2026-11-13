@@ -24,7 +24,7 @@ import {
 } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { forward, headingToRotationY } from '../core/heading';
-import { ftToM } from '../core/units';
+import { degToRad, ftToM } from '../core/units';
 import { createScenerySurface } from '../materials/surfaceMaterial';
 import type { SurfaceId } from '../materials/surfaces';
 import type { ParkingSpot } from '../level/parkingJudge';
@@ -597,6 +597,77 @@ function createSignGeometry(): BufferGeometry {
 }
 
 /**
+ * 監視器：掛在路燈桿上的一支短臂＋槍型機身＋鏡頭（本地座標：桿子在原點，朝 −Z 伸出去、往下俯）。
+ * 與路燈同一個位置、同一個朝向擺，所以看的是場地裡面。
+ */
+export function createCameraGeometry(): BufferGeometry {
+  const mount = LOT.cameraMountHeightM;
+  const arm = ftToM(1.5);
+  const body = { x: ftToM(0.5), y: ftToM(0.46), z: ftToM(1.25) };
+  const tilt = degToRad(24);
+  return mergeGeometries([
+    // 抱箍與短臂。
+    tinted(new BoxGeometry(ftToM(0.9), ftToM(0.35), ftToM(0.9)).translate(0, mount, 0), LOT.cameraBracketColor),
+    tinted(new BoxGeometry(ftToM(0.16), ftToM(0.16), arm).translate(0, mount, -arm / 2), LOT.cameraBracketColor),
+    // 機身（往下俯）與遮陽罩、鏡頭。
+    tinted(
+      new BoxGeometry(body.x, body.y, body.z).rotateX(-tilt).translate(0, mount - ftToM(0.28), -arm),
+      LOT.cameraBodyColor,
+    ),
+    tinted(
+      new BoxGeometry(body.x * 1.12, ftToM(0.06), body.z * 1.08)
+        .translate(0, body.y / 2 + ftToM(0.04), -ftToM(0.08))
+        .rotateX(-tilt)
+        .translate(0, mount - ftToM(0.28), -arm),
+      LOT.cameraBracketColor,
+    ),
+    tinted(
+      new CylinderGeometry(ftToM(0.15), ftToM(0.15), ftToM(0.1), 10)
+        .rotateX(Math.PI / 2)
+        .translate(0, 0, -body.z / 2 - ftToM(0.04))
+        .rotateX(-tilt)
+        .translate(0, mount - ftToM(0.28), -arm),
+      LOT.cameraLensColor,
+    ),
+  ]);
+}
+
+/**
+ * 繳費機：水泥底座上的一台立式機器，正面（本地 −Z）有螢幕、按鍵區與出票口，頂上一條黃色的標示。
+ * 佔地就是 LOT.payStationSizeM。
+ */
+export function createPayStationGeometry(): BufferGeometry {
+  const size = LOT.payStationSizeM;
+  const baseHeight = ftToM(0.35);
+  const capHeight = ftToM(0.5);
+  const bodyHeight = size.y - baseHeight - capHeight;
+  const front = -size.z / 2;
+  const panel = (width: number, height: number, centerY: number, color: number): BufferGeometry =>
+    tinted(
+      new BoxGeometry(width, height, ftToM(0.06)).translate(0, centerY, front - ftToM(0.02)),
+      color,
+    );
+  return mergeGeometries([
+    tinted(
+      new BoxGeometry(size.x * 1.15, baseHeight, size.z * 1.2).translate(0, baseHeight / 2, 0),
+      LOT.payStationBaseColor,
+    ),
+    tinted(
+      new BoxGeometry(size.x, bodyHeight, size.z).translate(0, baseHeight + bodyHeight / 2, 0),
+      LOT.payStationBodyColor,
+    ),
+    tinted(
+      new BoxGeometry(size.x * 1.06, capHeight, size.z * 1.06).translate(0, size.y - capHeight / 2, 0),
+      LOT.payStationCapColor,
+    ),
+    // 螢幕、按鍵區、出票口。
+    panel(size.x * 0.62, ftToM(0.85), baseHeight + bodyHeight * 0.78, LOT.payStationScreenColor),
+    panel(size.x * 0.5, ftToM(0.7), baseHeight + bodyHeight * 0.52, LOT.payStationKeypadColor),
+    panel(size.x * 0.56, ftToM(0.22), baseHeight + bodyHeight * 0.3, LOT.payStationSlotColor),
+  ]);
+}
+
+/**
  * 建立整個場地的擺設。回傳的群組已經擺到車位的位置與朝向。
  * @param spot 目標車位
  * @param layout createLotLayout 算出來的佈局
@@ -760,6 +831,19 @@ export function createLotProps(
   add(
     instanced(box, surface('galvanized', LOT.drainColor, 0.55, 0.6), layout.drains.map(boxAt), {
       name: 'drains',
+    }),
+  );
+  // 監視器與繳費機（第 1 世界的環境才有）：塗裝鋼，各一個 draw call。
+  add(
+    instanced(createCameraGeometry(), painted, layout.cameras.map(atPlacement), {
+      name: 'cameras',
+      castShadow: props.detailShadows,
+    }),
+  );
+  add(
+    instanced(createPayStationGeometry(), painted, layout.payStations.map(atPlacement), {
+      name: 'payStations',
+      castShadow: props.detailShadows,
     }),
   );
   return frame;

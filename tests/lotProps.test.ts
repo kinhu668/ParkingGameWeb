@@ -123,8 +123,14 @@ describe('擺設數量跟著畫質級別', () => {
   });
 
   test('每一類在最高級別都有東西；小細節在最低級別也有', () => {
+    // 監視器與繳費機只有第 1 世界的環境才放（tests/environmentDetails.test.ts）；原型關的停車場維持原樣。
+    const environmentOnly: readonly PropCategory[] = ['cameras', 'payStations'];
     for (const category of PROP_CATEGORIES) {
-      expect(LAYOUTS.ultra[category].length, category).toBeGreaterThan(0);
+      if (environmentOnly.includes(category)) {
+        expect(LAYOUTS.ultra[category], category).toEqual([]);
+      } else {
+        expect(LAYOUTS.ultra[category].length, category).toBeGreaterThan(0);
+      }
     }
     for (const category of ['wheelStops', 'bins', 'trafficCones', 'signs', 'drains'] as const) {
       expect(LAYOUTS.low[category].length, category).toBeGreaterThan(0);

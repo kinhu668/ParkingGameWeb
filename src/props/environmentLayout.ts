@@ -11,7 +11,12 @@ import { signText } from '../level/environmentSigns';
 import type { LevelEnvironment } from '../level/levelSchema';
 import type { ObstacleType } from '../level/obstacleTypes';
 import type { PropsQualitySettings } from '../render/quality';
-import { LOT_PROPS_CONFIG as LOT, SPOT_MARKING_CONFIG } from '../render/renderConfig';
+import {
+  FIXED_CAMERA_CONFIG,
+  LOT_PROPS_CONFIG as LOT,
+  SPOT_MARKING_CONFIG,
+  WHEEL_STOP_CONFIG,
+} from '../render/renderConfig';
 import type { SurfaceId } from '../materials/surfaces';
 import { VEHICLE_CONFIG_SI } from '../vehicle/vehicleConfig';
 import { PROP_CATEGORIES, type LotLayout, type PropCategory, type PropPlacement } from './lotLayout';
@@ -358,10 +363,164 @@ function addStallRow(builder: Builder, frame: SideFrame, rng: Rng, occupancy: nu
       );
     }
   }
+  // 每個假車位盡頭一塊車擋（與原型關同一種水泥塊）。
+  for (let index = 0; index < count; index += 1) {
+    builder.prop(
+      'wheelStops',
+      frame.point(first + (index + 0.5) * STALL_WIDTH_FT, far - WHEEL_STOP_IN_FT),
+      WHEEL_STOP_SIZE_FT,
+      frame.inwardDeg,
+    );
+  }
   // 車位後面一條橫線，把整列收起來。
   const end0 = frame.point(first, far);
   const end1 = frame.point(first + count * STALL_WIDTH_FT, far + LINE_WIDTH_FT);
   groundLine(builder, end0, end1);
+}
+
+const WHEEL_STOP_SIZE_FT = {
+  x: WHEEL_STOP_CONFIG.lengthM / ftToM(1),
+  y: WHEEL_STOP_CONFIG.heightM / ftToM(1),
+  z: WHEEL_STOP_CONFIG.baseDepthM / ftToM(1),
+};
+/** 車擋離假車位盡頭的橫線多遠。 */
+const WHEEL_STOP_IN_FT = 1.6;
+
+/** 停車場四周的小東西（英尺）：都在 bounds 外面，純視覺。數量再依畫質的 detailFraction 取前幾個。 */
+const LOT_DETAIL = {
+  /** 排水孔蓋：貼地，在路緣與假車位之間的車道上，每隔這麼遠一個。 */
+  drainSize: { x: 2.4, y: 0.04, z: 2.4 },
+  drainOut: CURB_FT + 1.5,
+  drainSpacing: 31,
+  /** 垃圾桶：每隔一盞路燈、燈桿旁邊一個。 */
+  binSize: { x: 2.2, y: 3.3, z: 2.2 },
+  binBesideLamp: 3.1,
+  /** 停車告示牌：假車位後面，每隔幾格一支。 */
+  signSize: { x: 1.7, y: 7.4, z: 0.3 },
+  signBehindStalls: 1.4,
+  signEveryStalls: 4,
+  /** 灌木：樹與樹之間的草帶上。 */
+  bushOut: STALL_ROW_OUT_FT + STALL_LENGTH_FT + 6.5,
+  bushSpacing: 9,
+  bushChance: 0.62,
+  /** 交通錐：假車位那一列的一頭擺兩個（有人佔位、或地上有坑）。 */
+  coneSize: { x: 1.2, y: 2.3, z: 1.2 },
+  /** 繳費機：每一列假車位一台，在路燈那一排。 */
+  payStationSize: {
+    x: LOT.payStationSizeM.x / ftToM(1),
+    y: LOT.payStationSizeM.y / ftToM(1),
+    z: LOT.payStationSizeM.z / ftToM(1),
+  },
+  payStationFromCenter: 7,
+  /** 圍欄：樹後面，沿著整個邊再往兩頭多出一段。 */
+  fenceOut: STALL_ROW_OUT_FT + STALL_LENGTH_FT + 24,
+  fenceOverrun: 30,
+  /** 監視器：每隔一盞路燈掛一台。 */
+  cameraSize: { x: 0.7, y: 1, z: 1.8 },
+} as const;
+
+/**
+ * 一個邊外面的小東西：排水孔蓋、垃圾桶、告示牌、灌木、交通錐、繳費機、圍欄。
+ * @param stalls 這一邊有沒有假車位（主建築那一邊沒有，只放排水孔蓋）
+ * @param fencePostSpacingFt 圍欄立柱的間距（依畫質）
+ */
+function addLotDetails(
+  builder: Builder,
+  frame: SideFrame,
+  rng: Rng,
+  stalls: boolean,
+  fencePostSpacingFt: number,
+): void {
+  const length = frame.to - frame.from;
+  const center = (frame.from + frame.to) / 2;
+  const drains = Math.max(1, Math.round(length / LOT_DETAIL.drainSpacing));
+  for (let index = 0; index < drains; index += 1) {
+    const along = frame.from + ((index + 0.5) / drains) * length;
+    builder.prop('drains', frame.point(along, LOT_DETAIL.drainOut), LOT_DETAIL.drainSize);
+  }
+  if (!stalls) {
+    return;
+  }
+  const far = STALL_ROW_OUT_FT + STALL_LENGTH_FT;
+  const stallCount = Math.max(1, Math.floor(length / STALL_WIDTH_FT));
+  const first = center - (stallCount * STALL_WIDTH_FT) / 2;
+  for (let index = 0; index <= stallCount; index += LOT_DETAIL.signEveryStalls) {
+    builder.prop(
+      'signs',
+      frame.point(first + index * STALL_WIDTH_FT, far + LOT_DETAIL.signBehindStalls),
+      LOT_DETAIL.signSize,
+      frame.inwardDeg,
+    );
+  }
+  const bushes = Math.max(1, Math.round((length + 30) / LOT_DETAIL.bushSpacing));
+  for (let index = 0; index < bushes; index += 1) {
+    // 每一叢抽一樣多次亂數：有沒有長出來不影響其他叢的位置。
+    const grows = rng() < LOT_DETAIL.bushChance;
+    const along = frame.from - 15 + ((index + 0.5) / bushes) * (length + 30) + (rng() * 2 - 1) * 2;
+    const size = 3.2 + 2.2 * rng();
+    const out = LOT_DETAIL.bushOut + (rng() * 2 - 1) * 1.5;
+    const turn = rng() * 360;
+    const variant = rng();
+    if (grows) {
+      builder.prop('bushes', frame.point(along, out), { x: size, y: size * 0.7, z: size * 0.9 }, turn, variant);
+    }
+  }
+  // 交通錐：這一列的頭一格旁邊，一前一後。
+  const coneAlong = first - 2.2;
+  builder.prop('trafficCones', frame.point(coneAlong, STALL_ROW_OUT_FT + 3), LOT_DETAIL.coneSize, rng() * 360);
+  builder.prop('trafficCones', frame.point(coneAlong - 0.8, STALL_ROW_OUT_FT + 9.5), LOT_DETAIL.coneSize, rng() * 360);
+  // 繳費機：面向場地。
+  builder.prop(
+    'payStations',
+    frame.point(center + LOT_DETAIL.payStationFromCenter, LAMP_OUT_FT),
+    LOT_DETAIL.payStationSize,
+    frame.inwardDeg,
+  );
+  // 圍欄：立柱與兩道橫桿（橫桿是相鄰兩根立柱之間的一段）。
+  const fenceFrom = frame.from - LOT_DETAIL.fenceOverrun;
+  const fenceLength = length + 2 * LOT_DETAIL.fenceOverrun;
+  const posts = Math.max(2, Math.round(fenceLength / fencePostSpacingFt) + 1);
+  const acrossX = frame.side === 'n' || frame.side === 's';
+  const post = {
+    x: LOT.fencePostSizeM.x / ftToM(1),
+    y: LOT.fencePostSizeM.y / ftToM(1),
+    z: LOT.fencePostSizeM.z / ftToM(1),
+  };
+  const railThickness = LOT.fenceRailThicknessM / ftToM(1);
+  for (let index = 0; index < posts; index += 1) {
+    const along = fenceFrom + (index / (posts - 1)) * fenceLength;
+    builder.prop('fencePosts', frame.point(along, LOT_DETAIL.fenceOut), post);
+    if (index === posts - 1) {
+      break;
+    }
+    const span = fenceLength / (posts - 1);
+    for (const railHeightM of LOT.fenceRailHeightsM) {
+      builder.prop(
+        'fenceRails',
+        frame.point(along + span / 2, LOT_DETAIL.fenceOut),
+        acrossX
+          ? { x: span, y: railThickness, z: railThickness }
+          : { x: railThickness, y: railThickness, z: span },
+        0,
+        0,
+        railHeightM / ftToM(1) - railThickness / 2,
+      );
+    }
+  }
+}
+
+/** 垃圾桶與監視器跟著路燈：每隔一盞燈，燈桿旁一個垃圾桶、桿上一台監視器（朝場地裡看）。 */
+function addLampFittings(builder: Builder, frame: SideFrame, spacingFt: number, out = LAMP_OUT_FT): void {
+  const length = frame.to - frame.from;
+  const count = Math.max(1, Math.round(length / spacingFt));
+  for (let index = 0; index < count; index += 1) {
+    const along = frame.from + ((index + 0.5) / count) * length;
+    if (index % 2 === 0) {
+      builder.prop('cameras', frame.point(along, out), LOT_DETAIL.cameraSize, frame.inwardDeg);
+    } else {
+      builder.prop('bins', frame.point(along + LOT_DETAIL.binBesideLamp, out + 0.3), LOT_DETAIL.binSize);
+    }
+  }
 }
 
 /** 一個邊外面、路緣旁的路燈：燈臂朝 bounds 裡面，光落在邊界內側。 */
@@ -447,16 +606,23 @@ function addLotSurroundings(
   rng: Rng,
   buildingSide: Side | undefined,
   occupancy: number,
+  fencePostSpacingFt: number,
 ): void {
   for (const side of SIDES) {
     const frame = sideFrame(bounds, side);
     addLamps(builder, frame, 46);
+    addLampFittings(builder, frame, 46);
     if (side === buildingSide) {
       continue;
     }
     addStallRow(builder, frame, rng, occupancy);
     addTrees(builder, frame, rng, STALL_ROW_OUT_FT + STALL_LENGTH_FT + 10, 34);
     addBackdropBuildings(builder, frame, rng, 85);
+  }
+  // 小東西用自己的亂數序列（另一個種子位移），加了它們不會改到背景車、樹與建築的位置。
+  const detailRng = createRng(Math.floor(rng() * 0x7fffffff));
+  for (const side of SIDES) {
+    addLotDetails(builder, sideFrame(bounds, side), detailRng, side !== buildingSide, fencePostSpacingFt);
   }
 }
 
@@ -1035,6 +1201,19 @@ function nearestFirst(placements: readonly PropPlacement[], x: number, z: number
  * @param seed 亂數種子；同一個種子、同樣的設定永遠得到同一份佈局
  * @param props 這個畫質級別的擺設密度
  */
+/** `?cam=spot_low` 的鏡頭在哪裡（世界座標，英尺）：車位的左前方（followCamera.ts 的 createPresetCamera）。 */
+function spotLowCameraFt(spotFt: EnvironmentSource['spotFt']): { x: number; z: number } {
+  const heading = degToRad(spotFt.headingDeg);
+  const lateral = right(heading);
+  const ahead = forward(heading);
+  const lateralFt = FIXED_CAMERA_CONFIG.spotLowLateralM / ftToM(1);
+  const aheadFt = FIXED_CAMERA_CONFIG.spotLowAheadM / ftToM(1);
+  return {
+    x: spotFt.centerXFt + lateral.x * lateralFt + ahead.x * aheadFt,
+    z: spotFt.centerZFt + lateral.z * lateralFt + ahead.z * aheadFt,
+  };
+}
+
 export function createEnvironmentLayout(
   source: EnvironmentSource,
   props: PropsQualitySettings,
@@ -1046,17 +1225,18 @@ export function createEnvironmentLayout(
   }
   const builder = new Builder();
   const rng = createRng(seed + 104729);
+  const fencePostSpacingFt = props.fencePostSpacingM / ftToM(1);
   const buildingSide = facingSide(source.startFt.headingDeg);
   switch (source.environment) {
     case 'open_lot':
-      addLotSurroundings(builder, bounds, rng, undefined, 0.55);
+      addLotSurroundings(builder, bounds, rng, undefined, 0.55, fencePostSpacingFt);
       break;
     case 'warehouse_club':
-      addLotSurroundings(builder, bounds, rng, buildingSide, 0.7);
+      addLotSurroundings(builder, bounds, rng, buildingSide, 0.7, fencePostSpacingFt);
       addWarehouseClub(builder, sideFrame(bounds, buildingSide));
       break;
     case 'post_office':
-      addLotSurroundings(builder, bounds, rng, buildingSide, 0.35);
+      addLotSurroundings(builder, bounds, rng, buildingSide, 0.35, fencePostSpacingFt);
       addPostOffice(builder, sideFrame(bounds, buildingSide));
       break;
     case 'city_street':
@@ -1066,16 +1246,52 @@ export function createEnvironmentLayout(
       addNarrowAlley(builder, source, bounds, rng);
       break;
   }
+  // 街道與窄巷的路燈是各自的函式排的：一樣每隔一盞掛一台監視器。
+  if (builder.lot.cameras.length === 0) {
+    builder.lot.lamps.forEach((lamp, index) => {
+      if (index % 2 === 0) {
+        builder.lot.cameras.push({
+          ...lamp,
+          sizeX: ftToM(LOT_DETAIL.cameraSize.x),
+          sizeY: ftToM(LOT_DETAIL.cameraSize.y),
+          sizeZ: ftToM(LOT_DETAIL.cameraSize.z),
+        });
+      }
+    });
+  }
   const spotX = ftToM(source.spotFt.centerXFt);
   const spotZ = ftToM(source.spotFt.centerZFt);
+  const lamps = take(nearestFirst(builder.lot.lamps, spotX, spotZ), props.lampHeads);
+  // 小東西：離 `?cam=spot_low` 的鏡頭太近的不放（會擋住鏡頭），其餘由近到遠取這個畫質級別的比例。
+  const camera = spotLowCameraFt(source.spotFt);
+  const clearM = LOT.cameraClearRadiusM;
+  const details = (candidates: readonly PropPlacement[]): PropPlacement[] => {
+    const kept = nearestFirst(candidates, spotX, spotZ).filter(
+      (placement) => Math.hypot(placement.x - ftToM(camera.x), placement.z - ftToM(camera.z)) > clearM,
+    );
+    return take(kept, Math.ceil(kept.length * props.detailFraction));
+  };
   const lot: LotLayout = {
     ...builder.lot,
     parkedCars: take(
       withoutCrowdedCars(nearestFirst(builder.lot.parkedCars, spotX, spotZ), source, builder.lot.lamps),
       props.parkedCars,
     ),
-    lamps: take(nearestFirst(builder.lot.lamps, spotX, spotZ), props.lampHeads),
+    lamps,
     trees: take(nearestFirst(builder.lot.trees, spotX, spotZ), props.trees),
+    bushes: take(nearestFirst(builder.lot.bushes, spotX, spotZ), props.bushes),
+    wheelStops: details(builder.lot.wheelStops),
+    bins: details(builder.lot.bins),
+    trafficCones: details(builder.lot.trafficCones),
+    signs: details(builder.lot.signs),
+    drains: details(builder.lot.drains),
+    payStations: details(builder.lot.payStations),
+    // 監視器掛在燈桿上：只留這個畫質級別真的有的那幾盞燈上的。
+    cameras: details(
+      builder.lot.cameras.filter((camera2) =>
+        lamps.some((lamp) => lamp.x === camera2.x && lamp.z === camera2.z),
+      ),
+    ),
   };
   return { lot, slabs: builder.slabs, signs: builder.signs, poleSigns: builder.poleSigns };
 }

@@ -35,6 +35,8 @@ export const PROP_CATEGORIES = [
   'trafficCones',
   'signs',
   'drains',
+  'cameras',
+  'payStations',
 ] as const;
 
 export type PropCategory = (typeof PROP_CATEGORIES)[number];
@@ -820,5 +822,8 @@ export function createLotLayout(
     trafficCones: details(trafficCones),
     signs: details(signs),
     drains: details(drains),
+    // 監視器與繳費機只有第 1 世界的環境（environmentLayout.ts）才放；原型關的停車場維持原樣。
+    cameras: [],
+    payStations: [],
   };
 }
