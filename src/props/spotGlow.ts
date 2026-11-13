@@ -185,6 +185,7 @@ export function createVeilGeometry(spot: Pick<ParkingSpot, 'widthM' | 'lengthM'>
   const positions: number[] = [];
   const alphas: number[] = [];
   const alongs: number[] = [];
+  const normals: number[] = [];
   const { layers } = CONFIG.veil;
   for (let side = 0; side < corners.length; side += 1) {
     const from = corners[side];
@@ -192,6 +193,12 @@ export function createVeilGeometry(spot: Pick<ParkingSpot, 'widthM' | 'lengthM'>
     if (from === undefined || to === undefined) {
       continue;
     }
+    // 向外的水平法線（從上面看，邊是逆時針）：側面幾乎側對鏡頭時會淡掉，正面才看得到光霧。
+    const alongX = to[0] - from[0];
+    const alongZ = to[1] - from[1];
+    const length = Math.hypot(alongX, alongZ);
+    const nx = length === 0 ? 0 : alongZ / length;
+    const nz = length === 0 ? 0 : -alongX / length;
     for (let layer = 0; layer < layers; layer += 1) {
       const t0 = layer / layers;
       const t1 = (layer + 1) / layers;
@@ -212,6 +219,7 @@ export function createVeilGeometry(spot: Pick<ParkingSpot, 'widthM' | 'lengthM'>
         positions.push(x, y, z);
         alphas.push(alpha);
         alongs.push(along);
+        normals.push(nx, 0, nz);
       }
     }
   }
@@ -219,6 +227,7 @@ export function createVeilGeometry(spot: Pick<ParkingSpot, 'widthM' | 'lengthM'>
   geometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
   geometry.setAttribute('alpha', new Float32BufferAttribute(alphas, 1));
   geometry.setAttribute('along', new Float32BufferAttribute(alongs, 1));
+  geometry.setAttribute('wallNormal', new Float32BufferAttribute(normals, 3));
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
   return geometry;
@@ -227,14 +236,19 @@ export function createVeilGeometry(spot: Pick<ParkingSpot, 'widthM' | 'lengthM'>
 const VEIL_VERTEX_SHADER = /* glsl */ `
   attribute float alpha;
   attribute float along;
+  attribute vec3 wallNormal;
   varying float vAlpha;
   varying float vAlong;
   varying float vDistance;
+  varying vec3 vView;
+  varying vec3 vNormal;
   void main() {
     vAlpha = alpha;
     vAlong = along;
     vec4 view = modelViewMatrix * vec4( position, 1.0 );
+    vView = view.xyz;
     vDistance = length( view.xyz );
+    vNormal = normalize( mat3( modelViewMatrix ) * wallNormal );
     gl_Position = projectionMatrix * view;
   }
 `;
@@ -250,6 +264,8 @@ const VEIL_FRAGMENT_SHADER = /* glsl */ `
   varying float vAlpha;
   varying float vAlong;
   varying float vDistance;
+  varying vec3 vView;
+  varying vec3 vNormal;
   void main() {
     // 貼近鏡頭的部分不畫：鏡頭在光幕的範圍裡時，眼前沒有東西。
     float nearFade = smoothstep( fadeNear, fadeFar, vDistance );
@@ -257,7 +273,10 @@ const VEIL_FRAGMENT_SHADER = /* glsl */ `
     float heightFade = 1.0 - smoothstep( cameraLow, cameraHigh, cameraPosition.y );
     // 每一面的左右兩端淡掉：夜晚從正面看時不是一塊矩形色板。
     float sideFade = smoothstep( 0.0, edgeFade, vAlong ) * smoothstep( 0.0, edgeFade, 1.0 - vAlong );
-    gl_FragColor = vec4( veilColor, vAlpha * veilOpacity * nearFade * heightFade * sideFade );
+    // 幾乎側對鏡頭的面淡掉：否則引擎蓋視角會看到左右兩面豎起來的硬邊，整塊還是一個方盒。
+    float facing = abs( dot( normalize( vNormal ), normalize( -vView ) ) );
+    float facingFade = smoothstep( 0.12, 0.55, facing );
+    gl_FragColor = vec4( veilColor, vAlpha * veilOpacity * nearFade * heightFade * sideFade * facingFade );
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
   }
