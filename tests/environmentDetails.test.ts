@@ -219,3 +219,37 @@ describe('網格：每一類一個 draw call', () => {
     expect(geometry.getAttribute('color')).toBeDefined();
   });
 });
+
+describe('步驟 5 剩項：減速丘、管線、海報、額外磨損', () => {
+  test.each(LOT_LEVELS.map((level) => [level.id, level] as const))(
+    '%s：四周車道有減速丘、假車位地面有磨損斑，背景樓有海報與管線；立體的都在 bounds 外',
+    (_id, level) => {
+      const bounds = level.boundsFt;
+      if (bounds === undefined) {
+        throw new Error('沒有 bounds');
+      }
+      const { slabs } = layoutOf(level, 'high');
+      const bumps = slabs.filter(
+        (slab) => slab.kind === 'solid' && slab.maxY <= ftToM(0.35) && slab.maxY >= ftToM(0.2),
+      );
+      const stains = slabs.filter((slab) => slab.kind === 'flat' && slab.color === 0x2a2418);
+      const posters = slabs.filter(
+        (slab) => slab.kind === 'decal' && [0xc45a3a, 0x2e5a8c, 0xd6c48a].includes(slab.color),
+      );
+      const conduits = slabs.filter((slab) => slab.kind === 'solid' && slab.color === 0x8a9088);
+      expect(bumps.length).toBeGreaterThanOrEqual(4);
+      expect(stains.length).toBeGreaterThan(0);
+      expect(posters.length).toBeGreaterThan(0);
+      expect(conduits.length).toBeGreaterThan(0);
+      const inside = (x: number, z: number): boolean =>
+        x > ftToM(bounds.minXFt) + 1e-6 &&
+        x < ftToM(bounds.maxXFt) - 1e-6 &&
+        z > ftToM(bounds.minZFt) + 1e-6 &&
+        z < ftToM(bounds.maxZFt) - 1e-6;
+      for (const slab of [...bumps, ...conduits]) {
+        expect(inside(slab.minX, slab.minZ), `solid ${slab.minX},${slab.minZ}`).toBe(false);
+        expect(inside(slab.maxX, slab.maxZ), `solid ${slab.maxX},${slab.maxZ}`).toBe(false);
+      }
+    },
+  );
+});

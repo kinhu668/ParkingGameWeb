@@ -417,7 +417,20 @@ const LOT_DETAIL = {
   fenceOverrun: 30,
   /** 監視器：每隔一盞路燈掛一台。 */
   cameraSize: { x: 0.7, y: 1, z: 1.8 },
+  /** 減速丘：假車位與路緣之間的車道上，橫過車道的一條矮丘。 */
+  bumpAlong: 2.2,
+  bumpHeight: 0.28,
+  bumpColor: 0x3c3b38,
+  /** 假車位地面上的油漬／磨損斑（平貼）。 */
+  stainHalfAlong: 1.6,
+  stainHalfOut: 0.9,
+  stainColor: 0x2a2418,
 } as const;
+
+/** 背景樓牆上的海報顏色（粉刷／塗裝過的紙面）。 */
+const POSTER_COLORS: readonly number[] = [0xc45a3a, 0x2e5a8c, 0xd6c48a];
+/** 牆上的鍍鋅管線。 */
+const CONDUIT_COLOR = 0x8a9088;
 
 /**
  * 一個邊外面的小東西：排水孔蓋、垃圾桶、告示牌、灌木、交通錐、繳費機、圍欄。
@@ -506,6 +519,42 @@ function addLotDetails(
         railHeightM / ftToM(1) - railThickness / 2,
       );
     }
+  }
+  // 減速丘與額外磨損加在既有擺設之後，才不會改到上面那些東西的亂數位置。
+  const bumpCount = 2;
+  for (let index = 0; index < bumpCount; index += 1) {
+    const along = frame.from + ((index + 1) / (bumpCount + 1)) * length;
+    const half = LOT_DETAIL.bumpAlong / 2;
+    builder.sideSlab(
+      'solid',
+      frame,
+      along - half,
+      along + half,
+      CURB_FT + 0.6,
+      STALL_ROW_OUT_FT - 0.4,
+      0,
+      LOT_DETAIL.bumpHeight,
+      LOT_DETAIL.bumpColor,
+    );
+  }
+  const stains = Math.max(1, Math.round(stallCount / 4));
+  for (let index = 0; index < stains; index += 1) {
+    const along =
+      first + ((index + 0.65) * stallCount * STALL_WIDTH_FT) / stains + (rng() * 2 - 1) * 1.1;
+    const out = STALL_ROW_OUT_FT + 5 + rng() * 7;
+    const halfAlong = LOT_DETAIL.stainHalfAlong + rng() * 0.6;
+    const halfOut = LOT_DETAIL.stainHalfOut + rng() * 0.4;
+    builder.sideSlab(
+      'flat',
+      frame,
+      along - halfAlong,
+      along + halfAlong,
+      out - halfOut,
+      out + halfOut,
+      0.02,
+      0.05,
+      LOT_DETAIL.stainColor,
+    );
   }
 }
 
@@ -596,6 +645,36 @@ function addBackdropBuildings(builder: Builder, frame: SideFrame, rng: Rng, out:
       rng(),
     );
     addWindowGrid(builder, frame, center - width / 2, center + width / 2, near, 0, height, rng);
+    // 海報與管線貼在朝場地的那一面（bounds 外），加在窗戶之後才不會改到窗亮不亮的亂數。
+    for (let poster = 0; poster < 2; poster += 1) {
+      const along = center - width / 5 + poster * (width / 2.6) + (rng() * 2 - 1) * 1.5;
+      const posterWidth = 3.2 + rng();
+      const posterHeight = 4.4 + 1.6 * rng();
+      const y0 = 2.8 + 3.5 * rng();
+      builder.sideSlab(
+        'decal',
+        frame,
+        along - posterWidth / 2,
+        along + posterWidth / 2,
+        near - DECAL_DEPTH_FT,
+        near,
+        y0,
+        y0 + posterHeight,
+        POSTER_COLORS[(poster + Math.floor(center)) % POSTER_COLORS.length] ?? 0xc45a3a,
+      );
+    }
+    const pipeAt = center + width / 2 - 1.2 - rng() * 1.4;
+    builder.sideSlab(
+      'solid',
+      frame,
+      pipeAt - 0.16,
+      pipeAt + 0.16,
+      near - 0.28,
+      near,
+      1.8,
+      Math.min(height * 0.72, height - 2),
+      CONDUIT_COLOR,
+    );
   }
 }
 
@@ -1097,6 +1176,10 @@ const SLAB_SURFACES: ReadonlyMap<number, SurfaceId> = new Map<number, SurfaceId>
   [ALLEY.rollUp, 'corrugated'],
   [ALLEY.rollUpRib, 'galvanized'],
   [ALLEY.roofUnit, 'galvanized'],
+  // 步驟 5 剩項：減速丘、管線、海報。
+  [LOT_DETAIL.bumpColor, 'asphaltDry'],
+  [CONDUIT_COLOR, 'galvanized'],
+  ...POSTER_COLORS.map((color) => [color, 'plaster'] as const),
 ]);
 
 /** 這一塊方塊是什麼表面：平貼地面的標線是磨損的漆，其餘依顏色；沒登記的顏色當粉刷牆。 */
