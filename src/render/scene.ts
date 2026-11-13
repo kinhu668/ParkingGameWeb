@@ -599,7 +599,7 @@ export function createGameScene(
   // 目標車位的發光標記：每一關都有（原型關沒有環境模組，所以不能掛在 createEnvironment 裡）。
   // 它是玩法標記，`?fx=off` 也顯示，只是不脈動。加在遮擋半透明收集擺設之前也沒關係：它沒有登記。
   const glow = createSpotGlow(spot, ambientFx);
-  scene.add(glow.root);
+  scene.add(glow.root, glow.veil);
 
   const car = createCarMesh(quality.vehicleDetail);
   scene.add(car.root);

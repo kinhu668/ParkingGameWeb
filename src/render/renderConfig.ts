@@ -678,6 +678,21 @@ export const SPOT_GLOW_CONFIG = {
   greenSeconds: 0.2,
   greenHoldSeconds: 0.7,
   fadeSeconds: 0.8,
+  /**
+   * 遠處用的光幕：光牆只到腰的高度，離遠了只剩一條細線，被鄰車擋住就看不到。光幕從牆頂再往上延伸一段很淡的漸層，
+   * 遠遠地、隔著鄰車的車頂也看得出目標在哪。它不是實心的東西：
+   * - 最濃的地方（牆頂）也只有 opacity 這麼淡，往上照 (1 − 高度比例)^falloff 淡到 0；
+   * - 離鏡頭 fadeNearM 以內完全不畫、到 fadeFarM 才是全濃：車開近了它自己消失，剩下原本的光牆。
+   * 所以鏡頭就算在光幕的範圍裡（遠距跟車的鏡頭會飛到車位上空），眼前也沒有東西。
+   */
+  veil: {
+    heightM: ftToM(15),
+    opacity: 0.2,
+    falloff: 1.4,
+    layers: 6,
+    fadeNearM: ftToM(22),
+    fadeFarM: ftToM(48),
+  },
 } as const;
 
 /**

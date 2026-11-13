@@ -1,5 +1,6 @@
 // 目標車位的發光標記：沿著車位輪廓從地面升起的一圈低矮半透明光牆，加上輪廓內側貼地的一圈光暈。
 // 光牆往上漸漸淡掉、輕微脈動；停妥後變綠再淡出，重來後回來。
+// 牆頂以上另有一段很淡的光幕（veil）：遠處、隔著鄰車的車頂也看得出目標在哪；離鏡頭近了自己消失。
 // 純視覺：不進物理、不進碰撞、不進停車判定；不登記成會被遮擋半透明淡掉的擺設（props/occluders.ts）。
 //
 // 為什麼矮：以前這裡是吊在車位上空的大箭頭（實心、有描邊殼）。車位在起點正後方的關（w1_l05 直線倒車），
@@ -13,6 +14,7 @@ import {
   Group,
   Mesh,
   MeshBasicMaterial,
+  ShaderMaterial,
 } from 'three';
 import { headingToRotationY } from '../core/heading';
 import { mToFt, radToDeg } from '../core/units';
@@ -129,6 +131,100 @@ export function createGlowGeometry(spot: Pick<ParkingSpot, 'widthM' | 'lengthM'>
   return geometry;
 }
 
+/** 光幕在高度比例 t（0 = 牆頂、1 = 光幕頂端）的不透明度：牆頂最濃（也只有一點點），往上淡到 0。 */
+export function glowVeilAlpha(t: number): number {
+  const clamped = Math.min(Math.max(t, 0), 1);
+  return CONFIG.veil.opacity * (1 - clamped) ** CONFIG.veil.falloff;
+}
+
+/** 光幕離鏡頭 distanceM 時還剩多少（0–1）：貼近鏡頭的完全不畫。與著色器裡的式子相同。 */
+export function glowVeilCameraFade(distanceM: number): number {
+  const t = Math.min(
+    Math.max((distanceM - CONFIG.veil.fadeNearM) / (CONFIG.veil.fadeFarM - CONFIG.veil.fadeNearM), 0),
+    1,
+  );
+  return t * t * (3 - 2 * t);
+}
+
+/**
+ * 光幕的幾何（車位本地座標）：車位輪廓的四個邊各一片直立的面，從光牆的頂端到 veil.heightM，
+ * 分成幾層，每層的不透明度照 glowVeilAlpha（存在 alpha 屬性裡）。沒有頂蓋。
+ */
+export function createVeilGeometry(spot: Pick<ParkingSpot, 'widthM' | 'lengthM'>): BufferGeometry {
+  const halfW = spot.widthM / 2;
+  const halfL = spot.lengthM / 2;
+  const corners: readonly (readonly [number, number])[] = [
+    [-halfW, -halfL],
+    [halfW, -halfL],
+    [halfW, halfL],
+    [-halfW, halfL],
+  ];
+  const positions: number[] = [];
+  const alphas: number[] = [];
+  const { layers } = CONFIG.veil;
+  for (let side = 0; side < corners.length; side += 1) {
+    const from = corners[side];
+    const to = corners[(side + 1) % corners.length];
+    if (from === undefined || to === undefined) {
+      continue;
+    }
+    for (let layer = 0; layer < layers; layer += 1) {
+      const t0 = layer / layers;
+      const t1 = (layer + 1) / layers;
+      const y0 = CONFIG.heightM + t0 * (CONFIG.veil.heightM - CONFIG.heightM);
+      const y1 = CONFIG.heightM + t1 * (CONFIG.veil.heightM - CONFIG.heightM);
+      const alpha0 = glowVeilAlpha(t0);
+      const alpha1 = glowVeilAlpha(t1);
+      const quad: readonly (readonly [number, number, number, number])[] = [
+        [from[0], y0, from[1], alpha0],
+        [to[0], y0, to[1], alpha0],
+        [to[0], y1, to[1], alpha1],
+        [from[0], y0, from[1], alpha0],
+        [to[0], y1, to[1], alpha1],
+        [from[0], y1, from[1], alpha1],
+      ];
+      for (const [x, y, z, alpha] of quad) {
+        positions.push(x, y, z);
+        alphas.push(alpha);
+      }
+    }
+  }
+  const geometry = new BufferGeometry();
+  geometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('alpha', new Float32BufferAttribute(alphas, 1));
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+const VEIL_VERTEX_SHADER = /* glsl */ `
+  attribute float alpha;
+  varying float vAlpha;
+  varying float vDistance;
+  void main() {
+    vAlpha = alpha;
+    vec4 view = modelViewMatrix * vec4( position, 1.0 );
+    vDistance = length( view.xyz );
+    gl_Position = projectionMatrix * view;
+  }
+`;
+
+const VEIL_FRAGMENT_SHADER = /* glsl */ `
+  uniform vec3 veilColor;
+  uniform float veilOpacity;
+  uniform float fadeNear;
+  uniform float fadeFar;
+  varying float vAlpha;
+  varying float vDistance;
+  void main() {
+    // 貼近鏡頭的部分不畫：鏡頭在光幕的範圍裡時，眼前沒有東西。
+    float nearFade = smoothstep( fadeNear, fadeFar, vDistance );
+    gl_FragColor = vec4( veilColor, vAlpha * veilOpacity * nearFade );
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
+  }
+`;
+
 /** e2e 與除錯用的唯讀狀態（對外用英尺與度，與 SessionSnapshot 一致）。 */
 export interface SpotGlowSnapshot {
   /** 標記的中心：就是車位中心。 */
@@ -153,6 +249,11 @@ export interface SpotGlowSnapshot {
 export interface SpotGlow {
   /** 加進場景的那一組（世界座標；原點在車位中心的地面，方向跟著車位）。 */
   readonly root: Group;
+  /**
+   * 遠處用的光幕（另一個網格，也要加進場景）：從光牆的頂端再往上很淡的一段漸層，離鏡頭近了自己消失。
+   * 顏色、脈動、停妥後變綠與淡出都跟著光牆。
+   */
+  readonly veil: Mesh;
   /**
    * 脈動往前走 frameSeconds：亮度只由累積時間決定。
    * 定格截圖與暫停時傳 0，停在原地；從沒走過時間就是最亮的起始狀態。
@@ -210,6 +311,30 @@ export function createSpotGlow(spot: GlowSpot, animate = true): SpotGlow {
   // 發光的標記沒有實體表面：不投影、不接影子，也不參與環境光遮蔽。
   root.userData[SKIP_AMBIENT_OCCLUSION] = true;
 
+  const veilMaterial = new ShaderMaterial({
+    name: 'SpotGlowVeilShader',
+    uniforms: {
+      veilColor: { value: idleColor.clone() },
+      veilOpacity: { value: 1 },
+      fadeNear: { value: CONFIG.veil.fadeNearM },
+      fadeFar: { value: CONFIG.veil.fadeFarM },
+    },
+    vertexShader: VEIL_VERTEX_SHADER,
+    fragmentShader: VEIL_FRAGMENT_SHADER,
+    transparent: true,
+    depthWrite: false,
+    side: DoubleSide,
+    fog: false,
+  });
+  const veil = new Mesh(createVeilGeometry(spot), veilMaterial);
+  veil.name = 'spotGlowVeil';
+  veil.renderOrder = GLOW_RENDER_ORDER;
+  veil.position.copy(root.position);
+  veil.rotation.copy(root.rotation);
+  veil.userData[SKIP_AMBIENT_OCCLUSION] = true;
+  const veilColor: unknown = veilMaterial.uniforms['veilColor']?.value;
+  const veilOpacity = veilMaterial.uniforms['veilOpacity'];
+
   let elapsedSeconds = 0;
   /** 停妥之後過了多久；還沒停妥是 0。 */
   let parkedSeconds = 0;
@@ -221,10 +346,19 @@ export function createSpotGlow(spot: GlowSpot, animate = true): SpotGlow {
     material.color.copy(idleColor).lerp(parkedColor, green());
     material.opacity = fade() * pulse();
     root.visible = fade() > 0;
+    // 光幕跟著光牆：同一個顏色、同一個脈動與淡出。
+    if (veilColor instanceof Color) {
+      veilColor.copy(material.color);
+    }
+    if (veilOpacity !== undefined) {
+      veilOpacity.value = material.opacity;
+    }
+    veil.visible = root.visible;
   };
 
   return {
     root,
+    veil,
     advance(frameSeconds) {
       if (!animate) {
         return;
@@ -240,11 +374,14 @@ export function createSpotGlow(spot: GlowSpot, animate = true): SpotGlow {
     opacity: fade,
     drawHidden(draw) {
       const wasVisible = root.visible;
+      const veilWasVisible = veil.visible;
       root.visible = false;
+      veil.visible = false;
       try {
         draw();
       } finally {
         root.visible = wasVisible;
+        veil.visible = veilWasVisible;
       }
     },
     snapshot: () => ({
