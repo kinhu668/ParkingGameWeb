@@ -29,16 +29,28 @@ import {
   createCurbs,
   createWheelStop,
   curbInnerBounds,
+  curbSegmentRects,
   edgeShadowBoxes,
+  wheelStopFootprint,
   wheelStopShadowBoxes,
+  type LocalRect,
 } from '../props/lotEdges';
-import { createLotLayout, spotLocalToWorld, type PropPlacement } from '../props/lotLayout';
+import {
+  createLotLayout,
+  spotLocalToWorld,
+  type LotLayout,
+  type PropPlacement,
+} from '../props/lotLayout';
 import type { GroundEdgeBox } from '../props/groundShader';
 import type { BoundsFt } from '../level/collision';
 import { ftToM } from '../core/units';
 import { createLotProps } from '../props/lotProps';
 import { buildingShadowMaxHeightM } from '../props/shadowReach';
-import { createEnvironmentLayout, type EnvironmentSource } from '../props/environmentLayout';
+import {
+  createEnvironmentLayout,
+  type EnvironmentLayout,
+  type EnvironmentSource,
+} from '../props/environmentLayout';
 import { createEnvironment } from '../props/environments';
 import {
   BOUNDS_STYLES,
@@ -51,6 +63,12 @@ import { createSpotMarkings } from '../props/spotMarkings';
 import type { VehiclePose } from '../vehicle/bicycleModel';
 import { createCarHeadlights } from '../vehicle/carHeadlights';
 import {
+  createRaisedPoolLight,
+  raisedBoxAt,
+  raisedBoxFromRect,
+  type RaisedBox,
+} from '../vehicle/headlightCurbs';
+import {
   createCarMesh,
   setCarHoodView,
   setCarInteriorView,
@@ -60,6 +78,8 @@ import {
 } from '../vehicle/carMesh';
 import { usesHdrChain, type QualitySettings } from './quality';
 import {
+  CURB_CONFIG,
+  HEADLIGHT_CONFIG,
   HEMISPHERE_LIGHT_CONFIG,
   SKY_CONFIG,
   SUN_CONFIG,
@@ -307,6 +327,75 @@ export function lightningStrikeArea(spot: ParkingSpot, bounds: BoundsFt | undefi
 }
 
 /**
+ * 場景裡會擋住貼地光斑的矮東西（世界座標）：原型關的路緣石與車擋、假車位的車擋；有邊界的關卡的矮路緣／人行道路緣、
+ * 環境裡貼地的矮方塊（人行道）。比 HEADLIGHT_CONFIG.raisedSurfaces.maxHeightM 高的不算。
+ */
+export function raisedBoxesOf(
+  spot: ParkingSpot,
+  lotLayout: LotLayout | undefined,
+  environmentLayout: EnvironmentLayout | undefined,
+  level: ObstacleSource | undefined,
+): RaisedBox[] {
+  const maxHeightM = HEADLIGHT_CONFIG.raisedSurfaces.maxHeightM;
+  const boxes: RaisedBox[] = [];
+  /** 車位本地座標的矩形（原型關的路緣、車擋）。 */
+  const localRect = (rect: LocalRect, heightM: number): RaisedBox => {
+    const center = spotLocalToWorld(spot, (rect.minX + rect.maxX) / 2, (rect.minZ + rect.maxZ) / 2);
+    return raisedBoxAt(
+      center.x,
+      center.z,
+      spot.headingRad,
+      rect.maxX - rect.minX,
+      rect.maxZ - rect.minZ,
+      heightM,
+    );
+  };
+  if (lotLayout !== undefined) {
+    for (const rect of curbSegmentRects(spot)) {
+      boxes.push(localRect(rect, CURB_CONFIG.heightM));
+    }
+    boxes.push(localRect(wheelStopFootprint(spot), WHEEL_STOP_CONFIG.heightM));
+    for (const stop of lotLayout.wheelStops) {
+      const center = spotLocalToWorld(spot, stop.x, stop.z);
+      boxes.push(
+        raisedBoxAt(center.x, center.z, spot.headingRad + stop.headingRad, stop.sizeX, stop.sizeZ, stop.sizeY),
+      );
+    }
+  }
+  if (environmentLayout !== undefined) {
+    // 環境的佈局已經是世界座標。
+    for (const stop of environmentLayout.lot.wheelStops) {
+      boxes.push(raisedBoxAt(stop.x, stop.z, stop.headingRad, stop.sizeX, stop.sizeZ, stop.sizeY));
+    }
+    for (const slab of environmentLayout.slabs) {
+      if (slab.kind === 'solid' && slab.minY <= 0 && slab.maxY > 0 && slab.maxY <= maxHeightM) {
+        boxes.push(raisedBoxFromRect(slab, slab.maxY));
+      }
+    }
+  }
+  const bounds = level?.boundsFt;
+  if (bounds !== undefined && level !== undefined) {
+    const style = BOUNDS_STYLES[level.environment ?? 'open_lot'];
+    if (ftToM(style.heightFt) <= maxHeightM) {
+      for (const box of boundsVisualBoxesFt(bounds, style.depthFt)) {
+        boxes.push(
+          raisedBoxFromRect(
+            {
+              minX: ftToM(box.centerXFt - box.widthFt / 2),
+              maxX: ftToM(box.centerXFt + box.widthFt / 2),
+              minZ: ftToM(box.centerZFt - box.lengthFt / 2),
+              maxZ: ftToM(box.centerZFt + box.lengthFt / 2),
+            },
+            ftToM(style.heightFt),
+          ),
+        );
+      }
+    }
+  }
+  return boxes;
+}
+
+/**
  * 把環境貼圖（反射＋補光）設到 scene 上，回傳整組天空（穹頂要不要加進場景由呼叫端決定）。
  * 遊戲場景與展示台共用同一套做法；展示台不給天氣（＝黃昏），也不用天空當背景。
  * @param weather 這種天氣的天空、霧色與太陽方向；不給 = 黃昏
@@ -518,6 +607,17 @@ export function createGameScene(
   );
   car.root.add(headlights.root);
 
+  // 光斑打在路緣上：路緣石、車擋、人行道比貼地的光斑高，在它們的頂面與立面補上同樣的光（世界座標，不掛在車上）。
+  const raisedPool = createRaisedPoolLight(
+    raisedBoxesOf(spot, lotLayout, environmentLayout, level),
+    quality.headlights,
+    usesHdrChain(quality),
+  );
+  if (raisedPool !== undefined) {
+    scene.add(raisedPool.mesh);
+  }
+  let reversingLit = false;
+
   // 倒車輪胎痕、灰塵、落葉、雨絲：純視覺的小效果，數量跟著畫質級別走。下雨時不揚灰塵、不飄落葉。
   const raining = preset.rain > 0;
   const effects = createSceneEffects(quality, spot, start, DEFAULT_SEED, {
@@ -600,6 +700,7 @@ export function createGameScene(
     spotGlow: () => glow.snapshot(),
     update(pose, frameSeconds = 0) {
       updateCarMesh(car, pose);
+      raisedPool?.update(pose, reversingLit);
       effects.update(pose, frameSeconds);
       // 光柱裡的霧氣流動：`?fx=off` 不走時間（光柱照樣畫，只是靜止的）。
       if (ambientFx) {
@@ -629,6 +730,8 @@ export function createGameScene(
     setLights(lights) {
       setCarLights(car, lights);
       headlights.setReversing(lights.reversing);
+      // 路緣上的倒車燈光：下一次 update 重填貼片時才看得到（每幀都會 update）。
+      reversingLit = lights.reversing;
     },
   };
 }
