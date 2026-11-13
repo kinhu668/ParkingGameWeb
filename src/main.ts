@@ -37,6 +37,7 @@ import {
 import { vehicleOnRouteAt } from './level/levelRoutes';
 import { PROTOTYPE_WORLD, type LevelDefinition } from './level/levelSchema';
 import { recordResult } from './level/progress';
+import { bakedSurfaces } from './materials/surfaceLibrary';
 import { PROTOTYPE_LEVEL } from './level/prototypeLayout';
 import type { SpotGlowSnapshot } from './props/spotGlow';
 import { stepsToSeconds } from './level/scoring';
@@ -122,7 +123,7 @@ function createLevelScene(
   level: LevelDefinition,
 ): GameScene {
   const search = window.location.search;
-  return createGameScene(
+  const gameScene = createGameScene(
     renderer,
     quality,
     level.layout.spot,
@@ -131,6 +132,9 @@ function createLevelScene(
     resolveWeather(search, level.weather),
     !parseFxOffParam(search),
   );
+  // 這一關烘了材質庫的哪些表面（只烘用到的）：寫在 <html data-surfaces>，方便除錯與 e2e 確認。
+  document.documentElement.dataset.surfaces = bakedSurfaces(renderer).join(' ');
+  return gameScene;
 }
 
 /**

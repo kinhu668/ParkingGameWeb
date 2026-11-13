@@ -15,7 +15,12 @@ import type { WeatherId } from '../core/weather';
 import { createLightning } from '../effects/lightning';
 import { createSceneEffects } from '../effects/sceneEffects';
 import type { ParkingSpot } from '../level/parkingJudge';
-import { prepareSurfaceLibrary, setSurfaceWetness } from '../materials/surfaceLibrary';
+import {
+  configureSurfaceLibrary,
+  prepareSurfaceLibrary,
+  setSurfaceWetness,
+} from '../materials/surfaceLibrary';
+import { surfacesUsedIn } from '../materials/surfaceMaterial';
 import { createGround } from '../props/ground';
 import { groundEdgeShadows } from '../props/groundShader';
 import {
@@ -352,9 +357,10 @@ export function createGameScene(
     degToRad(preset.sun.elevationDeg),
   );
 
-  // 材質庫：建築、擺設、車身的程序化 PBR 貼圖用 GPU 烘一次（同一個算圖器只烘一次）；
+  // 材質庫：建築、擺設、車身的程序化 PBR 貼圖用 GPU 烘（同一個算圖器每種表面只烘一次）。
+  // 這裡先只設定著色器的細節（建立材質時要用），一張都不烘；場景建好後再烘這一關實際用到的表面（見下面）。
   // 建築與金屬的潮濕程度跟著天氣（地面另有自己的潮濕分布）。
-  prepareSurfaceLibrary(renderer, quality.materials);
+  configureSurfaceLibrary(quality.materials);
   setSurfaceWetness(preset.surfaceWetness);
 
   const scene = new Scene();
@@ -498,6 +504,10 @@ export function createGameScene(
 
   // 遮擋半透明：擺設都就位了才收集（佔地方塊要換成世界座標）。玩家車沒有登記，不會被淡掉。
   const occlusion = ambientFx ? createOcclusionFade(scene) : undefined;
+
+  // 場景裡的東西都建好了：只烘這一關實際用到的表面（每一關大約用到庫的一半到三分之二）。
+  // 要在第一次畫之前；沒烘的表面維持中性貼圖，之後才出現的庫材質頂多是沒有紋路的底色。
+  prepareSurfaceLibrary(renderer, quality.materials, surfacesUsedIn(scene));
 
   return {
     scene,

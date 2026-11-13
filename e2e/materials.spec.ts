@@ -26,3 +26,20 @@ test('?show=material_brick（medium，含法線）：單一表面的特寫畫得
   const stats = await canvasStats(page);
   expect(stats.distinctColors).toBeGreaterThan(MIN_DISTINCT_COLORS);
 });
+
+test('一般遊戲只烘這一關用到的表面：比整個材質庫少，車與建築的表面都在，畫面照常', async ({ page }) => {
+  await page.goto('/?level=w1_l05&lang=zh-TW&view=chase_near&quality=low&fx=off');
+  await expect(page.locator('#game-canvas')).toBeVisible();
+  const baked = ((await page.locator('html').getAttribute('data-surfaces')) ?? '').split(' ');
+  // 整個庫是 16 種；地面用自己的著色器，柏油與環氧地坪沒有物件在用。
+  expect(baked.length).toBeGreaterThanOrEqual(6);
+  expect(baked.length).toBeLessThan(16);
+  for (const id of ['carPaint', 'glass', 'tire', 'brick', 'concrete']) {
+    expect(baked).toContain(id);
+  }
+  for (const id of ['asphaltDry', 'asphaltWet', 'epoxy']) {
+    expect(baked).not.toContain(id);
+  }
+  const stats = await canvasStats(page);
+  expect(stats.distinctColors).toBeGreaterThan(MIN_DISTINCT_COLORS);
+});

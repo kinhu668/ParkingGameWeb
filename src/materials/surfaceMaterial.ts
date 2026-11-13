@@ -9,11 +9,14 @@
 // - radial：繞本地 X 軸的圓柱座標（輪胎）：胎面與胎壁各用貼圖的一半。
 import {
   DoubleSide,
+  Mesh,
   MeshPhysicalMaterial,
   MeshStandardMaterial,
   Vector4,
   type ColorRepresentation,
+  type Material,
   type MeshStandardMaterialParameters,
+  type Object3D,
 } from 'three';
 import {
   SURFACE_OVERLAY_MAP,
@@ -311,4 +314,27 @@ export function createScenerySurface(
 export function surfaceOf(material: { readonly userData: Record<string, unknown> }): SurfaceId | undefined {
   const id = material.userData[SURFACE_USER_DATA];
   return typeof id === 'string' ? (id as SurfaceId) : undefined;
+}
+
+/**
+ * root 底下的網格（含目前看不見的：駕駛座內裝、被藏起來的擺設）用到了庫裡的哪些表面。
+ * 場景建好後用它決定要烘哪些貼圖（prepareSurfaceLibrary）。
+ */
+export function surfacesUsedIn(root: Object3D): Set<SurfaceId> {
+  const used = new Set<SurfaceId>();
+  root.traverse((object) => {
+    if (!(object instanceof Mesh)) {
+      return;
+    }
+    const materials: readonly Material[] = Array.isArray(object.material)
+      ? object.material
+      : [object.material];
+    for (const material of materials) {
+      const id = surfaceOf(material);
+      if (id !== undefined) {
+        used.add(id);
+      }
+    }
+  });
+  return used;
 }

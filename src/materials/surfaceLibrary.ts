@@ -1,6 +1,6 @@
 // 材質庫的貼圖：每種表面三張（顏色、ORM、法線）＋全庫共用的一張髒污疊加。
 // 沒有 WebGL 時（單元測試、還沒烘之前）每張都是 1×1 的中性值：材質就是它的底色與基準粗糙度／金屬度。
-// prepareSurfaceLibrary 用 GPU 烘一次（同一個算圖器、同一個尺寸只烘一次），烘好後把貼圖換進共用的 uniform：
+// prepareSurfaceLibrary 用 GPU 烘（同一個算圖器、同一個尺寸每種表面只烘一次；遊戲場景只烘這一關用到的），烘好後把貼圖換進共用的 uniform：
 // 已經建好的材質全都指著同一組 uniform 物件，不必逐一去改，也不必登記誰用了哪一種表面。
 import {
   DataTexture,
@@ -77,7 +77,7 @@ export function setSurfaceWetness(wetness: number): void {
   SURFACE_WETNESS.value = Math.min(Math.max(wetness, 0), 1);
 }
 
-/** 目前材質著色器要編成哪一種（跟著最近一次 prepareSurfaceLibrary 的畫質）。 */
+/** 目前材質著色器要編成哪一種（跟著最近一次 configureSurfaceLibrary／prepareSurfaceLibrary 的畫質）。 */
 interface LibraryDetail {
   normals: boolean;
   triplanarBlend: boolean;
@@ -91,36 +91,72 @@ export function surfaceLibraryDetail(): Readonly<LibraryDetail> {
 interface BakedSet {
   readonly sizePx: number;
   readonly normals: boolean;
-  readonly targets: readonly WebGLRenderTarget[];
+  /** 烘焙索引（表面在 SURFACE_IDS 裡的索引；OVERLAY_BAKE_INDEX = 髒污疊加）→ 烘好的那一張。沒烘的不在裡面。 */
+  readonly targets: Map<number, WebGLRenderTarget>;
 }
 const BAKED = new WeakMap<WebGLRenderer, BakedSet>();
 
 function useBaked(set: BakedSet): void {
   SURFACE_IDS.forEach((id) => {
-    const target = set.targets[surfaceIndex(id)];
+    const target = set.targets.get(surfaceIndex(id));
     const maps = surfaceMaps(id);
     maps.color.value = target?.textures[0] ?? FALLBACK.color;
     maps.orm.value = target?.textures[1] ?? FALLBACK.orm;
     maps.normal.value = (set.normals ? target?.textures[2] : undefined) ?? FALLBACK.normal;
   });
-  SURFACE_OVERLAY_MAP.value = set.targets[OVERLAY_BAKE_INDEX]?.textures[0] ?? FALLBACK.overlay;
+  SURFACE_OVERLAY_MAP.value = set.targets.get(OVERLAY_BAKE_INDEX)?.textures[0] ?? FALLBACK.overlay;
 }
 
 /**
- * 烘出整個材質庫（每種表面一次、髒污疊加一次），並讓全部庫材質改用烘好的貼圖。
- * 同一個算圖器、同一個尺寸再呼叫只是把貼圖指回去，不重烘。固定種子：每次烘出來的像素都相同。
+ * 還沒烘的烘焙索引：要的表面裡沒烘過的，加上髒污疊加（不論要哪些表面都要有）。純函式，方便測試。
+ * @param surfaces 要用的表面
+ * @param baked 已經烘好的烘焙索引
  */
-export function prepareSurfaceLibrary(renderer: WebGLRenderer, settings: MaterialQualitySettings): void {
+export function missingBakeIndices(
+  surfaces: Iterable<SurfaceId>,
+  baked: { has(index: number): boolean },
+): number[] {
+  const wanted = new Set<number>([...surfaces].map(surfaceIndex));
+  wanted.add(OVERLAY_BAKE_INDEX);
+  return [...wanted].filter((index) => !baked.has(index)).sort((a, b) => a - b);
+}
+
+/**
+ * 只設定材質著色器的細節（法線、三面混合），不烘任何東西。建立庫材質之前呼叫：
+ * 遊戲場景要等東西都建好才知道用到哪些表面，那時再呼叫 prepareSurfaceLibrary 烘。
+ * （不在這裡先烘髒污疊加：烘焙著色器很大，分兩次烘就要編譯兩次，軟體算圖下每次要一兩秒。）
+ */
+export function configureSurfaceLibrary(settings: MaterialQualitySettings): void {
   DETAIL.normals = settings.normals;
   DETAIL.triplanarBlend = settings.triplanarBlend;
-  const cached = BAKED.get(renderer);
-  if (cached !== undefined && cached.sizePx === settings.textureSizePx && cached.normals === settings.normals) {
-    useBaked(cached);
+}
+
+/**
+ * 準備材質庫：設定材質著色器的細節，烘出 surfaces 裡還沒烘過的表面與髒污疊加，
+ * 並讓全部庫材質改用烘好的貼圖（沒烘的表面維持 1×1 的中性貼圖）。
+ * 同一個算圖器、同一個尺寸已經烘過的不重烘；再呼叫只補還缺的。固定種子：每次烘出來的像素都相同。
+ * @param surfaces 要烘哪些表面；不給 = 全部（展示台）。遊戲場景給「這一關實際用到的」：
+ *   每種表面烘一次要畫滿二到三張貼圖，軟體算圖下不用的也烘會讓載入變慢。
+ */
+export function prepareSurfaceLibrary(
+  renderer: WebGLRenderer,
+  settings: MaterialQualitySettings,
+  surfaces: Iterable<SurfaceId> = SURFACE_IDS,
+): void {
+  configureSurfaceLibrary(settings);
+  let set = BAKED.get(renderer);
+  if (set === undefined || set.sizePx !== settings.textureSizePx || set.normals !== settings.normals) {
+    set?.targets.forEach((target) => {
+      target.dispose();
+    });
+    set = { sizePx: settings.textureSizePx, normals: settings.normals, targets: new Map() };
+    BAKED.set(renderer, set);
+  }
+  const missing = missingBakeIndices(surfaces, set.targets);
+  if (missing.length === 0) {
+    useBaked(set);
     return;
   }
-  cached?.targets.forEach((target) => {
-    target.dispose();
-  });
 
   const sizePx = settings.textureSizePx;
   const anisotropy = Math.min(renderer.capabilities.getMaxAnisotropy(), settings.maxAnisotropy);
@@ -139,8 +175,7 @@ export function prepareSurfaceLibrary(renderer: WebGLRenderer, settings: Materia
   const camera = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
 
   const previousTarget = renderer.getRenderTarget();
-  const targets: WebGLRenderTarget[] = [];
-  for (let index = 0; index <= OVERLAY_BAKE_INDEX; index += 1) {
+  for (const index of missing) {
     const target = new WebGLRenderTarget(sizePx, sizePx, {
       count: settings.normals ? 3 : 2,
       depthBuffer: false,
@@ -154,15 +189,18 @@ export function prepareSurfaceLibrary(renderer: WebGLRenderer, settings: Materia
     material.uniforms.uSurface = { value: index };
     renderer.setRenderTarget(target);
     renderer.render(scene, camera);
-    targets.push(target);
+    set.targets.set(index, target);
   }
   renderer.setRenderTarget(previousTarget);
   quad.geometry.dispose();
   material.dispose();
-
-  const set: BakedSet = { sizePx, normals: settings.normals, targets };
-  BAKED.set(renderer, set);
   useBaked(set);
+}
+
+/** 這個算圖器已經烘好的表面（依 SURFACE_IDS 的順序；除錯與 e2e 用）。沒烘過是空的。 */
+export function bakedSurfaces(renderer: WebGLRenderer): SurfaceId[] {
+  const set = BAKED.get(renderer);
+  return set === undefined ? [] : SURFACE_IDS.filter((id) => set.targets.has(surfaceIndex(id)));
 }
 
 /**
@@ -175,7 +213,9 @@ export function surfaceChecksum(renderer: WebGLRenderer): number | undefined {
   }
   const buffer = new Uint8Array(set.sizePx * set.sizePx * 4);
   let sum = 0;
-  set.targets.forEach((target) => {
+  // 依烘焙索引的順序讀（不是烘的先後）：分幾次烘出來的檢查碼也一樣。
+  const ordered = [...set.targets.entries()].sort(([a], [b]) => a - b).map(([, target]) => target);
+  ordered.forEach((target) => {
     for (let texture = 0; texture < target.textures.length; texture += 1) {
       renderer.readRenderTargetPixels(target, 0, 0, set.sizePx, set.sizePx, buffer, undefined, texture);
       for (let index = 0; index < buffer.length; index += 1) {
