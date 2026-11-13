@@ -582,8 +582,8 @@ export function createObstacleMeshes(source: ObstacleSource, detail: VehicleDeta
     mesh.instanceMatrix.needsUpdate = true;
     mesh.name = `obstacle:${type}`;
     mesh.userData.obstacleIndices = indices;
-    // 巷子的牆很高，太陽又低：投影會把整條巷子罩黑，所以高牆不投影。
-    mesh.castShadow = !(type === 'wall' && wall.heightFt > 10);
+    // 每一種障礙物都投影，巷子的高牆也是：巷子裡一邊（甚至大半）在影子裡才是對的。
+    mesh.castShadow = true;
     mesh.receiveShadow = true;
     group.add(mesh);
     registerOccluders(group, occluders);
@@ -606,7 +606,8 @@ export function createObstacleMeshes(source: ObstacleSource, detail: VehicleDeta
     });
     mesh.instanceMatrix.needsUpdate = true;
     mesh.name = 'bounds';
-    mesh.castShadow = !tall;
+    // 邊界也投影：矮路緣的影子很短；巷子的高牆把影子投在巷子的地面與對面的牆上。
+    mesh.castShadow = true;
     mesh.receiveShadow = true;
     group.add(mesh);
   }
