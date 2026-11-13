@@ -842,7 +842,7 @@ body {
   }
 }
 
-/* 觸控層：方向盤、踏板、掛檔、暫停、重來。位置由 touchControls.ts 依畫面大小設定（都在倒車輔助小窗的下面）。 */
+/* 螢幕操作層：方向盤、踏板、掛檔、暫停、重來、鏡頭。位置由 touchControls.ts 依畫面大小設定（都在倒車輔助小窗的下面）。 */
 .touch {
   position: absolute;
   inset: 0;
@@ -988,7 +988,7 @@ body {
     rgb(190 56 44 / 0.72);
 }
 
-/* 小鍵：掛 D、掛 R、暫停、重來。 */
+/* 小鍵：掛 D、掛 R、暫停、重來、鏡頭。 */
 .touch-button {
   display: grid;
   align-content: center;
@@ -1035,6 +1035,117 @@ body {
   color: #ffd76a;
 }
 
+/* 鍵帽：疊在控制項上緣的小按鈕，寫著目前綁的鍵；點它（不是控制項本體）再按新的鍵就改綁。
+   只有有鍵盤的裝置才建立（touchControls.ts）。位置由程式設定：data-anchor 決定 left 指的是鍵帽的左緣、中心或右緣。 */
+.touch-key {
+  position: absolute;
+  box-sizing: border-box;
+  margin: 0;
+  border: 1px solid rgb(255 255 255 / 0.55);
+  border-bottom-width: 3px;
+  border-radius: 6px;
+  background: rgb(16 20 28 / 0.92);
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  text-align: center;
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.touch-key[data-anchor='center'] {
+  transform: translateX(-50%);
+}
+
+.touch-key[data-anchor='right'] {
+  transform: translateX(-100%);
+}
+
+.touch-key[data-size='large'] {
+  min-width: 36px;
+  height: 30px;
+  padding: 0 8px;
+  font-size: 18px;
+}
+
+.touch-key[data-size='small'] {
+  min-width: 22px;
+  height: 17px;
+  padding: 0 4px;
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  font-size: 10px;
+}
+
+.touch-key:hover,
+.touch-key:focus-visible {
+  border-color: #ffd76a;
+  background: rgb(72 60 20 / 0.95);
+}
+
+/* 正在等玩家按新的鍵（滑鼠還停在上面時也是這個樣子）。 */
+.touch-key[data-listening='true'],
+.touch-key[data-listening='true']:hover {
+  border-color: #ffd76a;
+  background: #ffd45e;
+  color: #1a1407;
+  animation: touch-key-wait 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes touch-key-wait {
+  from {
+    box-shadow: 0 0 0 0 rgb(255 212 94 / 0.7);
+  }
+
+  to {
+    box-shadow: 0 0 0 7px rgb(255 212 94 / 0);
+  }
+}
+
+/* 有鍵帽時小鍵上的字往下靠，上緣留給鍵帽。 */
+#hud[data-keys='on'] .touch-button {
+  align-content: end;
+  padding-bottom: 5px;
+}
+
+/* 改鍵的提示與結果：下方中間、鏡頭名稱的上面。 */
+.touch-key-message {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--touch-clear-bottom, 80px) + 48px);
+  max-width: min(520px, calc(100% - 32px));
+  padding: 8px 16px;
+  transform: translateX(-50%);
+  font-size: 15px;
+  font-weight: 600;
+  text-align: center;
+  pointer-events: none;
+}
+
+.touch-key-message[hidden] {
+  display: none;
+}
+
+.touch-key-message[data-kind='listening'] {
+  border-color: rgb(255 212 94 / 0.85);
+  color: #ffe08a;
+}
+
+.touch-key-message[data-kind='warning'] {
+  border-color: rgb(255 138 117 / 0.85);
+  color: #ffb3a4;
+}
+
+/* 手機（沒有鍵盤）：暫停與結算面板上「按 … 繼續／重來」的提示收起來，面板上已經有按鈕。 */
+#hud[data-keys='off'] .hud-status-hint {
+  display: none;
+}
+
 /* 手機上輔助小窗比較小（assistLayout.ts 的 phoneScale）：名稱與警告的字跟著縮。 */
 .assist[data-compact='true'] .assist-label {
   left: 3px;
@@ -1062,8 +1173,8 @@ body {
   stroke-width: 2;
 }
 
-/* 觸控層開著：左下角是方向盤，鍵盤的操作說明收起來（按鍵設定仍可從暫停面板進去）；
-   鏡頭名稱往上讓，不壓在暫停／重來鍵上。 */
+/* 螢幕操作層開著：左下角是方向盤，鍵盤的操作說明收起來（每個控制項上有鍵帽；按鍵設定仍可從暫停面板進去）；
+   鏡頭名稱往上讓，不壓在暫停／重來／鏡頭鍵上。 */
 #hud[data-touch='on'] .hud-controls {
   display: none;
 }

@@ -1,21 +1,39 @@
-// 觸控層：手機／平板用的螢幕按鈕——左下的虛擬方向盤（拖曳旋轉、放開回正）、右下的剎車與油門踏板
-// （可同時踩，各自記自己的手指），加上掛 D、掛 R、暫停、重來。
-// 用 Pointer Events：每根手指有自己的 pointerId，所以一邊轉方向盤一邊踩踏板互不干擾；滑鼠也能操作（?touch=on）。
+// 螢幕操作層：手機用手指、桌面用滑鼠都能開車的螢幕按鈕——左下的虛擬方向盤（拖曳旋轉、放開回正）、
+// 右下的剎車與油門踏板（可同時踩，各自記自己的手指），加上掛 D、掛 R、暫停、重來、切換鏡頭。預設顯示，`?touch=off` 才隱藏。
+// 用 Pointer Events：每根手指有自己的 pointerId，所以一邊轉方向盤一邊踩踏板互不干擾；滑鼠也是同一套事件。
+// 有鍵盤的裝置（主要指標不是手指）每個控制項上還有一顆鍵帽，寫著目前綁的鍵；點鍵帽（不是控制項本體）再按新的鍵就改綁，
+// 走的是與按鍵設定面板相同的改鍵流程（controlsPanel.ts 的 createRebindFlow）。拖方向盤、踩踏板本體永遠是開車。
 // 位置由 core/touchLayout.ts 算（排在倒車輔助小窗的下面）；駕駛輸入的換算在 core/touchInput.ts。
 import { onLocaleChange, t, type TranslationKey } from '../core/i18n';
 import {
   NO_TOUCH_DRIVE,
+  keyboardHintsEnabled,
   touchDriveInput,
   touchLayerEnabled,
   wheelAngleAfterDrag,
   wheelAngleAfterRelease,
   type WheelPoint,
 } from '../core/touchInput';
+import {
+  TOUCH_KEY_BADGES,
+  TOUCH_KEY_SLOT,
+  keyBadgePosition,
+  touchKeyCode,
+  type TouchKeyBadge,
+} from '../core/touchKeys';
 import { TOUCH_CONTROL_IDS, touchLayout, type TouchControlId } from '../core/touchLayout';
 import { radToDeg } from '../core/units';
 import type { TouchParam } from '../core/urlParams';
 import type { DriveInput } from '../vehicle/bicycleModel';
 import type { Gear, Gearbox } from '../vehicle/gearbox';
+import {
+  ACTION_LABELS,
+  createRebindFlow,
+  fillTemplate,
+  keyText,
+  type ControlsAccess,
+  type RebindMessage,
+} from './controlsPanel';
 import { createUiBuilder } from './dom';
 
 /** 操作層上的按鈕要做的事（暫停、重來、切換鏡頭）；怎麼做由 main.ts 決定。 */
@@ -40,6 +58,10 @@ export interface TouchControls {
   consumeShift(): Gear | null;
   /** 每個畫面幀呼叫：顯示或收起、方向盤回正、依畫面大小排位置、標出目前檔位。 */
   update(state: TouchFrameState, frameSeconds: number): void;
+  /** 是不是正在等玩家按鍵（點了鍵帽）；等的時候這一局先不動，免得車自己滑走。 */
+  listening(): boolean;
+  /** 綁定變了（這裡或按鍵設定面板改的）之後呼叫：鍵帽照新的綁定重畫。 */
+  refreshKeys(): void;
 }
 
 /** 每個控制項的 DOM id、樣式與名稱（aria-label）的翻譯鍵。 */
@@ -66,27 +88,42 @@ const WHEEL_RENDER_STEP_DEG = 0.5;
 /** 鏡頭名稱與暫停／重來鍵之間的間距。 */
 const CAMERA_LABEL_GAP_PX = 10;
 
+/** 大的控制項（方向盤、踏板）：上面的鍵帽用大一號的樣式。 */
+const LARGE_CONTROLS: readonly TouchControlId[] = ['wheel', 'brake', 'gas'];
+
+/** 改鍵的結果訊息（改好了、衝突、不能用）顯示多久後收起（秒）。 */
+const KEY_MESSAGE_SECONDS = 5;
+
 /** `?touch=off`：不建立任何東西。 */
 const INERT: TouchControls = {
   driveInput: (gearbox) => touchDriveInput(NO_TOUCH_DRIVE, gearbox),
   consumeShift: () => null,
   update: () => undefined,
+  listening: () => false,
+  refreshKeys: () => undefined,
 };
 
 /**
- * 在 root（#hud）裡建立觸控層。`?touch=off` 不建立；`?touch=on` 一開始就顯示；
- * 沒給參數時主要指標是手指（`pointer: coarse`）就顯示，否則等到第一次真的收到觸控事件才顯示。
+ * 在 root（#hud）裡建立螢幕操作層。預設建立並顯示；`?touch=off` 不建立。
+ * `#hud[data-touch]` 是 on／off；`#hud[data-keys]` 是 on（顯示鍵盤提示與鍵帽）／off（手機：不顯示）。
  * @param param `?touch=` 的值（parseTouchParam）
+ * @param controls 按鍵綁定的存取（鍵帽上的字、點鍵帽改鍵）
  */
 export function createTouchControls(
   root: HTMLElement,
   param: TouchParam | undefined,
   actions: TouchActions,
+  controls: ControlsAccess,
 ): TouchControls {
-  if (param === 'off') {
+  if (!touchLayerEnabled(param)) {
     root.dataset.touch = 'off';
+    root.dataset.keys = 'on';
     return INERT;
   }
+  root.dataset.touch = 'on';
+  // 手機與平板沒有鍵盤：不放鍵帽，面板上「按 … 繼續／重來」的提示也收起來（樣式看 data-keys）。
+  const keyHints = keyboardHintsEnabled(window.matchMedia('(pointer: coarse)').matches);
+  root.dataset.keys = keyHints ? 'on' : 'off';
   const ui = createUiBuilder();
 
   // 放在 HUD 的最前面：資訊面板、結算與暫停面板都在它上面。
@@ -128,30 +165,95 @@ export function createTouchControls(
   ui.translatedElement('span', 'touch-label', elements.restart, 'touch.restart');
   ui.translatedElement('span', 'touch-label', elements.camera, 'touch.camera');
 
+  // ── 鍵帽：每個控制項上寫著目前綁的鍵；點鍵帽 → 按新的鍵 → 改綁（與按鍵設定面板同一套規則） ──
+  // 鍵帽是控制項的「兄弟」而不是子元素，疊在控制項上面：點鍵帽不會踩到踏板，踩踏板也不會開始改鍵。
+  const flow = createRebindFlow(
+    controls,
+    // 綁定變了由 controls.apply 統一通知（main.ts）：HUD、按鍵設定面板與這裡的鍵帽一起重畫。
+    () => undefined,
+    () => {
+      renderKeys();
+    },
+  );
+  const badges: (TouchKeyBadge & { readonly button: HTMLButtonElement })[] = [];
+  if (keyHints) {
+    for (const badge of TOUCH_KEY_BADGES) {
+      const button = ui.plainButton(`touch-key-${badge.action}`, 'touch-key', container);
+      button.dataset.action = badge.action;
+      button.dataset.anchor = badge.anchor;
+      // 方向盤與踏板上的鍵帽大一點；小鍵上的要塞在按鈕上緣，小一點。
+      button.dataset.size = LARGE_CONTROLS.includes(badge.control) ? 'large' : 'small';
+      button.addEventListener('click', () => {
+        flow.listen(badge.action, TOUCH_KEY_SLOT);
+      });
+      badges.push({ ...badge, button });
+    }
+  }
+  // 改鍵的提示與結果：下方中間、鏡頭名稱的上面。
+  const keyMessage = ui.element('div', 'hud-panel touch-key-message', container);
+  keyMessage.id = 'touch-key-message';
+  keyMessage.setAttribute('role', 'status');
+  keyMessage.hidden = true;
+  let shownMessage: RebindMessage | undefined;
+  let messageAgeSeconds = 0;
+
+  /** 鍵帽與提示：照目前的綁定、正在等的那一格、最近的訊息重畫。 */
+  function renderKeys(): void {
+    const bindings = controls.current();
+    const listening = flow.listening();
+    const message = flow.message();
+    for (const { action, button } of badges) {
+      const code = touchKeyCode(bindings, action);
+      const waiting = listening?.action === action;
+      const actionName = t(ACTION_LABELS[action]);
+      button.textContent = waiting ? '…' : keyText(code);
+      button.dataset.listening = String(waiting);
+      button.dataset.code = code;
+      button.title = `${actionName}: ${t('controls.rebind')}`;
+      button.setAttribute('aria-label', `${actionName}: ${keyText(code)}`);
+    }
+    if (message !== shownMessage) {
+      shownMessage = message;
+      messageAgeSeconds = 0;
+    }
+    if (listening !== undefined) {
+      // 暫停鍵預設就是 Esc，所以改「暫停」時 Esc 是要綁的鍵，不是取消。
+      const prompt = fillTemplate(t('touch.rebindPrompt'), { action: t(ACTION_LABELS[listening.action]) });
+      keyMessage.textContent =
+        listening.action === 'pause' ? prompt : `${prompt}${t('touch.rebindCancel')}`;
+      keyMessage.dataset.kind = 'listening';
+    } else {
+      keyMessage.textContent = message?.text() ?? '';
+      keyMessage.dataset.kind = message === undefined ? 'none' : message.warning ? 'warning' : 'info';
+    }
+    keyMessage.hidden = listening === undefined && message === undefined;
+  }
+
+  // 正在等按鍵時去碰控制項本體（踩踏板、拖方向盤、點小鍵）= 不改了，照常開車。
+  container.addEventListener(
+    'pointerdown',
+    (event) => {
+      const origin = event.target;
+      if (
+        flow.listening() !== undefined &&
+        !(origin instanceof Element && origin.closest('.touch-key') !== null)
+      ) {
+        flow.reset();
+        renderKeys();
+      }
+    },
+    { capture: true },
+  );
+
   function renderTexts(): void {
     ui.refreshTexts();
     for (const id of TOUCH_CONTROL_IDS) {
       elements[id].setAttribute('aria-label', t(CONTROLS[id].label));
     }
+    renderKeys();
   }
   renderTexts();
   onLocaleChange(renderTexts);
-
-  // ── 顯示與否 ────────────────────────────────────────────────
-  let sawTouch = false;
-  const coarsePointer = window.matchMedia('(pointer: coarse)').matches;
-  let enabled = touchLayerEnabled(param, coarsePointer, sawTouch);
-  root.dataset.touch = enabled ? 'on' : 'off';
-  if (!enabled) {
-    // 桌機接了觸控螢幕、或偵測不到粗指標的裝置：第一次真的碰到螢幕就顯示。
-    const onFirstTouch = (): void => {
-      sawTouch = true;
-      enabled = touchLayerEnabled(param, coarsePointer, sawTouch);
-      root.dataset.touch = enabled ? 'on' : 'off';
-      window.removeEventListener('touchstart', onFirstTouch);
-    };
-    window.addEventListener('touchstart', onFirstTouch, { passive: true });
-  }
 
   // ── 方向盤 ──────────────────────────────────────────────────
   let wheelAngleRad = 0;
@@ -291,6 +393,11 @@ export function createTouchControls(
       style.width = `${rect.width}px`;
       style.height = `${rect.height}px`;
     }
+    for (const { control, anchor, button } of badges) {
+      const position = keyBadgePosition(layout[control], anchor);
+      button.style.left = `${position.x}px`;
+      button.style.top = `${position.y}px`;
+    }
     // 鏡頭名稱（下方置中）要讓到暫停／重來鍵的上面：把那一排上緣離畫面底的距離交給樣式。
     root.style.setProperty('--touch-clear-bottom', `${height - layout.pause.y + CAMERA_LABEL_GAP_PX}px`);
   }
@@ -303,6 +410,8 @@ export function createTouchControls(
     brakePedal.clear();
     gasPedal.clear();
     shiftPressed = null;
+    flow.reset();
+    renderKeys();
   }
 
   return {
@@ -321,7 +430,7 @@ export function createTouchControls(
       return pressed;
     },
     update(state, frameSeconds) {
-      const active = enabled && state.driving;
+      const active = state.driving;
       if (active !== shownActive) {
         shownActive = active;
         container.hidden = !active;
@@ -343,7 +452,16 @@ export function createTouchControls(
         elements.gearDrive.dataset.active = String(shownGear === 'forward');
         elements.gearReverse.dataset.active = String(shownGear === 'reverse');
       }
+      // 改鍵的結果訊息過一會兒自己收起來（正在等按鍵的提示不會）。
+      if (shownMessage !== undefined && flow.listening() === undefined) {
+        messageAgeSeconds += frameSeconds;
+        if (messageAgeSeconds > KEY_MESSAGE_SECONDS) {
+          flow.change(controls.current(), undefined);
+        }
+      }
     },
+    listening: () => flow.listening() !== undefined,
+    refreshKeys: renderKeys,
   };
 }
 

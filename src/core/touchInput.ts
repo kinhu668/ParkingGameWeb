@@ -5,18 +5,19 @@ import type { Gearbox } from '../vehicle/gearbox';
 import type { TouchParam } from './urlParams';
 
 /**
- * 要不要顯示觸控層。`?touch=on`／`off` 蓋過偵測；否則主要指標是粗的（手指）或真的收到過觸控事件才顯示。
- * 桌機的滑鼠、觸控板兩者都不成立，所以預設不顯示。
+ * 要不要顯示螢幕操作層（方向盤、踏板、掛檔等）。預設顯示：手機用手指、桌面用滑鼠都能操作。
+ * 只有 `?touch=off` 才隱藏；`?touch=on` 與沒給（或不認得的值）都顯示。
  */
-export function touchLayerEnabled(
-  param: TouchParam | undefined,
-  coarsePointer: boolean,
-  sawTouch: boolean,
-): boolean {
-  if (param !== undefined) {
-    return param === 'on';
-  }
-  return coarsePointer || sawTouch;
+export function touchLayerEnabled(param: TouchParam | undefined): boolean {
+  return param !== 'off';
+}
+
+/**
+ * 要不要顯示鍵盤提示（控制項上的鍵帽、暫停與結算面板上的「按 … 繼續／重來」）。
+ * 主要指標是手指（`pointer: coarse`，手機與平板）就不顯示：那裡沒有鍵盤，畫面上已經有按鈕。
+ */
+export function keyboardHintsEnabled(coarsePointer: boolean): boolean {
+  return !coarsePointer;
 }
 
 /** 方向盤往一邊最多轉這麼多（弧度，約 120°）；轉到這裡就是打到底。 */

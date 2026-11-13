@@ -136,6 +136,8 @@ export interface Hud {
   controlsOpen(): boolean;
   /** 收起按鍵設定面板（回到暫停面板或結算面板）。 */
   closeControls(): void;
+  /** 按鍵綁定變了之後呼叫：操作說明、面板上的提示與按鍵設定面板照新的綁定重畫。 */
+  refreshBindings(): void;
 }
 
 /**
@@ -309,6 +311,7 @@ export function createHud(
     closeControls(): void {
       settingsPanel.close();
     },
+    refreshBindings: renderTexts,
     showCameraView(view: GameCameraView): void {
       shownView = view;
       cameraLabel.dataset.view = view;

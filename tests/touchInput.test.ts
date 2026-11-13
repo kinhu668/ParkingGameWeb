@@ -4,6 +4,7 @@ import { FIXED_STEP_SECONDS } from '../src/core/gameConfig';
 import {
   NO_TOUCH_DRIVE,
   WHEEL_MAX_ANGLE_RAD,
+  keyboardHintsEnabled,
   mergeDriveInputs,
   steerFromWheelAngle,
   touchDriveInput,
@@ -35,15 +36,21 @@ describe('?touch= 與何時顯示', () => {
     }
   });
 
-  test('沒給參數：粗指標或收到過觸控事件才顯示；桌機滑鼠不顯示', () => {
-    expect(touchLayerEnabled(undefined, false, false)).toBe(false);
-    expect(touchLayerEnabled(undefined, true, false)).toBe(true);
-    expect(touchLayerEnabled(undefined, false, true)).toBe(true);
+  test('沒給參數（或不認得的值）：顯示——桌面用滑鼠、手機用手指都有螢幕操作層', () => {
+    expect(touchLayerEnabled(undefined)).toBe(true);
+    expect(touchLayerEnabled(parseTouchParam('?touch=maybe'))).toBe(true);
+    expect(touchLayerEnabled(parseTouchParam(''))).toBe(true);
   });
 
-  test('on／off 蓋過偵測', () => {
-    expect(touchLayerEnabled('on', false, false)).toBe(true);
-    expect(touchLayerEnabled('off', true, true)).toBe(false);
+  test('off 隱藏、on 顯示', () => {
+    expect(touchLayerEnabled('on')).toBe(true);
+    expect(touchLayerEnabled('off')).toBe(false);
+    expect(touchLayerEnabled(parseTouchParam('?level=w1_l01&touch=off'))).toBe(false);
+  });
+
+  test('鍵盤提示（鍵帽、「按 … 繼續」）：主要指標是手指的裝置不顯示，桌面顯示', () => {
+    expect(keyboardHintsEnabled(false)).toBe(true);
+    expect(keyboardHintsEnabled(true)).toBe(false);
   });
 });
 

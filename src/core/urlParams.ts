@@ -143,12 +143,12 @@ export function parseAssistOffParam(urlSearch: string): boolean {
 
 const TOUCH_PARAM = 'touch';
 
-/** `?touch=` 認得的值：`on` 強制顯示觸控層、`off` 強制不顯示。 */
+/** `?touch=` 認得的值：`off` 不顯示螢幕操作層；`on` 顯示（現在預設就顯示，留著相容）。 */
 export type TouchParam = 'on' | 'off';
 
 /**
- * `?touch=on`／`?touch=off`：蓋過裝置偵測，強制顯示或不顯示觸控層。
- * 沒給或不認得的值回傳 undefined（照偵測結果）。
+ * `?touch=off`：不顯示螢幕操作層；`?touch=on`：顯示。
+ * 沒給或不認得的值回傳 undefined（照預設：顯示）。
  */
 export function parseTouchParam(urlSearch: string): TouchParam | undefined {
   const value = new URLSearchParams(urlSearch).get(TOUCH_PARAM);

@@ -100,5 +100,7 @@
   "touch.gearReverse": "Shift to R",
   "touch.pause": "Pause",
   "touch.restart": "Restart",
-  "touch.camera": "Camera"
+  "touch.camera": "Camera",
+  "touch.rebindPrompt": "{action}: press the new key…",
+  "touch.rebindCancel": " (Esc cancels)"
 }

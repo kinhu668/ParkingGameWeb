@@ -155,11 +155,14 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
   let paused = false;
   const nextId = nextLevelId(level.id);
   // 按鍵綁定的存取：HUD（操作說明、按鍵設定面板）與螢幕操作層（鍵帽）用同一份。
+  // 不論在哪裡改的鍵，套用後三個地方一起重畫。
   const controlsAccess: ControlsAccess = {
     current: () => bindings,
     apply: (next) => {
       bindings = next;
       saveBindings(storage, next);
+      hud.refreshBindings();
+      touch.refreshKeys();
     },
     captureNextKey: input.captureNextKey,
     // 從操作說明開啟按鍵設定：這一局還在進行就先暫停，改完鍵回到暫停面板。
@@ -210,7 +213,7 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
     hud.showCameraView(view);
   }
 
-  // 觸控層（方向盤、剎車、油門、掛 D／R、暫停、重來、鏡頭）：手機與平板才顯示，`?touch=on`／`off` 蓋過偵測。
+  // 螢幕操作層（方向盤、剎車、油門、掛 D／R、暫停、重來、鏡頭）：預設顯示，手機用手指、桌面用滑鼠；`?touch=off` 才隱藏。
   // 暫停、重來、切換鏡頭走與鍵盤、面板按鈕相同的路；暫停後用暫停面板上的按鈕繼續。
   const touch = createTouchControls(
     hudRoot,
@@ -226,6 +229,7 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
       },
       camera: cycleCamera,
     },
+    controlsAccess,
   );
 
   // 倒車輔助層（左右後視鏡、鳥瞰、倒後鏡頭）：預設開；`?assist=off`、`?fx=off` 不建立。
@@ -305,7 +309,8 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
     }
 
     // 暫停時時間不前進：不跑物理（計時也跟著停）、特效不動；畫面照畫，鏡頭仍可切換。
-    const held = paused;
+    // 點了螢幕上的鍵帽、正在等玩家按新的鍵時也一樣先停住，免得車自己滑走、計時白白流掉。
+    const held = paused || touch.listening();
     const simSeconds = held ? 0 : frameSeconds;
     const loop = advanceFixedLoop(accumulatorSeconds, simSeconds);
     accumulatorSeconds = loop.accumulatorSeconds;
