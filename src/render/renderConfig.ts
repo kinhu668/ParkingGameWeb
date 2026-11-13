@@ -25,6 +25,8 @@ export const RENDERER_CONFIG = {
  * 其餘的燈（與 low、medium 的全部）只有自發光燈殼、光錐與地上的光暈。
  * 光柱（lightShafts）：有水氣的天氣（雨、雷雨、夜晚）每個級別都有路燈光錐與車頭燈光柱；low 的段數少、車頭只有一道、
  * 沒有霧氣流動的噪聲。乾淨的空氣（黃昏）裡 low 不畫光錐（props.lightCones）。
+ * 不在這張表裡、但也分級的：雨絲數（weatherPresets.ts 的 RAIN_CONFIG.maxStreaks，low 也有，數量少、每條較長較亮）、
+ * 倒車輔助小畫面的成本（REVERSE_ASSIST_CONFIG.quality）。貼地的霧氣（高度霧）每個級別都一樣，不花額外的 draw call。
  */
 export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = {
   low: {

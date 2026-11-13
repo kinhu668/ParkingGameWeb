@@ -1,6 +1,8 @@
-// 每種天氣的數值表：天空、太陽（夜晚是月亮）、霧、半球補光、地面的潮濕與積水、雨量、閃電、路燈開關。
+// 每種天氣的數值表：天空、太陽（夜晚是月亮）、霧、半球補光、地面的潮濕與積水、雨量、閃電（閃光＋電弧）、路燈開關、
+// 空氣（貼地的霧氣與光柱的亮度）、倒車輔助小畫面的暗部增益。
 // `dusk` 是基準畫面：直接引用既有的 SKY_CONFIG／SUN_CONFIG／FOG_CONFIG／HEMISPHERE_LIGHT_CONFIG／GROUND_CONFIG，
-// 一個數字都不改（tests/weather.test.ts 釘住）。其他天氣只是換數值，不加新的著色器分支。
+// 一個數字都不改（tests/weather.test.ts 釘住）。其他天氣只是換數值；只有「有沒有貼地霧氣」會換霧的著色器片段
+// （render/heightFog.ts：雨、雷雨、夜晚才換，晴天、黃昏、雨後用 three 原本的）。
 import type { WeatherId } from '../core/weather';
 import { ftToM } from '../core/units';
 import type { QualityLevel } from './quality';
