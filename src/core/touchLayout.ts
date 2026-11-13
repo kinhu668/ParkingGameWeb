@@ -1,16 +1,15 @@
-// 螢幕操作層八個控制項在畫面上的位置（CSS 像素，原點在左上）。純函式，不碰 DOM。
+// 螢幕操作層七個控制項在畫面上的位置（CSS 像素，原點在左上）。純函式，不碰 DOM。
 // 位置由倒車輔助層的佈局（assistLayout）推出來：全部排在四個小窗的下面，所以不會擋到小窗。
-// 橫向：方向盤左下、踏板右下，掛檔在踏板左邊，暫停／重來／鏡頭在下方中間。
-// 直向（放不下一排）：方向盤與踏板在最下面，上面一排左邊是暫停／重來／鏡頭、右邊是掛 D／掛 R。
+// 橫向：方向盤左下、踏板右下，切換檔位在踏板左邊，暫停／重來／鏡頭在下方中間。
+// 直向（放不下一排）：方向盤與踏板在最下面，上面一排左邊是暫停／重來／鏡頭、右邊是切換檔位。
 import { assistLayout, type Rect } from './assistLayout';
 
-/** 八個控制項：方向盤、剎車、油門、掛 D、掛 R、暫停、重來、切換鏡頭。 */
+/** 七個控制項：方向盤、剎車、油門、切換檔位（D↔R）、暫停、重來、切換鏡頭。 */
 export const TOUCH_CONTROL_IDS = [
   'wheel',
   'brake',
   'gas',
-  'gearDrive',
-  'gearReverse',
+  'gear',
   'pause',
   'restart',
   'camera',
@@ -34,13 +33,15 @@ const LAYOUT = {
   gasWidthFraction: 0.5,
   brakeWidthFraction: 0.62,
   pedalMaxHeightPx: 170,
-  /** 掛檔鍵與暫停／重來／鏡頭鍵（小鍵）的大小：手指點得到的最小尺寸以上，寬度放得下兩個字或 "Restart"。 */
+  /** 切換檔位鍵與暫停／重來／鏡頭鍵（小鍵）的大小：手指點得到的最小尺寸以上，寬度放得下兩個字或 "Restart"。 */
   smallWidthPx: 60,
   smallHeightPx: 48,
+  /** 排成一排時切換檔位鍵比其他小鍵高（放得下大字母與檔位名稱），但不超過踏板。 */
+  gearMaxHeightPx: 96,
   /** 下方中間那一組小鍵的數目：暫停、重來、鏡頭。 */
   centerGroupCount: 3,
-  /** 兩排時上面那一排的小鍵數目：暫停、重來、鏡頭、掛 D、掛 R。 */
-  stackedRowCount: 5,
+  /** 兩排時上面那一排的小鍵數目：暫停、重來、鏡頭、切換檔位。 */
+  stackedRowCount: 4,
 } as const;
 
 function clamp(value: number, min: number, max: number): number {
@@ -72,7 +73,7 @@ export function touchLayout(widthPx: number, heightPx: number): TouchLayout {
   const smallH = LAYOUT.smallHeightPx;
   const pedalsPerWheel = 1 + LAYOUT.brakeWidthFraction + LAYOUT.gasWidthFraction;
 
-  // 一排放得下嗎：方向盤、暫停／重來／鏡頭、掛檔、剎車、油門。方向盤可以縮一點來湊，縮太多就改成兩排。
+  // 一排放得下嗎：方向盤、暫停／重來／鏡頭、切換檔位、剎車、油門。方向盤可以縮一點來湊，縮太多就改成兩排。
   const centerGroupWidthPx =
     LAYOUT.centerGroupCount * LAYOUT.smallWidthPx + (LAYOUT.centerGroupCount - 1) * LAYOUT.gapPx;
   const singleRowFixedPx =
@@ -113,8 +114,8 @@ export function touchLayout(widthPx: number, heightPx: number): TouchLayout {
   const gas: Rect = { x: gasX, y: pedalY, width: gasWidthPx, height: pedalHeightPx };
 
   if (stacked) {
-    // 上面那一排：左邊暫停、重來、鏡頭，右邊掛 D、掛 R（貼右，在踏板正上方）。
-    // 很窄的手機一排放不下五顆 60 px：五顆一起變窄（仍在手指點得到的大小以上）。
+    // 上面那一排：左邊暫停、重來、鏡頭，右邊切換檔位（貼右，在踏板正上方）。
+    // 很窄的畫面一排放不下四顆 60 px：四顆一起變窄（仍在手指點得到的大小以上）。
     const smallW = Math.min(
       LAYOUT.smallWidthPx,
       Math.floor(
@@ -123,30 +124,23 @@ export function touchLayout(widthPx: number, heightPx: number): TouchLayout {
       ),
     );
     const rowY = bottomPx - wheelPx - LAYOUT.gapPx - smallH;
-    const reverseX = widthPx - LAYOUT.marginPx - smallW;
     const leftX = (index: number): number => LAYOUT.marginPx + index * (smallW + LAYOUT.gapPx);
     return {
       wheel,
       brake,
       gas,
-      gearDrive: {
-        x: reverseX - LAYOUT.gapPx - smallW,
-        y: rowY,
-        width: smallW,
-        height: smallH,
-      },
-      gearReverse: { x: reverseX, y: rowY, width: smallW, height: smallH },
+      gear: { x: widthPx - LAYOUT.marginPx - smallW, y: rowY, width: smallW, height: smallH },
       pause: { x: leftX(0), y: rowY, width: smallW, height: smallH },
       restart: { x: leftX(1), y: rowY, width: smallW, height: smallH },
       camera: { x: leftX(2), y: rowY, width: smallW, height: smallH },
     };
   }
 
-  // 一排：掛檔在剎車左邊，D 上、R 下，兩顆合起來與踏板同高。
+  // 一排：切換檔位在剎車左邊，貼著下緣。
   const smallW = LAYOUT.smallWidthPx;
   const gearX = brakeX - LAYOUT.gapPx - smallW;
-  const gearHeightPx = Math.floor((pedalHeightPx - LAYOUT.gapPx) / 2);
-  // 暫停／重來／鏡頭：下方中間，夾在方向盤與掛檔之間的空位正中央。
+  const gearHeightPx = Math.min(pedalHeightPx, LAYOUT.gearMaxHeightPx);
+  // 暫停／重來／鏡頭：下方中間，夾在方向盤與切換檔位之間的空位正中央。
   const freeLeft = wheel.x + wheel.width + LAYOUT.gapPx;
   const freeRight = gearX - LAYOUT.gapPx;
   const groupX = Math.round(
@@ -158,13 +152,7 @@ export function touchLayout(widthPx: number, heightPx: number): TouchLayout {
     wheel,
     brake,
     gas,
-    gearDrive: { x: gearX, y: pedalY, width: smallW, height: gearHeightPx },
-    gearReverse: {
-      x: gearX,
-      y: bottomPx - gearHeightPx,
-      width: smallW,
-      height: gearHeightPx,
-    },
+    gear: { x: gearX, y: bottomPx - gearHeightPx, width: smallW, height: gearHeightPx },
     pause: { x: centerX(0), y: smallY, width: smallW, height: smallH },
     restart: { x: centerX(1), y: smallY, width: smallW, height: smallH },
     camera: { x: centerX(2), y: smallY, width: smallW, height: smallH },

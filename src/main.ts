@@ -12,7 +12,7 @@ import { advanceFixedLoop } from './core/fixedLoop';
 import { PHYSICS_HZ } from './core/gameConfig';
 import { detectLocale, getLocale, onLocaleChange, setLocale, t } from './core/i18n';
 import { attachKeyboardInput } from './core/input';
-import { mergeDriveInputs } from './core/touchInput';
+import { mergePedalInputs } from './core/touchInput';
 import { msToS } from './core/units';
 import { resolveWeather } from './core/weather';
 import { loadSave, updateSave, withLocale } from './core/save';
@@ -68,9 +68,15 @@ import { createReverseAssist } from './ui/reverseAssist';
 import type { ControlsAccess } from './ui/controlsPanel';
 import './ui/style.css';
 import { createTouchControls, preventPageGestures } from './ui/touchControls';
-import { interpolateVehiclePose, type DriveInput } from './vehicle/bicycleModel';
+import { interpolateVehiclePose } from './vehicle/bicycleModel';
 import { carLightsFor } from './vehicle/carMesh';
-import { INITIAL_GEARBOX, gearboxForFrame, inputForGear, nextGearbox } from './vehicle/gearbox';
+import {
+  INITIAL_GEAR,
+  NO_PEDAL_INPUT,
+  driveInputForGear,
+  gearForFrame,
+  type Gear,
+} from './vehicle/gearbox';
 
 declare global {
   interface Window {
@@ -90,9 +96,6 @@ declare global {
 
 /** 關卡選擇畫面列的世界（本階段只有第 1 世界）。 */
 const SELECT_WORLD = 1;
-
-/** 暫停時餵給 HUD 與車燈的輸入：什麼都沒按。 */
-const NO_DRIVE_INPUT: DriveInput = { throttle: 0, steer: 0 };
 
 /**
  * 記住鏡頭、存檔與按鍵綁定用的 localStorage；瀏覽器停用儲存時連讀 `window.localStorage` 都會丟例外，那就當作沒有。
@@ -140,7 +143,7 @@ function createLevelScene(
 
 /**
  * 一般遊戲：固定步長物理迴圈 + 算圖內插 + 鍵盤開車（按鍵可自訂）+ 碰撞／計時／停車判定 + 可切換的鏡頭 + HUD
- * + 暫停 + 過關寫存檔 + 倒車輔助層 + 掛檔（按了掛 D／掛 R 才進入手排）+ 螢幕操作層（方向盤、踏板、掛檔與鏡頭鍵；滑鼠或手指）。
+ * + 暫停 + 過關寫存檔 + 倒車輔助層 + 檔位（一個鍵在 D↔R 之間切換，油門往目前檔位的方向推）+ 螢幕操作層（方向盤、踏板、切換檔位與鏡頭鍵；滑鼠或手指）。
  */
 function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDefinition): void {
   const { layout } = level;
@@ -218,7 +221,7 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
     hud.showCameraView(view);
   }
 
-  // 螢幕操作層（方向盤、剎車、油門、掛 D／R、暫停、重來、鏡頭）：預設顯示，手機用手指、桌面用滑鼠；`?touch=off` 才隱藏。
+  // 螢幕操作層（方向盤、剎車、油門、切換檔位、暫停、重來、鏡頭）：預設顯示，手機用手指、桌面用滑鼠；`?touch=off` 才隱藏。
   // 暫停、重來、切換鏡頭走與鍵盤、面板按鈕相同的路；暫停後用暫停面板上的按鈕繼續。
   const touch = createTouchControls(
     hudRoot,
@@ -253,8 +256,8 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
 
   // 內插需要相鄰兩步的車輛狀態：previousVehicle = 上一步、session.vehicle = 最新一步。
   let session = startSession(layout);
-  /** 檔位：沒按過掛檔鍵是自排（由車速與油門推導）；按了掛 D／掛 R 進入手排，重來後回到自排 D 檔。 */
-  let gearbox = INITIAL_GEARBOX;
+  /** 檔位：開局與重來都是 D，只有切換檔位（鍵盤或觸控層）會改它。 */
+  let gear: Gear = INITIAL_GEAR;
   let previousVehicle = session.vehicle;
   let accumulatorSeconds = 0;
   let lastFrameMs: number | undefined;
@@ -276,22 +279,22 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
     if (hud.controlsOpen()) {
       input.consumeRestart();
       input.consumeToggleCamera();
-      input.consumeShift();
-      touch.consumeShift();
+      input.consumeGearToggles();
+      touch.consumeGearToggles();
       if (input.consumePause()) {
         hud.closeControls();
       }
     }
 
-    // 重來：車回起點、判定／計時／碰撞歸零、檔位回到自排 D 檔，成功或失敗的面板消失（hud.update 會看到新的一局）。
+    // 重來：車回起點、判定／計時／碰撞歸零、檔位回到 D 檔，成功或失敗的面板消失（hud.update 會看到新的一局）。
     // 按鍵與面板上的「重來」按鈕走同一條路；暫停中重來會順便解除暫停。
-    // 重來之前按的掛檔鍵不帶進新的一局：鍵盤重來由 input 依按鍵先後丟掉；面板與觸控層的按鈕不知道先後，這裡一律丟掉。
+    // 重來之前按的切換檔位不帶進新的一局：鍵盤重來由 input 依按鍵先後丟掉；面板與觸控層的按鈕不知道先後，這裡一律丟掉。
     const restarted = input.consumeRestart() || restartRequested;
     if (restarted) {
       if (restartRequested) {
-        input.consumeShift();
+        input.consumeGearToggles();
       }
-      touch.consumeShift();
+      touch.consumeGearToggles();
       restartRequested = false;
       session = restartSession(session);
       previousVehicle = session.vehicle;
@@ -307,12 +310,10 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
       setPaused(!paused);
     }
 
-    // 檔位：重來先回到自排 D 檔；掛 D／掛 R（鍵盤或觸控層）進入手排，檔位立刻換過去。暫停中或這一局已經結束時不換檔。
-    const keyShift = input.consumeShift();
-    const touchShift = touch.consumeShift();
-    gearbox = gearboxForFrame(gearbox, {
+    // 檔位：重來先回到 D 檔；切換檔位（鍵盤或觸控層）按一下就在 D↔R 之間換，不必先停車。暫停中或這一局已經結束時不換檔。
+    gear = gearForFrame(gear, {
       restarted,
-      shift: keyShift ?? touchShift,
+      toggles: input.consumeGearToggles() + touch.consumeGearToggles(),
       canShift: running && !paused,
     });
 
@@ -327,17 +328,13 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
     const simSeconds = held ? 0 : frameSeconds;
     const loop = advanceFixedLoop(accumulatorSeconds, simSeconds);
     accumulatorSeconds = loop.accumulatorSeconds;
-    // 玩家按的輸入先套上檔位：手排時反方向的油門只會剎車，不會把車推向另一邊。
-    // 鍵盤與觸控層合在一起；觸控的油門踏板只有一顆，方向跟著目前的檔位（手排 R 檔才是倒車）。
-    const pressedInput = held
-      ? NO_DRIVE_INPUT
-      : mergeDriveInputs(input.driveInput(), touch.driveInput(gearbox));
-    const driveInput = inputForGear(pressedInput, gearbox);
+    // 鍵盤與觸控層的踏板合在一起，再套上檔位：油門往目前檔位的方向推（D 向前、R 向後），剎車只剎車。
+    const pedals = held ? NO_PEDAL_INPUT : mergePedalInputs(input.pedalInput(), touch.pedalInput());
+    const driveInput = driveInputForGear(pedals, gear);
     for (let step = 0; step < loop.steps; step += 1) {
       previousVehicle = session.vehicle;
       session = stepSession(session, driveInput);
     }
-    gearbox = nextGearbox(gearbox, session.status, session.vehicle.speedMps, pressedInput.throttle);
 
     // 剛停妥：把成績併進存檔（星數取大、時間取小）。原型關不存。
     const { result } = session;
@@ -359,11 +356,7 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
     gameScene.setInteriorView(gameCamera.view() === 'cockpit');
     // 引擎蓋視角收斂烤漆的掠射反光，其他模式恢復。
     gameScene.setHoodView(gameCamera.view() === 'hood');
-    // 手排掛著 R 檔時，停著沒踩油門倒車燈也亮（自排要按著倒車才算）。
-    const lights = carLightsFor(driveInput, session.vehicle.speedMps);
-    gameScene.setLights(
-      gearbox.manual && gearbox.gear === 'reverse' ? { ...lights, reversing: true } : lights,
-    );
+    gameScene.setLights(carLightsFor(driveInput, session.vehicle.speedMps, gear));
     gameCamera.update(pose, session.vehicle.speedMps, frameSeconds);
     // 跟車鏡頭：擋在鏡頭與車之間的擺設淡成半透明（暫停時也照真實時間淡，鏡頭仍可切換）。
     gameScene.fadeOccluders(
@@ -375,7 +368,7 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
     // 目標車位的發光標記：停妥後變綠再淡出，重來後回來（暫停時也照真實時間走）。
     gameScene.updateSpotGlow(session.parked, frameSeconds);
     pipeline.render(gameScene.scene, gameCamera.camera);
-    hud.update(session, gearbox);
+    hud.update(session, gear);
     // 觸控層只在能開車的時候顯示：暫停、結算、按鍵設定開著時收起來，不擋面板上的按鈕。
     touch.update(
       {
@@ -383,16 +376,16 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
           (session.status === 'ready' || session.status === 'driving') &&
           !paused &&
           !hud.controlsOpen(),
-        gearbox,
+        gear,
       },
       frameSeconds,
     );
-    // 倒車輔助層疊在剛畫好的主畫面上；看的是 HUD 顯示的同一個檔位（手排時就是玩家掛的檔）。
+    // 倒車輔助層疊在剛畫好的主畫面上；看的是 HUD 顯示的同一個檔位。
     reverseAssist?.frame(
       gameScene.scene,
       pose,
       {
-        reverseGear: gearbox.gear === 'reverse',
+        reverseGear: gear === 'reverse',
         speedMps: session.vehicle.speedMps,
         running: session.status === 'ready' || session.status === 'driving',
       },

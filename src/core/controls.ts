@@ -6,12 +6,10 @@ import type { TranslationKey } from './i18n';
 /** 可以綁鍵的動作，照設定畫面的顯示順序。 */
 export const CONTROL_ACTIONS = [
   'throttle',
-  'reverse',
   'steerLeft',
   'steerRight',
   'brake',
-  'gearDrive',
-  'gearReverse',
+  'gearToggle',
   'restart',
   'toggleCamera',
   'pause',
@@ -23,20 +21,18 @@ export type ControlAction = (typeof CONTROL_ACTIONS)[number];
 export type ControlBindings = Readonly<Record<ControlAction, readonly string[]>>;
 
 /** 一個動作最多綁幾個鍵（主要鍵＋備用鍵）。 */
-export const MAX_KEYS_PER_ACTION = 2;
+export const MAX_KEYS_PER_ACTION = 3;
 
 /**
- * 預設鍵位。R 留給掛 R 檔，所以重來是 Backspace／T；掛 D 檔用 Q，不搶右轉的 D。
- * 剎車是逗號。空白鍵與 `/ ?` 那一顆預設不綁任何動作，玩家可以自己拿去綁。
+ * 預設鍵位。油門是 W／↑，往哪邊走看檔位；S／↓ 與逗號都是剎車。
+ * R 是切換 D／R 檔，所以重來是 Backspace／T。Q、空白鍵與 `/ ?` 那一顆預設不綁任何動作，玩家可以自己拿去綁。
  */
 export const DEFAULT_BINDINGS: ControlBindings = {
   throttle: ['KeyW', 'ArrowUp'],
-  reverse: ['KeyS', 'ArrowDown'],
   steerLeft: ['KeyA', 'ArrowLeft'],
   steerRight: ['KeyD', 'ArrowRight'],
-  brake: ['Comma'],
-  gearDrive: ['KeyQ'],
-  gearReverse: ['KeyR'],
+  brake: ['KeyS', 'ArrowDown', 'Comma'],
+  gearToggle: ['KeyR'],
   restart: ['Backspace', 'KeyT'],
   toggleCamera: ['KeyV'],
   pause: ['Escape'],

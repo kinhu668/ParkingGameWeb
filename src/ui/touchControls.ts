@@ -1,14 +1,14 @@
 // 螢幕操作層：手機用手指、桌面用滑鼠都能開車的螢幕按鈕——左下的虛擬方向盤（拖曳旋轉、放開回正）、
-// 右下的剎車與油門踏板（可同時踩，各自記自己的手指），加上掛 D、掛 R、暫停、重來、切換鏡頭。預設顯示，`?touch=off` 才隱藏。
+// 右下的剎車與油門踏板（可同時踩，各自記自己的手指），加上切換檔位、暫停、重來、切換鏡頭。預設顯示，`?touch=off` 才隱藏。
 // 用 Pointer Events：每根手指有自己的 pointerId，所以一邊轉方向盤一邊踩踏板互不干擾；滑鼠也是同一套事件。
 // 有鍵盤的裝置（主要指標不是手指）每個控制項上還有一顆鍵帽，寫著目前綁的鍵；點鍵帽（不是控制項本體）再按新的鍵就改綁，
 // 走的是與按鍵設定面板相同的改鍵流程（controlsPanel.ts 的 createRebindFlow）。拖方向盤、踩踏板本體永遠是開車。
-// 位置由 core/touchLayout.ts 算（排在倒車輔助小窗的下面）；駕駛輸入的換算在 core/touchInput.ts。
+// 位置由 core/touchLayout.ts 算（排在倒車輔助小窗的下面）；踏板與方向盤的換算在 core/touchInput.ts。
 import { onLocaleChange, t, type TranslationKey } from '../core/i18n';
 import {
   NO_TOUCH_DRIVE,
   keyboardHintsEnabled,
-  touchDriveInput,
+  touchPedalInput,
   touchLayerEnabled,
   wheelAngleAfterDrag,
   wheelAngleAfterRelease,
@@ -24,8 +24,7 @@ import {
 import { TOUCH_CONTROL_IDS, touchLayout, type TouchControlId } from '../core/touchLayout';
 import { radToDeg } from '../core/units';
 import type { TouchParam } from '../core/urlParams';
-import type { DriveInput } from '../vehicle/bicycleModel';
-import type { Gear, Gearbox } from '../vehicle/gearbox';
+import { INITIAL_GEAR, type Gear, type PedalInput } from '../vehicle/gearbox';
 import {
   ACTION_LABELS,
   createRebindFlow,
@@ -35,6 +34,7 @@ import {
   type RebindMessage,
 } from './controlsPanel';
 import { createUiBuilder } from './dom';
+import { GEAR_LABELS } from './format';
 
 /** 操作層上的按鈕要做的事（暫停、重來、切換鏡頭）；怎麼做由 main.ts 決定。 */
 export interface TouchActions {
@@ -48,15 +48,16 @@ export interface TouchActions {
 export interface TouchFrameState {
   /** 現在能不能開車：這一局還在進行、沒有暫停、按鍵設定沒開。不能開的時候整層收起來，不擋面板上的按鈕。 */
   readonly driving: boolean;
-  readonly gearbox: Gearbox;
+  /** 目前的檔位。 */
+  readonly gear: Gear;
 }
 
 export interface TouchControls {
-  /** 目前觸控的駕駛輸入（方向盤、油門、剎車）；觸控層沒顯示時是「什麼都沒碰」。 */
-  driveInput(gearbox: Gearbox): DriveInput;
-  /** 上次呼叫之後點過的掛檔鍵要掛的檔（點了好幾次取最後一次）；沒點是 null。讀完就清掉。 */
-  consumeShift(): Gear | null;
-  /** 每個畫面幀呼叫：顯示或收起、方向盤回正、依畫面大小排位置、標出目前檔位。 */
+  /** 目前觸控的踏板與方向盤；觸控層沒顯示時是「什麼都沒碰」。 */
+  pedalInput(): PedalInput;
+  /** 上次呼叫之後點了幾下切換檔位；讀完就歸零。 */
+  consumeGearToggles(): number;
+  /** 每個畫面幀呼叫：顯示或收起、方向盤回正、依畫面大小排位置、切換檔位鍵顯示目前檔位。 */
   update(state: TouchFrameState, frameSeconds: number): void;
   /** 是不是正在等玩家按鍵（點了鍵帽）；等的時候這一局先不動，免得車自己滑走。 */
   listening(): boolean;
@@ -71,12 +72,7 @@ const CONTROLS: Readonly<
   wheel: { id: 'touch-wheel', className: 'touch-wheel', label: 'touch.wheel' },
   brake: { id: 'touch-brake', className: 'touch-pedal touch-brake', label: 'touch.brake' },
   gas: { id: 'touch-gas', className: 'touch-pedal touch-gas', label: 'touch.gas' },
-  gearDrive: { id: 'touch-gear-drive', className: 'touch-button touch-gear', label: 'touch.gearDrive' },
-  gearReverse: {
-    id: 'touch-gear-reverse',
-    className: 'touch-button touch-gear',
-    label: 'touch.gearReverse',
-  },
+  gear: { id: 'touch-gear', className: 'touch-button touch-gear', label: 'touch.gearToggle' },
   pause: { id: 'touch-pause', className: 'touch-button', label: 'touch.pause' },
   restart: { id: 'touch-restart', className: 'touch-button', label: 'touch.restart' },
   camera: { id: 'touch-camera', className: 'touch-button', label: 'touch.camera' },
@@ -96,8 +92,8 @@ const KEY_MESSAGE_SECONDS = 5;
 
 /** `?touch=off`：不建立任何東西。 */
 const INERT: TouchControls = {
-  driveInput: (gearbox) => touchDriveInput(NO_TOUCH_DRIVE, gearbox),
-  consumeShift: () => null,
+  pedalInput: () => touchPedalInput(NO_TOUCH_DRIVE),
+  consumeGearToggles: () => 0,
   update: () => undefined,
   listening: () => false,
   refreshKeys: () => undefined,
@@ -154,13 +150,11 @@ export function createTouchControls(
   ui.element('span', 'touch-wheel-mark', rim);
   ui.element('span', 'touch-wheel-hub', rim);
 
-  // 踏板與小鍵上的字。掛檔鍵是大字母 D／R 加檔位名稱。
+  // 踏板與小鍵上的字。切換檔位鍵顯示目前的檔位：大字母 D 或 R 加檔位名稱（renderGear）。
   ui.translatedElement('span', 'touch-label', elements.brake, 'touch.brake');
   ui.translatedElement('span', 'touch-label', elements.gas, 'touch.gas');
-  ui.element('span', 'touch-gear-letter', elements.gearDrive).textContent = 'D';
-  ui.translatedElement('span', 'touch-gear-name', elements.gearDrive, 'hud.gearForward');
-  ui.element('span', 'touch-gear-letter', elements.gearReverse).textContent = 'R';
-  ui.translatedElement('span', 'touch-gear-name', elements.gearReverse, 'hud.gearReverse');
+  const gearLetter = ui.element('span', 'touch-gear-letter', elements.gear);
+  const gearName = ui.element('span', 'touch-gear-name', elements.gear);
   ui.translatedElement('span', 'touch-label', elements.pause, 'touch.pause');
   ui.translatedElement('span', 'touch-label', elements.restart, 'touch.restart');
   ui.translatedElement('span', 'touch-label', elements.camera, 'touch.camera');
@@ -245,11 +239,21 @@ export function createTouchControls(
     { capture: true },
   );
 
+  /** 切換檔位鍵上的字：目前的檔位（D 前進／R 倒車）。 */
+  let shownGear: Gear = INITIAL_GEAR;
+  function renderGear(): void {
+    const label = GEAR_LABELS[shownGear];
+    elements.gear.dataset.gear = shownGear;
+    gearLetter.textContent = label.letter;
+    gearName.textContent = t(label.key);
+  }
+
   function renderTexts(): void {
     ui.refreshTexts();
     for (const id of TOUCH_CONTROL_IDS) {
       elements[id].setAttribute('aria-label', t(CONTROLS[id].label));
     }
+    renderGear();
     renderKeys();
   }
   renderTexts();
@@ -352,19 +356,16 @@ export function createTouchControls(
   const brakePedal = pedal(elements.brake);
   const gasPedal = pedal(elements.gas);
 
-  // ── 小鍵：按下去那一刻就算（不等放開），掛檔才跟得上手 ──────────
-  let shiftPressed: Gear | null = null;
+  // ── 小鍵：按下去那一刻就算（不等放開），換檔才跟得上手 ──────────
+  let gearToggles = 0;
   function onPress(element: HTMLElement, action: () => void): void {
     element.addEventListener('pointerdown', (event) => {
       event.preventDefault();
       action();
     });
   }
-  onPress(elements.gearDrive, () => {
-    shiftPressed = 'forward';
-  });
-  onPress(elements.gearReverse, () => {
-    shiftPressed = 'reverse';
+  onPress(elements.gear, () => {
+    gearToggles += 1;
   });
   onPress(elements.pause, actions.pause);
   onPress(elements.restart, actions.restart);
@@ -374,7 +375,6 @@ export function createTouchControls(
   let shownActive = false;
   let layoutWidth = 0;
   let layoutHeight = 0;
-  let shownGear: Gear | undefined;
 
   function fitLayout(): void {
     const width = root.clientWidth;
@@ -409,25 +409,26 @@ export function createTouchControls(
     elements.wheel.dataset.held = 'false';
     brakePedal.clear();
     gasPedal.clear();
-    shiftPressed = null;
+    gearToggles = 0;
     flow.reset();
     renderKeys();
   }
 
   return {
-    driveInput(gearbox) {
+    pedalInput() {
       if (!shownActive) {
-        return touchDriveInput(NO_TOUCH_DRIVE, gearbox);
+        return touchPedalInput(NO_TOUCH_DRIVE);
       }
-      return touchDriveInput(
-        { wheelAngleRad, gas: gasPedal.pressed(), brake: brakePedal.pressed() },
-        gearbox,
-      );
+      return touchPedalInput({
+        wheelAngleRad,
+        gas: gasPedal.pressed(),
+        brake: brakePedal.pressed(),
+      });
     },
-    consumeShift() {
-      const pressed = shiftPressed;
-      shiftPressed = null;
-      return pressed;
+    consumeGearToggles() {
+      const presses = gearToggles;
+      gearToggles = 0;
+      return presses;
     },
     update(state, frameSeconds) {
       const active = state.driving;
@@ -447,10 +448,9 @@ export function createTouchControls(
         wheelAngleRad = wheelAngleAfterRelease(wheelAngleRad, frameSeconds);
       }
       renderWheel();
-      if (state.gearbox.gear !== shownGear) {
-        shownGear = state.gearbox.gear;
-        elements.gearDrive.dataset.active = String(shownGear === 'forward');
-        elements.gearReverse.dataset.active = String(shownGear === 'reverse');
+      if (state.gear !== shownGear) {
+        shownGear = state.gear;
+        renderGear();
       }
       // 改鍵的結果訊息過一會兒自己收起來（正在等按鍵的提示不會）。
       if (shownMessage !== undefined && flow.listening() === undefined) {

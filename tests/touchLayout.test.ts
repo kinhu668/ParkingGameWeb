@@ -1,4 +1,4 @@
-// 螢幕操作層的版面：每種手機／平板／桌面畫面大小下，八個控制項（含切換鏡頭）都在畫面內、夠大、互不重疊，
+// 螢幕操作層的版面：每種手機／平板／桌面畫面大小下，七個控制項（含切換檔位、切換鏡頭）都在畫面內、夠大、互不重疊，
 // 而且不壓到倒車輔助的四個小窗；手機上的輔助小窗明顯比桌面的算法小。
 import { describe, expect, test } from 'vitest';
 import {
@@ -88,15 +88,16 @@ describe('touchLayout', () => {
 
   test.each(LANDSCAPE)('橫向 %i×%i：一排；畫面正中央（車的位置）沒有控制項', (width, height) => {
     const layout = touchLayout(width, height);
-    // 掛檔在剎車左邊、D 在 R 上面；暫停／重來在方向盤與掛檔之間。
-    expect(layout.gearDrive.x + layout.gearDrive.width).toBeLessThan(layout.brake.x);
-    expect(layout.gearDrive.y + layout.gearDrive.height).toBeLessThan(layout.gearReverse.y);
+    // 切換檔位只有一顆，在剎車左邊、貼著下緣，不比踏板高；暫停／重來在方向盤與它之間。
+    expect(layout.gear.x + layout.gear.width).toBeLessThan(layout.brake.x);
+    expect(layout.gear.y + layout.gear.height).toBe(layout.brake.y + layout.brake.height);
+    expect(layout.gear.y).toBeGreaterThanOrEqual(layout.brake.y);
     expect(layout.pause.x).toBeGreaterThan(layout.wheel.x + layout.wheel.width);
-    expect(layout.restart.x + layout.restart.width).toBeLessThan(layout.gearDrive.x);
-    // 鏡頭鍵排在暫停、重來的右邊，同一排、同樣大小，仍在掛檔的左邊。
+    expect(layout.restart.x + layout.restart.width).toBeLessThan(layout.gear.x);
+    // 鏡頭鍵排在暫停、重來的右邊，同一排、同樣大小，仍在切換檔位的左邊。
     expect(layout.camera.y).toBe(layout.pause.y);
     expect(layout.camera.x).toBeGreaterThan(layout.restart.x + layout.restart.width);
-    expect(layout.camera.x + layout.camera.width).toBeLessThan(layout.gearDrive.x);
+    expect(layout.camera.x + layout.camera.width).toBeLessThan(layout.gear.x);
     expect(layout.camera.width).toBe(layout.pause.width);
     const center: Rect = { x: width / 2 - 40, y: height / 2 - 20, width: 80, height: 40 };
     for (const id of TOUCH_CONTROL_IDS) {
@@ -106,14 +107,15 @@ describe('touchLayout', () => {
 
   test.each(PORTRAIT)('直向 %i×%i：小鍵在方向盤與踏板的上面一排，下半部以外留給車', (width, height) => {
     const layout = touchLayout(width, height);
-    for (const id of ['pause', 'restart', 'camera', 'gearDrive', 'gearReverse'] as const) {
+    for (const id of ['pause', 'restart', 'camera', 'gear'] as const) {
       expect(layout[id].y + layout[id].height).toBeLessThan(layout.wheel.y);
       expect(layout[id].y).toBe(layout.pause.y);
     }
     expect(layout.pause.x).toBeLessThan(layout.restart.x);
     expect(layout.restart.x + layout.restart.width).toBeLessThan(layout.camera.x);
-    expect(layout.camera.x + layout.camera.width).toBeLessThan(layout.gearDrive.x);
-    expect(layout.gearDrive.x).toBeLessThan(layout.gearReverse.x);
+    // 切換檔位貼右，在踏板正上方。
+    expect(layout.camera.x + layout.camera.width).toBeLessThan(layout.gear.x);
+    expect(layout.gear.x + layout.gear.width).toBe(layout.gas.x + layout.gas.width);
     // 控制項只佔畫面下面不到 35%。
     expect(layout.pause.y).toBeGreaterThan(height * 0.65);
   });
@@ -143,10 +145,16 @@ describe('assistLayout 在很窄的畫面', () => {
   });
 });
 
+describe('切換檔位鍵', () => {
+  test('只有一顆（沒有分開的掛 D、掛 R）', () => {
+    expect(TOUCH_CONTROL_IDS.filter((id) => id.startsWith('gear'))).toEqual(['gear']);
+  });
+});
+
 describe('切換鏡頭鍵', () => {
   test('排進了版面，而且每種畫面大小都不與輔助小窗相交', () => {
     expect(TOUCH_CONTROL_IDS).toContain('camera');
-    expect(TOUCH_CONTROL_IDS).toHaveLength(8);
+    expect(TOUCH_CONTROL_IDS).toHaveLength(7);
     for (const [width, height] of ALL_SIZES) {
       const { camera } = touchLayout(width, height);
       const assist = assistLayout(width, height);

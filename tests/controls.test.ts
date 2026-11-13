@@ -71,23 +71,36 @@ describe('DEFAULT_BINDINGS：人類指定的預設鍵位', () => {
   test('完整的預設表', () => {
     expect(DEFAULT_BINDINGS).toEqual({
       throttle: ['KeyW', 'ArrowUp'],
-      reverse: ['KeyS', 'ArrowDown'],
       steerLeft: ['KeyA', 'ArrowLeft'],
       steerRight: ['KeyD', 'ArrowRight'],
-      brake: ['Comma'],
-      gearDrive: ['KeyQ'],
-      gearReverse: ['KeyR'],
+      brake: ['KeyS', 'ArrowDown', 'Comma'],
+      gearToggle: ['KeyR'],
       restart: ['Backspace', 'KeyT'],
       toggleCamera: ['KeyV'],
       pause: ['Escape'],
     });
   });
 
-  test('R 是掛 R 檔而不是重來；D 是右轉而不是掛 D 檔', () => {
-    expect(actionBoundTo(DEFAULT_BINDINGS, 'KeyR')).toBe('gearReverse');
+  test('R 是切換 D／R 檔而不是重來；D 是右轉；Q 沒有動作', () => {
+    expect(actionBoundTo(DEFAULT_BINDINGS, 'KeyR')).toBe('gearToggle');
     expect(actionBoundTo(DEFAULT_BINDINGS, 'KeyD')).toBe('steerRight');
     expect(DEFAULT_BINDINGS.restart).not.toContain('KeyR');
-    expect(DEFAULT_BINDINGS.gearDrive).not.toContain('KeyD');
+    expect(actionBoundTo(DEFAULT_BINDINGS, 'KeyQ')).toBeUndefined();
+  });
+
+  test('只有一個切換檔位的動作：沒有倒車油門、掛 D、掛 R', () => {
+    expect(CONTROL_ACTIONS).toContain('gearToggle');
+    for (const removed of ['reverse', 'gearDrive', 'gearReverse']) {
+      expect(CONTROL_ACTIONS).not.toContain(removed);
+      expect(DEFAULT_BINDINGS).not.toHaveProperty(removed);
+    }
+  });
+
+  test('S、↓ 與逗號都是剎車；一個動作最多三個鍵', () => {
+    for (const code of ['KeyS', 'ArrowDown', 'Comma']) {
+      expect(actionBoundTo(DEFAULT_BINDINGS, code), code).toBe('brake');
+    }
+    expect(MAX_KEYS_PER_ACTION).toBe(3);
   });
 
   test('每個動作都有鍵、不超過上限、每個鍵都能綁，而且同一個鍵不會綁到兩個動作', () => {
@@ -123,28 +136,38 @@ describe('isBindableCode', () => {
 });
 
 describe('rebind：重綁', () => {
-  test('把剎車從逗號改成 B；其他動作不變，原本的物件也沒被改到', () => {
-    const next = rebound(DEFAULT_BINDINGS, 'brake', 0, 'KeyB');
-    expect(next.brake).toEqual(['KeyB']);
+  test('把剎車的逗號改成 B；其他動作不變，原本的物件也沒被改到', () => {
+    const next = rebound(DEFAULT_BINDINGS, 'brake', 2, 'KeyB');
+    expect(next.brake).toEqual(['KeyS', 'ArrowDown', 'KeyB']);
     expect(next.restart).toEqual(DEFAULT_BINDINGS.restart);
-    expect(DEFAULT_BINDINGS.brake).toEqual(['Comma']);
+    expect(DEFAULT_BINDINGS.brake).toEqual(['KeyS', 'ArrowDown', 'Comma']);
     expect(actionBoundTo(next, 'Comma')).toBeUndefined();
   });
 
   test('第二格：換掉備用鍵，或在只有一個鍵時多加一個', () => {
     expect(rebound(DEFAULT_BINDINGS, 'restart', 1, 'KeyY').restart).toEqual(['Backspace', 'KeyY']);
-    expect(rebound(DEFAULT_BINDINGS, 'brake', 1, 'Period').brake).toEqual(['Comma', 'Period']);
+    expect(rebound(DEFAULT_BINDINGS, 'gearToggle', 1, 'Period').gearToggle).toEqual(['KeyR', 'Period']);
+  });
+
+  test('第三格：已經有兩個鍵時再加一個，或換掉第三個鍵', () => {
+    expect(rebound(DEFAULT_BINDINGS, 'restart', 2, 'KeyY').restart).toEqual(['Backspace', 'KeyT', 'KeyY']);
+    expect(rebound(DEFAULT_BINDINGS, 'brake', 2, 'Space').brake).toEqual(['KeyS', 'ArrowDown', 'Space']);
   });
 
   test('同一個鍵不能綁兩個動作：擋下來並回報是誰的', () => {
-    // 人類的例子：R 現在是掛 R 檔，重來要用 R 必須先把掛 R 檔改掉。
+    // 人類的例子：R 現在是切換檔位，重來要用 R 必須先把切換檔位改掉。
     expect(rebind(DEFAULT_BINDINGS, 'restart', 0, 'KeyR')).toEqual({
       kind: 'conflict',
-      action: 'gearReverse',
+      action: 'gearToggle',
     });
-    expect(rebind(DEFAULT_BINDINGS, 'gearDrive', 0, 'KeyD')).toEqual({
+    expect(rebind(DEFAULT_BINDINGS, 'gearToggle', 0, 'KeyD')).toEqual({
       kind: 'conflict',
       action: 'steerRight',
+    });
+    // S 現在是剎車：油門不能搶。
+    expect(rebind(DEFAULT_BINDINGS, 'throttle', 0, 'KeyS')).toEqual({
+      kind: 'conflict',
+      action: 'brake',
     });
     // 備用鍵也算。
     expect(rebind(DEFAULT_BINDINGS, 'brake', 0, 'KeyT')).toEqual({
@@ -159,14 +182,14 @@ describe('rebind：重綁', () => {
   });
 
   test('先把佔用的動作改掉，原本衝突的鍵就能綁了', () => {
-    const freed = rebound(DEFAULT_BINDINGS, 'gearReverse', 0, 'KeyE');
+    const freed = rebound(DEFAULT_BINDINGS, 'gearToggle', 0, 'KeyE');
     const next = rebound(freed, 'restart', 0, 'KeyR');
     expect(next.restart).toEqual(['KeyR', 'KeyT']);
-    expect(next.gearReverse).toEqual(['KeyE']);
+    expect(next.gearToggle).toEqual(['KeyE']);
   });
 
   test('換成原本的鍵算成功，綁定是同一份', () => {
-    expect(rebind(DEFAULT_BINDINGS, 'brake', 0, 'Comma')).toEqual({
+    expect(rebind(DEFAULT_BINDINGS, 'brake', 2, 'Comma')).toEqual({
       kind: 'ok',
       bindings: DEFAULT_BINDINGS,
     });
@@ -175,8 +198,9 @@ describe('rebind：重綁', () => {
   test('不能綁的鍵、超出範圍的格子：不支援', () => {
     expect(rebind(DEFAULT_BINDINGS, 'brake', 0, 'Tab')).toEqual({ kind: 'unsupported' });
     expect(rebind(DEFAULT_BINDINGS, 'brake', 0, 'ControlLeft')).toEqual({ kind: 'unsupported' });
-    expect(rebind(DEFAULT_BINDINGS, 'brake', 2, 'KeyB')).toEqual({ kind: 'unsupported' });
-    expect(rebind(DEFAULT_BINDINGS, 'restart', MAX_KEYS_PER_ACTION, 'KeyB')).toEqual({
+    // 只有一個鍵時不能跳過第二格直接填第三格。
+    expect(rebind(DEFAULT_BINDINGS, 'pause', 2, 'KeyB')).toEqual({ kind: 'unsupported' });
+    expect(rebind(DEFAULT_BINDINGS, 'brake', MAX_KEYS_PER_ACTION, 'KeyB')).toEqual({
       kind: 'unsupported',
     });
     expect(rebind(DEFAULT_BINDINGS, 'brake', -1, 'KeyB')).toEqual({ kind: 'unsupported' });
@@ -205,13 +229,23 @@ describe('clearExtraKey', () => {
     expect(cleared.restart).toEqual(['Backspace']);
     expect(actionBoundTo(cleared, 'KeyT')).toBeUndefined();
     expect(clearExtraKey(cleared, 'restart')).toBe(cleared);
-    expect(clearExtraKey(DEFAULT_BINDINGS, 'brake')).toBe(DEFAULT_BINDINGS);
+    expect(clearExtraKey(DEFAULT_BINDINGS, 'pause')).toBe(DEFAULT_BINDINGS);
+  });
+
+  test('三個鍵：一次拿掉最後一個，拿到剩一個為止', () => {
+    const two = clearExtraKey(DEFAULT_BINDINGS, 'brake');
+    expect(two.brake).toEqual(['KeyS', 'ArrowDown']);
+    const one = clearExtraKey(two, 'brake');
+    expect(one.brake).toEqual(['KeyS']);
+    expect(clearExtraKey(one, 'brake')).toBe(one);
   });
 });
 
 describe('bindingsEqual', () => {
   test('內容相同就相等；鍵不同、順序不同、數目不同都不相等', () => {
-    expect(bindingsEqual(DEFAULT_BINDINGS, { ...DEFAULT_BINDINGS, brake: ['Comma'] })).toBe(true);
+    expect(
+      bindingsEqual(DEFAULT_BINDINGS, { ...DEFAULT_BINDINGS, brake: ['KeyS', 'ArrowDown', 'Comma'] }),
+    ).toBe(true);
     expect(bindingsEqual(DEFAULT_BINDINGS, { ...DEFAULT_BINDINGS, brake: ['KeyB'] })).toBe(false);
     expect(bindingsEqual(DEFAULT_BINDINGS, { ...DEFAULT_BINDINGS, restart: ['KeyT', 'Backspace'] })).toBe(false);
     expect(bindingsEqual(DEFAULT_BINDINGS, { ...DEFAULT_BINDINGS, restart: ['Backspace'] })).toBe(false);
@@ -223,6 +257,8 @@ describe('parseBindings：壞檔整份不要', () => {
 
   test('合格的內容原樣讀回來，多出來的欄位丟掉', () => {
     expect(parseBindings({ version: 1, bindings: custom })).toEqual(custom);
+    const three = { ...custom, brake: ['KeyB', 'KeyN', 'KeyM'] };
+    expect(parseBindings({ version: 1, bindings: three })).toEqual(three);
     expect(parseBindings({ version: 1, bindings: { ...custom, horn: ['KeyH'] }, extra: 1 })).toEqual(custom);
   });
 
@@ -236,7 +272,7 @@ describe('parseBindings：壞檔整份不要', () => {
     ['少一個動作', { version: 1, bindings: { ...custom, pause: undefined } }],
     ['鍵清單是空的', { version: 1, bindings: { ...custom, brake: [] } }],
     ['鍵清單不是陣列', { version: 1, bindings: { ...custom, brake: 'KeyB' } }],
-    ['鍵太多', { version: 1, bindings: { ...custom, brake: ['KeyB', 'KeyN', 'KeyM'] } }],
+    ['鍵太多', { version: 1, bindings: { ...custom, brake: ['KeyB', 'KeyN', 'KeyM', 'KeyL'] } }],
     ['鍵不是字串', { version: 1, bindings: { ...custom, brake: [7] } }],
     ['不能綁的鍵', { version: 1, bindings: { ...custom, brake: ['Tab'] } }],
     ['同一個鍵綁到兩個動作', { version: 1, bindings: { ...custom, brake: ['KeyR'] } }],
@@ -298,7 +334,7 @@ describe('舊存檔遷移：已移除的動作 handbrake', () => {
     expect(DEFAULT_BINDINGS).not.toHaveProperty('handbrake');
     for (const code of ['Space', 'Slash']) {
       expect(actionBoundTo(DEFAULT_BINDINGS, code), code).toBeUndefined();
-      expect(rebound(DEFAULT_BINDINGS, 'brake', 1, code).brake).toEqual(['Comma', code]);
+      expect(rebound(DEFAULT_BINDINGS, 'pause', 1, code).pause).toEqual(['Escape', code]);
     }
   });
 
@@ -331,8 +367,8 @@ describe('舊存檔遷移：已移除的動作 handbrake', () => {
   test('handbrake 原本佔的鍵空出來了：可以綁給別的動作', () => {
     const loaded = parseBindings({ version: CONTROLS_VERSION, bindings: LEGACY_DEFAULTS });
     expect(loaded).toEqual(DEFAULT_BINDINGS);
-    const next = rebound(rebound(loaded ?? DEFAULT_BINDINGS, 'brake', 1, 'Space'), 'pause', 1, 'Slash');
-    expect(next.brake).toEqual(['Comma', 'Space']);
+    const next = rebound(rebound(loaded ?? DEFAULT_BINDINGS, 'gearToggle', 1, 'Space'), 'pause', 1, 'Slash');
+    expect(next.gearToggle).toEqual(['KeyR', 'Space']);
     expect(next.pause).toEqual(['Escape', 'Slash']);
   });
 

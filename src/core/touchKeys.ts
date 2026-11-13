@@ -17,15 +17,14 @@ export interface TouchKeyBadge {
 
 /**
  * 每個控制項上的鍵帽。方向盤有兩個（左轉、右轉，在方向盤外接正方形的左上、右上角，圓的外面）；
- * 油門是 `throttle`、剎車是 `brake`。倒車在螢幕上沒有自己的控制項，不列。
+ * 油門是 `throttle`、剎車是 `brake`。
  */
 export const TOUCH_KEY_BADGES: readonly TouchKeyBadge[] = [
   { action: 'steerLeft', control: 'wheel', anchor: 'left' },
   { action: 'steerRight', control: 'wheel', anchor: 'right' },
   { action: 'brake', control: 'brake', anchor: 'center' },
   { action: 'throttle', control: 'gas', anchor: 'center' },
-  { action: 'gearDrive', control: 'gearDrive', anchor: 'center' },
-  { action: 'gearReverse', control: 'gearReverse', anchor: 'center' },
+  { action: 'gearToggle', control: 'gear', anchor: 'center' },
   { action: 'pause', control: 'pause', anchor: 'center' },
   { action: 'restart', control: 'restart', anchor: 'center' },
   { action: 'toggleCamera', control: 'camera', anchor: 'center' },

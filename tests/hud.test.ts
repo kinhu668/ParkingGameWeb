@@ -19,7 +19,6 @@ import {
   formatAngleDeg,
   formatCollisions,
   formatSpeedMph,
-  gearFor,
   hudReadout,
   otherLocale,
 } from '../src/ui/hud';
@@ -118,30 +117,6 @@ describe('formatAngleDeg／formatCollisions', () => {
     expect(formatCollisions(0, 4)).toBe('0 / 4');
     expect(formatCollisions(5, 4)).toBe('5 / 4');
     expect(formatCollisions(2, Infinity)).toBe('2');
-  });
-});
-
-describe('gearFor：檔位', () => {
-  test('踩油門／倒車，車停著或同方向在走 → 踩的那個方向', () => {
-    expect(gearFor(0, 1, 'reverse')).toBe('forward');
-    expect(gearFor(0, -1, 'forward')).toBe('reverse');
-    expect(gearFor(3, 1, 'reverse')).toBe('forward');
-    expect(gearFor(-2, -1, 'forward')).toBe('reverse');
-  });
-
-  test('反向踩是煞車：車還在往原方向走時不換檔，煞停後才換', () => {
-    expect(gearFor(3, -1, 'forward')).toBe('forward');
-    expect(gearFor(-2, 1, 'reverse')).toBe('reverse');
-    expect(gearFor(0, -1, 'forward')).toBe('reverse');
-  });
-
-  test('沒踩油門：滑行、停著、被彈回去都維持原本的檔位', () => {
-    expect(gearFor(3, 0, 'forward')).toBe('forward');
-    expect(gearFor(0, 0, 'forward')).toBe('forward');
-    expect(gearFor(0, 0, 'reverse')).toBe('reverse');
-    // 往前撞到東西被彈回去（車速為負），不論有沒有繼續踩油門都還是前進檔。
-    expect(gearFor(-1, 0, 'forward')).toBe('forward');
-    expect(gearFor(-1, 1, 'forward')).toBe('forward');
   });
 });
 
@@ -248,14 +223,11 @@ describe('hudReadout：由一局的現況算出顯示內容', () => {
 });
 
 describe('controlRowKeys：HUD 操作說明要畫的鍵帽', () => {
-  test('兩個動作一列：各列主要鍵（預設是 W S、A D、Q R）', () => {
-    expect(controlRowKeys(DEFAULT_BINDINGS, ['throttle', 'reverse'])).toEqual([
-      { action: 'throttle', code: 'KeyW' },
-      { action: 'reverse', code: 'KeyS' },
+  test('兩個動作一列：各列主要鍵（左右轉預設是 A D）', () => {
+    expect(controlRowKeys(DEFAULT_BINDINGS, ['steerLeft', 'steerRight'])).toEqual([
+      { action: 'steerLeft', code: 'KeyA' },
+      { action: 'steerRight', code: 'KeyD' },
     ]);
-    expect(
-      controlRowKeys(DEFAULT_BINDINGS, ['gearDrive', 'gearReverse']).map((cap) => cap.code),
-    ).toEqual(['KeyQ', 'KeyR']);
   });
 
   test('一個動作一列：列出它全部的鍵（重來是 Backspace 與 T，不再是 R）', () => {
@@ -263,18 +235,31 @@ describe('controlRowKeys：HUD 操作說明要畫的鍵帽', () => {
       'Backspace',
       'KeyT',
     ]);
-    expect(controlRowKeys(DEFAULT_BINDINGS, ['brake']).map((cap) => cap.code)).toEqual(['Comma']);
+    expect(controlRowKeys(DEFAULT_BINDINGS, ['throttle']).map((cap) => cap.code)).toEqual([
+      'KeyW',
+      'ArrowUp',
+    ]);
+    // 剎車有三個鍵：S、↓ 與逗號。
+    expect(controlRowKeys(DEFAULT_BINDINGS, ['brake']).map((cap) => cap.code)).toEqual([
+      'KeyS',
+      'ArrowDown',
+      'Comma',
+    ]);
+    // 切換 D／R 檔只有一個鍵：R。
+    expect(controlRowKeys(DEFAULT_BINDINGS, ['gearToggle'])).toEqual([
+      { action: 'gearToggle', code: 'KeyR' },
+    ]);
   });
 
   test('照目前的綁定畫，不寫死', () => {
     const custom: ControlBindings = {
       ...DEFAULT_BINDINGS,
-      throttle: ['KeyI', 'ArrowUp'],
+      steerLeft: ['KeyJ', 'ArrowLeft'],
       restart: ['Enter', 'KeyT'],
     };
-    expect(controlRowKeys(custom, ['throttle', 'reverse']).map((cap) => cap.code)).toEqual([
-      'KeyI',
-      'KeyS',
+    expect(controlRowKeys(custom, ['steerLeft', 'steerRight']).map((cap) => cap.code)).toEqual([
+      'KeyJ',
+      'KeyD',
     ]);
     expect(controlRowKeys(custom, ['restart']).map((cap) => cap.code)).toEqual(['Enter', 'KeyT']);
   });

@@ -10,29 +10,22 @@ import { mpsToMph } from '../core/units';
 import { angleErrorRad } from '../level/parkingJudge';
 import { UNLIMITED_RULES, stepsToSeconds, type FailReason } from '../level/scoring';
 import type { Session } from '../level/session';
-import type { Gear, Gearbox } from '../vehicle/gearbox';
+import type { Gear } from '../vehicle/gearbox';
 import { createControlsPanel, keyText, keysText, type ControlsAccess } from './controlsPanel';
 import { createUiBuilder } from './dom';
-import { formatAngleDeg, formatCollisions, formatTime } from './format';
+import { GEAR_LABELS, formatAngleDeg, formatCollisions, formatTime } from './format';
 import { createPausePanel } from './pausePanel';
 import { createResultsPanel, resultReadout, type LevelActions } from './results';
 
 // 這幾個函式搬到共用的檔案了；這裡照舊匯出，既有的呼叫端與測試不必改。
 export { otherLocale } from './dom';
 export { formatAngleDeg, formatCollisions } from './format';
-export { gearFor, type Gear } from '../vehicle/gearbox';
 
 /** 車速顯示到小數第幾位；停車判定門檻是 0.5 mph，整數不夠看。 */
 const SPEED_DECIMALS = 1;
 
 /** 剩餘時間低於這個秒數，倒數會變色提醒。 */
 const LOW_TIME_SECONDS = 10;
-
-/** 檔位 → 儀表上的字母與名稱的翻譯鍵。 */
-const GEAR_LABELS: Readonly<Record<Gear, { readonly letter: string; readonly key: TranslationKey }>> = {
-  forward: { letter: 'D', key: 'hud.gearForward' },
-  reverse: { letter: 'R', key: 'hud.gearReverse' },
-};
 
 /** 鏡頭名稱出現後多久完全淡出（毫秒），以及其中維持不透明的比例。 */
 const CAMERA_LABEL_FADE_MS = 2600;
@@ -49,16 +42,16 @@ const CAMERA_VIEW_LABELS: Readonly<Record<GameCameraView, TranslationKey>> = {
 
 /**
  * 操作說明的每一列：動作名稱 + 要列出哪些動作的鍵。
- * 一列有兩個動作（油門／倒車、左右轉、D／R 檔）時各列主要鍵；只有一個動作時列出它全部的鍵。
+ * 一列有兩個動作（左右轉）時各列主要鍵；只有一個動作時列出它全部的鍵。
  */
 const CONTROL_ROWS: readonly {
   readonly actions: readonly ControlAction[];
   readonly label: TranslationKey;
 }[] = [
-  { actions: ['throttle', 'reverse'], label: 'hud.controlDrive' },
+  { actions: ['throttle'], label: 'hud.controlThrottle' },
   { actions: ['steerLeft', 'steerRight'], label: 'hud.controlSteer' },
   { actions: ['brake'], label: 'hud.controlBrake' },
-  { actions: ['gearDrive', 'gearReverse'], label: 'hud.controlGears' },
+  { actions: ['gearToggle'], label: 'hud.controlGear' },
   { actions: ['restart'], label: 'hud.controlRestart' },
   { actions: ['toggleCamera'], label: 'hud.controlCamera' },
   { actions: ['pause'], label: 'hud.controlPause' },
@@ -131,9 +124,9 @@ export interface Hud {
    * 每幀呼叫；顯示的文字有變才動 DOM。
    * 停妥或失敗時顯示結算面板（星數或原因、時間、碰撞、角度誤差、按鈕），重來後收起來。
    * @param session 這一局的現況
-   * @param gearbox 目前的檔位與是否手排（main.ts 每幀算好）
+   * @param gear 目前的檔位（main.ts 每幀算好）
    */
-  update(session: Session, gearbox: Gearbox): void;
+  update(session: Session, gear: Gear): void;
   /**
    * 顯示目前的鏡頭名稱（進場與每次切換時呼叫）：短暫出現後淡出。
    * 淡出只是看不見，`#hud-camera` 的文字與 `data-view` 一直留著。
@@ -247,15 +240,12 @@ export function createHud(
 
   let shown: HudReadout | undefined;
   let shownGear: Gear = 'forward';
-  let shownManual = false;
 
-  /** 檔位：字母 + 名稱（名稱跟著語言變）；手排時標出來。 */
+  /** 檔位：字母 + 名稱（名稱跟著語言變）。 */
   function renderGear(): void {
     const label = GEAR_LABELS[shownGear];
     gearValue.dataset.gear = shownGear;
-    gearValue.dataset.mode = shownManual ? 'manual' : 'auto';
     gearValue.textContent = `${label.letter} ${t(label.key)}`;
-    gearValue.title = shownManual ? t('hud.gearManual') : '';
   }
 
   /** 操作說明的鍵帽：照目前的綁定重畫（綁定或語言變了都要）。 */
@@ -285,7 +275,7 @@ export function createHud(
   onLocaleChange(renderTexts);
 
   return {
-    update(session: Session, gearbox: Gearbox): void {
+    update(session: Session, gear: Gear): void {
       const next = hudReadout(session);
       const previous = shown;
       shown = next;
@@ -304,14 +294,13 @@ export function createHud(
       if (next.angle !== previous?.angle) {
         angleValue.textContent = next.angle;
       }
-      const hintNow = spotHintVisible(session, gearbox.gear, spotHintShown);
+      const hintNow = spotHintVisible(session, gear, spotHintShown);
       if (hintNow !== spotHintShown) {
         spotHintShown = hintNow;
         spotHint.hidden = !hintNow;
       }
-      if (gearbox.gear !== shownGear || gearbox.manual !== shownManual) {
-        shownGear = gearbox.gear;
-        shownManual = gearbox.manual;
+      if (gear !== shownGear) {
+        shownGear = gear;
         renderGear();
       }
       if (

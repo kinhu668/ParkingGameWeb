@@ -29,12 +29,10 @@ export interface ControlsAccess {
 /** 動作 → 名稱的翻譯鍵；少列一個動作會編譯失敗。 */
 export const ACTION_LABELS: Readonly<Record<ControlAction, TranslationKey>> = {
   throttle: 'controls.action.throttle',
-  reverse: 'controls.action.reverse',
   steerLeft: 'controls.action.steerLeft',
   steerRight: 'controls.action.steerRight',
   brake: 'controls.action.brake',
-  gearDrive: 'controls.action.gearDrive',
-  gearReverse: 'controls.action.gearReverse',
+  gearToggle: 'controls.action.gearToggle',
   restart: 'controls.action.restart',
   toggleCamera: 'controls.action.toggleCamera',
   pause: 'controls.action.pause',

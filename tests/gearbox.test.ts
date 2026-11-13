@@ -1,206 +1,209 @@
-// 檔位：自排（由車速與油門推導）與手排（按了掛 D／掛 R），以及手排時油門方向受檔位限制。
+// 檔位：永遠有一個明確的檔位（開局 D），一個動作在 D↔R 之間切換；油門往目前檔位的方向推，不會變成剎車。
 import { describe, expect, test } from 'vitest';
 import { FIXED_STEP_SECONDS } from '../src/core/gameConfig';
-import { stepVehicle, type DriveInput, type VehicleState } from '../src/vehicle/bicycleModel';
+import { forward } from '../src/core/heading';
+import { levelById } from '../src/level/levelCatalog';
+import { startSession, stepSession, type Session } from '../src/level/session';
+import { stepVehicle, type VehicleState } from '../src/vehicle/bicycleModel';
 import {
-  INITIAL_GEARBOX,
-  gearboxForFrame,
-  inputForGear,
-  nextGearbox,
-  shiftTo,
-  type Gearbox,
+  INITIAL_GEAR,
+  NO_PEDAL_INPUT,
+  driveInputForGear,
+  gearForFrame,
+  toggledGear,
+  type Gear,
+  type PedalInput,
 } from '../src/vehicle/gearbox';
 
-const IDLE: DriveInput = { throttle: 0, steer: 0, brake: false };
-const FORWARD: DriveInput = { ...IDLE, throttle: 1 };
-const BACKWARD: DriveInput = { ...IDLE, throttle: -1 };
+const GAS: PedalInput = { ...NO_PEDAL_INPUT, gas: true };
+const BRAKE: PedalInput = { ...NO_PEDAL_INPUT, brake: true };
 const AT_REST: VehicleState = { x: 0, z: 0, headingRad: 0, speedMps: 0, steerRad: 0 };
 
-/** 照 main.ts 的順序跑：輸入先套檔位 → 物理步 → 更新檔位。 */
-function drive(
-  start: { readonly vehicle: VehicleState; readonly gearbox: Gearbox },
-  pressed: DriveInput,
-  steps: number,
-): { readonly vehicle: VehicleState; readonly gearbox: Gearbox } {
-  let { vehicle, gearbox } = start;
+/** 照 main.ts 的順序跑：踏板套上檔位 → 物理步。 */
+function drive(vehicle: VehicleState, pedals: PedalInput, gear: Gear, steps: number): VehicleState {
+  let state = vehicle;
   for (let step = 0; step < steps; step += 1) {
-    vehicle = stepVehicle(vehicle, inputForGear(pressed, gearbox), FIXED_STEP_SECONDS);
-    gearbox = nextGearbox(gearbox, 'driving', vehicle.speedMps, pressed.throttle);
+    state = stepVehicle(state, driveInputForGear(pedals, gear), FIXED_STEP_SECONDS);
   }
-  return { vehicle, gearbox };
+  return state;
 }
 
-describe('自排（沒按過掛檔鍵）：行為與以前相同', () => {
-  test('新的一局是自排 D 檔', () => {
-    expect(INITIAL_GEARBOX).toEqual({ gear: 'forward', manual: false });
+describe('檔位：D↔R 切換', () => {
+  test('新的一局是 D 檔', () => {
+    expect(INITIAL_GEAR).toBe('forward');
   });
 
-  test('輸入原樣通過：W 前進、S 倒車', () => {
-    expect(inputForGear(FORWARD, INITIAL_GEARBOX)).toBe(FORWARD);
-    expect(inputForGear(BACKWARD, INITIAL_GEARBOX)).toBe(BACKWARD);
-    expect(inputForGear(BACKWARD, { gear: 'reverse', manual: false })).toBe(BACKWARD);
-    expect(inputForGear(FORWARD, { gear: 'reverse', manual: false })).toBe(FORWARD);
+  test('切換：D → R、R → D', () => {
+    expect(toggledGear('forward')).toBe('reverse');
+    expect(toggledGear('reverse')).toBe('forward');
   });
 
-  test('檔位由車速與油門推導：按 S 倒車 → R，再按 W 煞停後 → D', () => {
-    const reversing = drive({ vehicle: AT_REST, gearbox: INITIAL_GEARBOX }, BACKWARD, 30);
-    expect(reversing.vehicle.speedMps).toBeLessThan(0);
-    expect(reversing.gearbox).toEqual({ gear: 'reverse', manual: false });
-
-    // 還在後退時按 W 是煞車：檔位不變。
-    const braking = drive(reversing, FORWARD, 1);
-    expect(braking.gearbox.gear).toBe('reverse');
-    const forward = drive(braking, FORWARD, 120);
-    expect(forward.vehicle.speedMps).toBeGreaterThan(0);
-    expect(forward.gearbox).toEqual({ gear: 'forward', manual: false });
+  test('沒有重來、沒按切換：檔位不變', () => {
+    expect(gearForFrame('reverse', { restarted: false, toggles: 0, canShift: true })).toBe('reverse');
+    expect(gearForFrame('forward', { restarted: false, toggles: 0, canShift: true })).toBe('forward');
   });
 
-  test('ready（重來後還沒輸入）一律 D 檔；結束後不再換檔', () => {
-    const reverse: Gearbox = { gear: 'reverse', manual: false };
-    expect(nextGearbox(reverse, 'ready', 0, 0)).toEqual(INITIAL_GEARBOX);
-    expect(nextGearbox(reverse, 'parked', 0, 1)).toBe(reverse);
-    expect(nextGearbox(INITIAL_GEARBOX, 'failed', 0, -1)).toBe(INITIAL_GEARBOX);
+  test('按一下換到另一檔；同一幀按兩下等於沒換、三下等於一下', () => {
+    const press = (gear: Gear, toggles: number): Gear =>
+      gearForFrame(gear, { restarted: false, toggles, canShift: true });
+    expect(press('forward', 1)).toBe('reverse');
+    expect(press('reverse', 1)).toBe('forward');
+    expect(press('forward', 2)).toBe('forward');
+    expect(press('forward', 3)).toBe('reverse');
   });
 
-  test('檔位沒變時回傳同一個物件', () => {
-    expect(nextGearbox(INITIAL_GEARBOX, 'driving', 3, 1)).toBe(INITIAL_GEARBOX);
+  test('暫停中或這一局已經結束：切換鍵不換檔', () => {
+    expect(gearForFrame('forward', { restarted: false, toggles: 1, canShift: false })).toBe('forward');
+    expect(gearForFrame('reverse', { restarted: false, toggles: 1, canShift: false })).toBe('reverse');
+  });
+
+  test.each<Gear>(['forward', 'reverse'])('%s 檔時重來：當幀就回到 D 檔', (gear) => {
+    expect(gearForFrame(gear, { restarted: true, toggles: 0, canShift: true })).toBe('forward');
+    // 暫停中或上一局已經結束（不能換檔）時重來也一樣。
+    expect(gearForFrame(gear, { restarted: true, toggles: 0, canShift: false })).toBe('forward');
+  });
+
+  test('重來之後又按了切換（同一幀或之後）：R 檔——這是玩家新下的指令', () => {
+    expect(gearForFrame('reverse', { restarted: true, toggles: 1, canShift: true })).toBe('reverse');
+    const restarted = gearForFrame('reverse', { restarted: true, toggles: 0, canShift: true });
+    expect(gearForFrame(restarted, { restarted: false, toggles: 1, canShift: true })).toBe('reverse');
   });
 });
 
-describe('手排（按了掛 D／掛 R）', () => {
-  test('掛檔立刻換過去並進入手排', () => {
-    expect(shiftTo('reverse')).toEqual({ gear: 'reverse', manual: true });
-    expect(shiftTo('forward')).toEqual({ gear: 'forward', manual: true });
+describe('踏板套上檔位', () => {
+  test('油門往目前檔位的方向推：D 是 +1、R 是 −1；沒踩是 0', () => {
+    expect(driveInputForGear(GAS, 'forward')).toEqual({ throttle: 1, steer: 0, brake: false });
+    expect(driveInputForGear(GAS, 'reverse')).toEqual({ throttle: -1, steer: 0, brake: false });
+    expect(driveInputForGear(NO_PEDAL_INPUT, 'forward').throttle).toBe(0);
+    expect(driveInputForGear(NO_PEDAL_INPUT, 'reverse').throttle).toBe(0);
   });
 
-  test('手排的檔位只有掛檔鍵能換：車速、油門、ready 都不會動它', () => {
-    const reverse = shiftTo('reverse');
-    expect(nextGearbox(reverse, 'driving', 5, 1)).toBe(reverse);
-    expect(nextGearbox(reverse, 'ready', 0, 0)).toBe(reverse);
-    expect(nextGearbox(reverse, 'driving', 0, 1)).toBe(reverse);
-    const forward = shiftTo('forward');
-    expect(nextGearbox(forward, 'driving', -3, -1)).toBe(forward);
+  test('油門絕不會變成剎車：兩個檔位踩油門都不帶 brake', () => {
+    for (const gear of ['forward', 'reverse'] as const) {
+      const input = driveInputForGear(GAS, gear);
+      expect(input.brake).toBe(false);
+      expect(input.throttle).not.toBe(0);
+    }
   });
 
-  test('同方向的油門原樣；反方向的油門變成腳剎，不推車', () => {
-    expect(inputForGear(FORWARD, shiftTo('forward'))).toBe(FORWARD);
-    expect(inputForGear(BACKWARD, shiftTo('reverse'))).toBe(BACKWARD);
-    expect(inputForGear(BACKWARD, shiftTo('forward'))).toEqual({ ...IDLE, throttle: 0, brake: true });
-    expect(inputForGear(FORWARD, shiftTo('reverse'))).toEqual({ ...IDLE, throttle: 0, brake: true });
-    expect(inputForGear(IDLE, shiftTo('reverse'))).toBe(IDLE);
-  });
-
-  test('方向盤不受檔位影響', () => {
-    const pressed: DriveInput = { throttle: 1, steer: -1, brake: false };
-    expect(inputForGear(pressed, shiftTo('reverse'))).toEqual({
+  test('剎車與方向盤不受檔位影響；可以同時踩油門與剎車', () => {
+    expect(driveInputForGear({ gas: false, steer: -1, brake: true }, 'reverse')).toEqual({
       throttle: 0,
       steer: -1,
       brake: true,
     });
-  });
-
-  test('D 檔只能向前：按倒車油門會煞到停，之後再怎麼按車速都不會變成負的', () => {
-    const cruising = drive({ vehicle: AT_REST, gearbox: shiftTo('forward') }, FORWARD, 90);
-    expect(cruising.vehicle.speedMps).toBeGreaterThan(1);
-
-    let state = cruising;
-    for (let step = 0; step < 300; step += 1) {
-      state = drive(state, BACKWARD, 1);
-      expect(state.vehicle.speedMps).toBeGreaterThanOrEqual(0);
-    }
-    expect(state.vehicle.speedMps).toBe(0);
-    expect(state.gearbox).toEqual({ gear: 'forward', manual: true });
-  });
-
-  test('R 檔只能向後：按倒車油門後退；按油門只會煞到停，不會往前', () => {
-    const start = { vehicle: AT_REST, gearbox: shiftTo('reverse') };
-    // 停著按油門：車不動。
-    expect(drive(start, FORWARD, 60).vehicle).toEqual(AT_REST);
-
-    const reversing = drive(start, BACKWARD, 60);
-    expect(reversing.vehicle.speedMps).toBeLessThan(-0.5);
-    expect(reversing.vehicle.z).toBeGreaterThan(0);
-
-    let state = reversing;
-    for (let step = 0; step < 300; step += 1) {
-      state = drive(state, FORWARD, 1);
-      expect(state.vehicle.speedMps).toBeLessThanOrEqual(0);
-    }
-    expect(state.vehicle.speedMps).toBe(0);
-    expect(state.gearbox.gear).toBe('reverse');
-  });
-
-  test('行進中換檔：往前開時掛 R，倒車油門先煞停再後退', () => {
-    const cruising = drive({ vehicle: AT_REST, gearbox: shiftTo('forward') }, FORWARD, 90);
-    const shifted = { vehicle: cruising.vehicle, gearbox: shiftTo('reverse') };
-    const later = drive(shifted, BACKWARD, 240);
-    expect(later.vehicle.speedMps).toBeLessThan(0);
+    expect(driveInputForGear({ gas: true, steer: 0.5, brake: true }, 'forward')).toEqual({
+      throttle: 1,
+      steer: 0.5,
+      brake: true,
+    });
   });
 });
 
-describe('重來：回到自排 D 檔', () => {
-  const RESTART = { restarted: true, shift: null, canShift: true } as const;
-  const STEER_ONLY: DriveInput = { ...IDLE, steer: 1 };
-  const AUTO_REVERSE: Gearbox = { gear: 'reverse', manual: false };
-
-  test('沒有重來、沒有掛檔：檔位不變（同一個物件）', () => {
-    const reverse = shiftTo('reverse');
-    expect(gearboxForFrame(reverse, { restarted: false, shift: null, canShift: true })).toBe(reverse);
+describe('車輛模型：油門依檔位推進', () => {
+  test('D 檔按住油門往前走', () => {
+    const vehicle = drive(AT_REST, GAS, 'forward', 60);
+    expect(vehicle.speedMps).toBeGreaterThan(0.5);
+    // 車頭朝 −Z：往前走 z 變小。
+    expect(vehicle.z).toBeLessThan(0);
   });
 
-  test.each([
-    ['手排 R', shiftTo('reverse')],
-    ['手排 D', shiftTo('forward')],
-    ['自排 R（倒車中或倒車撞到失敗）', AUTO_REVERSE],
-  ])('%s 時重來：當幀就是 INITIAL_GEARBOX', (_name, gearbox) => {
-    expect(gearboxForFrame(gearbox, RESTART)).toBe(INITIAL_GEARBOX);
-    // 暫停中或上一局已經結束（不能換檔）時重來也一樣。
-    expect(gearboxForFrame(gearbox, { ...RESTART, canShift: false })).toBe(INITIAL_GEARBOX);
+  test('R 檔按住油門往後走，不是停在原地', () => {
+    const vehicle = drive(AT_REST, GAS, 'reverse', 60);
+    expect(vehicle.speedMps).toBeLessThan(-0.5);
+    expect(vehicle.z).toBeGreaterThan(0);
   });
 
-  test.each([
-    ['什麼都不按', IDLE],
-    ['只按著轉向', STEER_ONLY],
-    ['按著油門', FORWARD],
-    ['按著油門與轉向', { ...FORWARD, steer: -1 as const }],
-    ['按著腳剎', { ...IDLE, brake: true }],
-  ])('手排 R 檔重來後%s：一直是自排 D 檔，車不會往後', (_name, pressed) => {
-    let gearbox = gearboxForFrame(shiftTo('reverse'), RESTART);
+  test('R 檔倒車中踩剎車：煞到剛好停住，不會往前', () => {
+    let vehicle = drive(AT_REST, GAS, 'reverse', 60);
+    for (let step = 0; step < 300; step += 1) {
+      vehicle = drive(vehicle, BRAKE, 'reverse', 1);
+      expect(vehicle.speedMps).toBeLessThanOrEqual(0);
+    }
+    expect(vehicle.speedMps).toBe(0);
+  });
+
+  test('行進中換檔：往前開時切到 R 再踩油門，先減速到停、再往後走', () => {
+    const cruising = drive(AT_REST, GAS, 'forward', 90);
+    expect(cruising.speedMps).toBeGreaterThan(1);
+    const slowing = drive(cruising, GAS, 'reverse', 1);
+    expect(slowing.speedMps).toBeLessThan(cruising.speedMps);
+    expect(drive(cruising, GAS, 'reverse', 240).speedMps).toBeLessThan(0);
+  });
+
+  test('重來後仍按著油門：回到 D 檔，車往前，不會往後', () => {
+    const gear = gearForFrame('reverse', { restarted: true, toggles: 0, canShift: true });
     let vehicle = AT_REST;
-    // 重來的那一幀可能還沒跑物理步（狀態仍是 ready），之後按著鍵開始跑（driving）。
-    gearbox = nextGearbox(gearbox, 'ready', vehicle.speedMps, pressed.throttle);
-    expect(gearbox).toBe(INITIAL_GEARBOX);
     for (let step = 0; step < 180; step += 1) {
-      // 之後的每一幀都沒有再重來、也沒有再按掛檔鍵。
-      gearbox = gearboxForFrame(gearbox, { restarted: false, shift: null, canShift: true });
-      ({ vehicle, gearbox } = drive({ vehicle, gearbox }, pressed, 1));
-      expect(gearbox).toBe(INITIAL_GEARBOX);
+      vehicle = drive(vehicle, GAS, gear, 1);
       expect(vehicle.speedMps).toBeGreaterThanOrEqual(0);
     }
-    expect(vehicle.speedMps > 0).toBe(pressed.throttle === 1);
+    expect(vehicle.speedMps).toBeGreaterThan(0);
+  });
+});
+
+/** 一局裡按住同一組踏板跑幾步（照 main.ts：踏板套上檔位 → stepSession）。 */
+function runSession(session: Session, pedals: PedalInput, gear: Gear, steps: number): Session {
+  let current = session;
+  for (let step = 0; step < steps; step += 1) {
+    current = stepSession(current, driveInputForGear(pedals, gear));
+  }
+  return current;
+}
+
+/** 車沿自己的車頭方向離起點多遠（m）；往後走是負的。 */
+function aheadOfStartM(session: Session): number {
+  const start = session.layout.startState;
+  const ahead = forward(start.headingRad);
+  return (session.vehicle.x - start.x) * ahead.x + (session.vehicle.z - start.z) * ahead.z;
+}
+
+describe.each(['w1_l05', 'w1_l06'])('回歸：倒車關 %s 掛 R 檔後油門是倒車，不是剎車', (levelId) => {
+  const level = levelById(levelId);
+  if (level === undefined) {
+    throw new Error(`找不到關卡 ${levelId}`);
+  }
+  const { layout } = level;
+
+  test('切到 R 檔按住油門：車往後走', () => {
+    const gear = gearForFrame(INITIAL_GEAR, { restarted: false, toggles: 1, canShift: true });
+    expect(gear).toBe('reverse');
+    const session = runSession(startSession(layout), GAS, gear, 45);
+    expect(session.status).toBe('driving');
+    expect(session.vehicle.speedMps).toBeLessThan(-0.5);
+    expect(aheadOfStartM(session)).toBeLessThan(-0.2);
   });
 
-  test('重來之後又按了掛 R（同一幀或之後）：R 檔手排——這是玩家新下的指令', () => {
-    expect(gearboxForFrame(shiftTo('reverse'), { ...RESTART, shift: 'reverse' })).toEqual({
-      gear: 'reverse',
-      manual: true,
-    });
-    const restarted = gearboxForFrame(shiftTo('reverse'), RESTART);
-    expect(
-      gearboxForFrame(restarted, { restarted: false, shift: 'reverse', canShift: true }),
-    ).toEqual({ gear: 'reverse', manual: true });
+  test('D 檔按住油門：車往前走', () => {
+    const session = runSession(startSession(layout), GAS, INITIAL_GEAR, 45);
+    expect(session.vehicle.speedMps).toBeGreaterThan(0.5);
+    expect(aheadOfStartM(session)).toBeGreaterThan(0.2);
   });
 
-  test('暫停中或這一局已經結束：掛檔鍵不換檔', () => {
-    expect(
-      gearboxForFrame(INITIAL_GEARBOX, { restarted: false, shift: 'reverse', canShift: false }),
-    ).toBe(INITIAL_GEARBOX);
+  test('R 檔倒車中踩剎車：停住', () => {
+    const reversing = runSession(startSession(layout), GAS, 'reverse', 45);
+    const stopped = runSession(reversing, BRAKE, 'reverse', 120);
+    expect(stopped.vehicle.speedMps).toBe(0);
+    expect(aheadOfStartM(stopped)).toBeLessThan(aheadOfStartM(reversing));
   });
+});
 
-  test('重來後仍按著倒車油門：回到自排，車真的開始倒退時檔位才跟著變成 R（不是上一局留下的手排）', () => {
-    const restarted = gearboxForFrame(shiftTo('reverse'), RESTART);
-    const later = drive({ vehicle: AT_REST, gearbox: restarted }, BACKWARD, 30);
-    expect(later.vehicle.speedMps).toBeLessThan(0);
-    expect(later.gearbox).toEqual({ gear: 'reverse', manual: false });
+describe('倒車關 w1_l05：玩家的開法（切到 R、踩油門、踩剎車）可以停妥', () => {
+  test('直線倒進後方的車位', () => {
+    const level = levelById('w1_l05');
+    if (level === undefined) {
+      throw new Error('找不到關卡 w1_l05');
+    }
+    const { layout } = level;
+    const spot = layout.spot;
+    let session = startSession(layout);
+    // 倒到車身中心接近車位中心就放開油門踩剎車（車頭朝 −Z，車位在 +Z 那一邊）。
+    for (let step = 0; step < 60 * 30 && session.status !== 'parked'; step += 1) {
+      const remainingM = spot.z - session.vehicle.z;
+      const pedals = remainingM > 1.2 ? GAS : BRAKE;
+      session = stepSession(session, driveInputForGear(pedals, 'reverse'));
+    }
+    expect(session.status).toBe('parked');
+    expect(session.collisions).toBe(0);
   });
 });

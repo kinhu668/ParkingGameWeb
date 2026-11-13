@@ -1,11 +1,10 @@
 // 觸控操作的純邏輯：要不要顯示觸控層、虛擬方向盤的角度（拖曳、夾住、放開回正）、
-// 觸控狀態 → 駕駛輸入、與鍵盤輸入合併。不 import three、不碰 DOM。
-import type { DriveInput } from '../vehicle/bicycleModel';
-import type { Gearbox } from '../vehicle/gearbox';
+// 觸控狀態 → 踏板與方向盤、與鍵盤輸入合併。不 import three、不碰 DOM。
+import type { PedalInput } from '../vehicle/gearbox';
 import type { TouchParam } from './urlParams';
 
 /**
- * 要不要顯示螢幕操作層（方向盤、踏板、掛檔等）。預設顯示：手機用手指、桌面用滑鼠都能操作。
+ * 要不要顯示螢幕操作層（方向盤、踏板、切換檔位等）。預設顯示：手機用手指、桌面用滑鼠都能操作。
  * 只有 `?touch=off` 才隱藏；`?touch=on` 與沒給（或不認得的值）都顯示。
  */
 export function touchLayerEnabled(param: TouchParam | undefined): boolean {
@@ -94,14 +93,10 @@ export interface TouchDriveState {
 /** 什麼都沒碰。 */
 export const NO_TOUCH_DRIVE: TouchDriveState = { wheelAngleRad: 0, gas: false, brake: false };
 
-/**
- * 觸控狀態 → 駕駛輸入。油門踏板只有一顆：方向是目前檔位允許的方向——
- * 自排與手排 D 檔向前，手排 R 檔向後（要倒車先點掛 R）。剎車踏板對應 `brake`。
- */
-export function touchDriveInput(state: TouchDriveState, gearbox: Gearbox): DriveInput {
-  const direction = gearbox.manual && gearbox.gear === 'reverse' ? -1 : 1;
+/** 觸控狀態 → 踏板與方向盤。油門踏板只有一顆，往哪邊走由檔位決定（要倒車先切到 R 檔）。 */
+export function touchPedalInput(state: TouchDriveState): PedalInput {
   return {
-    throttle: state.gas ? direction : 0,
+    gas: state.gas,
     steer: steerFromWheelAngle(state.wheelAngleRad),
     brake: state.brake,
   };
@@ -109,12 +104,12 @@ export function touchDriveInput(state: TouchDriveState, gearbox: Gearbox): Drive
 
 /**
  * 鍵盤與觸控的輸入合在一起（外接鍵盤與螢幕可以同時用）：
- * 油門以鍵盤為主，鍵盤沒踩才看觸控；轉向相加後夾在 ±1；剎車任一邊踩著就算。
+ * 油門、剎車任一邊踩著就算；轉向相加後夾在 ±1。
  */
-export function mergeDriveInputs(keyboard: DriveInput, touch: DriveInput): DriveInput {
+export function mergePedalInputs(keyboard: PedalInput, touch: PedalInput): PedalInput {
   return {
-    throttle: keyboard.throttle !== 0 ? keyboard.throttle : touch.throttle,
+    gas: keyboard.gas || touch.gas,
     steer: Math.min(Math.max(keyboard.steer + touch.steer, -1), 1),
-    brake: (keyboard.brake ?? false) || (touch.brake ?? false),
+    brake: keyboard.brake || touch.brake,
   };
 }

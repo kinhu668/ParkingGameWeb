@@ -512,22 +512,24 @@ describe('燈號 carLightsFor / setCarLights', () => {
   });
 
   test('煞車燈：踩剎車，或油門與行進方向相反；滑行與加速不亮', () => {
-    expect(carLightsFor(drive(0, true), 3).braking).toBe(true);
-    expect(carLightsFor(drive(-1), 3).braking).toBe(true);
-    expect(carLightsFor(drive(1), -2).braking).toBe(true);
-    expect(carLightsFor(drive(0), 3).braking).toBe(false);
-    expect(carLightsFor(drive(1), 3).braking).toBe(false);
-    expect(carLightsFor(drive(-1), -2).braking).toBe(false);
-    expect(carLightsFor(drive(0), 0).braking).toBe(false);
+    expect(carLightsFor(drive(0, true), 3, 'forward').braking).toBe(true);
+    expect(carLightsFor(drive(-1), 3, 'reverse').braking).toBe(true);
+    expect(carLightsFor(drive(1), -2, 'forward').braking).toBe(true);
+    expect(carLightsFor(drive(0), 3, 'forward').braking).toBe(false);
+    expect(carLightsFor(drive(1), 3, 'forward').braking).toBe(false);
+    expect(carLightsFor(drive(-1), -2, 'reverse').braking).toBe(false);
+    expect(carLightsFor(drive(0), 0, 'reverse').braking).toBe(false);
   });
 
-  test('倒車燈：正在倒退，或靜止時按著倒車；前進中按倒車只是煞車', () => {
-    expect(carLightsFor(drive(-1), -2).reversing).toBe(true);
-    expect(carLightsFor(drive(0), -1).reversing).toBe(true);
-    expect(carLightsFor(drive(-1), 0).reversing).toBe(true);
-    expect(carLightsFor(drive(-1), 3).reversing).toBe(false);
-    expect(carLightsFor(drive(1), 0).reversing).toBe(false);
-    expect(carLightsFor(drive(0), 0).reversing).toBe(false);
+  test('倒車燈：掛著 R 檔就亮（停著沒踩油門也亮）；D 檔不亮', () => {
+    expect(carLightsFor(drive(-1), -2, 'reverse').reversing).toBe(true);
+    expect(carLightsFor(drive(0), 0, 'reverse').reversing).toBe(true);
+    // 剛從 D 切到 R、車還在往前滑：倒車燈已經亮了。
+    expect(carLightsFor(drive(-1), 3, 'reverse').reversing).toBe(true);
+    expect(carLightsFor(drive(1), 0, 'forward').reversing).toBe(false);
+    expect(carLightsFor(drive(0), 0, 'forward').reversing).toBe(false);
+    // D 檔被撞得往後退不算倒車。
+    expect(carLightsFor(drive(0), -1, 'forward').reversing).toBe(false);
   });
 
   test('頭燈常亮；尾燈平常微亮、煞車時加亮；倒車燈平常不亮', () => {

@@ -1,13 +1,13 @@
-// 觸控操作的純邏輯：`?touch=`、何時顯示、方向盤角度、觸控 → 駕駛輸入、與鍵盤合併，以及中英文文案。
+// 觸控操作的純邏輯：`?touch=`、何時顯示、方向盤角度、觸控 → 踏板與方向盤、與鍵盤合併，以及中英文文案。
 import { describe, expect, test } from 'vitest';
 import { FIXED_STEP_SECONDS } from '../src/core/gameConfig';
 import {
   NO_TOUCH_DRIVE,
   WHEEL_MAX_ANGLE_RAD,
   keyboardHintsEnabled,
-  mergeDriveInputs,
+  mergePedalInputs,
   steerFromWheelAngle,
-  touchDriveInput,
+  touchPedalInput,
   touchLayerEnabled,
   wheelAngleAfterDrag,
   wheelAngleAfterRelease,
@@ -16,8 +16,8 @@ import {
 import { parseTouchParam } from '../src/core/urlParams';
 import en from '../src/locale/en.json';
 import zhTW from '../src/locale/zh-TW.json';
-import { stepVehicle, type DriveInput, type VehicleState } from '../src/vehicle/bicycleModel';
-import { INITIAL_GEARBOX, inputForGear, shiftTo } from '../src/vehicle/gearbox';
+import { stepVehicle, type VehicleState } from '../src/vehicle/bicycleModel';
+import { NO_PEDAL_INPUT, driveInputForGear, type PedalInput } from '../src/vehicle/gearbox';
 
 const RADIUS_PX = 70;
 
@@ -103,48 +103,53 @@ describe('虛擬方向盤', () => {
   });
 });
 
-describe('觸控 → 駕駛輸入', () => {
+describe('觸控 → 踏板與方向盤', () => {
   test('什麼都沒碰就是沒有輸入', () => {
-    expect(touchDriveInput(NO_TOUCH_DRIVE, INITIAL_GEARBOX)).toEqual({
-      throttle: 0,
-      steer: 0,
-      brake: false,
-    });
+    expect(touchPedalInput(NO_TOUCH_DRIVE)).toEqual(NO_PEDAL_INPUT);
   });
 
-  test('油門的方向跟著檔位：自排與手排 D 向前，手排 R 向後', () => {
-    const gas = { ...NO_TOUCH_DRIVE, gas: true };
-    expect(touchDriveInput(gas, INITIAL_GEARBOX).throttle).toBe(1);
-    expect(touchDriveInput(gas, shiftTo('forward')).throttle).toBe(1);
-    expect(touchDriveInput(gas, shiftTo('reverse')).throttle).toBe(-1);
-    // 自排因為鍵盤倒車而顯示 R 檔時，觸控油門仍是向前。
-    expect(touchDriveInput(gas, { gear: 'reverse', manual: false }).throttle).toBe(1);
+  test('油門踏板只管踩沒踩；往哪邊走由檔位決定（D 向前、R 向後）', () => {
+    const gas = touchPedalInput({ ...NO_TOUCH_DRIVE, gas: true });
+    expect(gas).toEqual({ gas: true, steer: 0, brake: false });
+    expect(driveInputForGear(gas, 'forward').throttle).toBe(1);
+    expect(driveInputForGear(gas, 'reverse').throttle).toBe(-1);
   });
 
-  test('觸控油門套上檔位後仍是油門（不會被當成反向而變成剎車）', () => {
-    for (const gearbox of [INITIAL_GEARBOX, shiftTo('forward'), shiftTo('reverse')]) {
-      const input = touchDriveInput({ ...NO_TOUCH_DRIVE, gas: true }, gearbox);
-      expect(inputForGear(input, gearbox)).toEqual(input);
+  test('觸控油門套上檔位後仍是油門（不會變成剎車）', () => {
+    const gas = touchPedalInput({ ...NO_TOUCH_DRIVE, gas: true });
+    for (const gear of ['forward', 'reverse'] as const) {
+      expect(driveInputForGear(gas, gear).brake).toBe(false);
     }
   });
 
-  test('剎車踏板是腳剎；可以與油門同時踩', () => {
-    const both = touchDriveInput({ wheelAngleRad: 0, gas: true, brake: true }, INITIAL_GEARBOX);
-    expect(both).toMatchObject({ throttle: 1, brake: true });
+  test('剎車踏板只剎車；可以與油門同時踩', () => {
+    expect(touchPedalInput({ ...NO_TOUCH_DRIVE, brake: true })).toEqual({
+      gas: false,
+      steer: 0,
+      brake: true,
+    });
+    const both = touchPedalInput({ wheelAngleRad: 0, gas: true, brake: true });
+    expect(both).toMatchObject({ gas: true, brake: true });
   });
 
-  test('手排 R 檔踩油門 → 車真的往後走；踩剎車 → 慢下來', () => {
+  test('方向盤角度變成轉向', () => {
+    expect(touchPedalInput({ ...NO_TOUCH_DRIVE, wheelAngleRad: WHEEL_MAX_ANGLE_RAD / 2 }).steer).toBeCloseTo(
+      0.5,
+      9,
+    );
+  });
+
+  test('R 檔踩油門 → 車真的往後走；踩剎車 → 慢下來', () => {
     const start: VehicleState = { x: 0, z: 0, headingRad: 0, speedMps: 0, steerRad: 0 };
-    const gearbox = shiftTo('reverse');
     let vehicle = start;
-    const gas = inputForGear(touchDriveInput({ ...NO_TOUCH_DRIVE, gas: true }, gearbox), gearbox);
+    const gas = driveInputForGear(touchPedalInput({ ...NO_TOUCH_DRIVE, gas: true }), 'reverse');
     for (let step = 0; step < 60; step += 1) {
       vehicle = stepVehicle(vehicle, gas, FIXED_STEP_SECONDS);
     }
     expect(vehicle.speedMps).toBeLessThan(0);
     expect(vehicle.z).toBeGreaterThan(0);
     const reversingSpeed = Math.abs(vehicle.speedMps);
-    const brake = inputForGear(touchDriveInput({ ...NO_TOUCH_DRIVE, brake: true }, gearbox), gearbox);
+    const brake = driveInputForGear(touchPedalInput({ ...NO_TOUCH_DRIVE, brake: true }), 'reverse');
     for (let step = 0; step < 20; step += 1) {
       vehicle = stepVehicle(vehicle, brake, FIXED_STEP_SECONDS);
     }
@@ -153,39 +158,35 @@ describe('觸控 → 駕駛輸入', () => {
 });
 
 describe('鍵盤與觸控合併', () => {
-  const NONE: DriveInput = { throttle: 0, steer: 0, brake: false };
-
-  test('只有一邊有輸入就是那一邊；鍵盤的行為不變', () => {
-    const keyboard: DriveInput = { throttle: -1, steer: 1, brake: false };
-    expect(mergeDriveInputs(keyboard, NONE)).toEqual(keyboard);
-    const touch: DriveInput = { throttle: 1, steer: -0.4, brake: true };
-    expect(mergeDriveInputs(NONE, touch)).toEqual(touch);
+  test('只有一邊有輸入就是那一邊', () => {
+    const keyboard: PedalInput = { gas: true, steer: 1, brake: false };
+    expect(mergePedalInputs(keyboard, NO_PEDAL_INPUT)).toEqual(keyboard);
+    const touch: PedalInput = { gas: true, steer: -0.4, brake: true };
+    expect(mergePedalInputs(NO_PEDAL_INPUT, touch)).toEqual(touch);
   });
 
-  test('油門以鍵盤為主；轉向相加後夾住；剎車任一邊踩著就算', () => {
-    const merged = mergeDriveInputs(
-      { throttle: -1, steer: 1 },
-      { throttle: 1, steer: 0.5, brake: true },
-    );
-    expect(merged).toEqual({ throttle: -1, steer: 1, brake: true });
-    expect(mergeDriveInputs({ ...NONE, steer: -1 }, { ...NONE, steer: 0.25 }).steer).toBeCloseTo(-0.75, 9);
+  test('油門、剎車任一邊踩著就算；轉向相加後夾住', () => {
+    expect(
+      mergePedalInputs({ gas: false, steer: 1, brake: false }, { gas: true, steer: 0.5, brake: true }),
+    ).toEqual({ gas: true, steer: 1, brake: true });
+    expect(
+      mergePedalInputs({ ...NO_PEDAL_INPUT, steer: -1 }, { ...NO_PEDAL_INPUT, steer: 0.25 }).steer,
+    ).toBeCloseTo(-0.75, 9);
   });
 });
 
 describe('觸控層的文案', () => {
-  test('中英文都有：方向盤、油門、剎車、掛檔、暫停、重來', () => {
+  test('中英文都有：方向盤、油門、剎車、切換檔位、暫停、重來', () => {
     expect(zhTW['touch.gas']).toBe('油門');
     expect(zhTW['touch.brake']).toBe('剎車');
     expect(zhTW['touch.pause']).toBe('暫停');
     expect(zhTW['touch.restart']).toBe('重來');
-    expect(zhTW['touch.gearDrive']).toBe('掛 D 檔');
-    expect(zhTW['touch.gearReverse']).toBe('掛 R 檔');
+    expect(zhTW['touch.gearToggle']).toBe('切換 D／R 檔');
     expect(en['touch.gas']).toBe('Gas');
     expect(en['touch.brake']).toBe('Brake');
     expect(en['touch.pause']).toBe('Pause');
     expect(en['touch.restart']).toBe('Restart');
-    expect(en['touch.gearDrive']).toBe('Shift to D');
-    expect(en['touch.gearReverse']).toBe('Shift to R');
+    expect(en['touch.gearToggle']).toBe('Switch D / R');
     expect(zhTW['touch.wheel']).not.toBe('');
     expect(en['touch.wheel']).not.toBe('');
   });

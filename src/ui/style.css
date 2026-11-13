@@ -151,13 +151,6 @@ body {
   color: #ffd76a;
 }
 
-/* 手排（玩家按過掛檔鍵）：檔位下面畫一條線，與自排區分。 */
-.hud-stat-value[data-mode='manual'] {
-  text-decoration: underline;
-  text-decoration-thickness: 2px;
-  text-underline-offset: 4px;
-}
-
 /* 右上角的按鈕：語言、關卡選擇，由上往下排。 */
 .hud-corner {
   grid-column: 2;
@@ -868,7 +861,7 @@ body {
   }
 }
 
-/* 螢幕操作層：方向盤、踏板、掛檔、暫停、重來、鏡頭。位置由 touchControls.ts 依畫面大小設定（都在倒車輔助小窗的下面）。 */
+/* 螢幕操作層：方向盤、踏板、切換檔位、暫停、重來、鏡頭。位置由 touchControls.ts 依畫面大小設定（都在倒車輔助小窗的下面）。 */
 .touch {
   position: absolute;
   inset: 0;
@@ -1014,7 +1007,7 @@ body {
     rgb(190 56 44 / 0.72);
 }
 
-/* 小鍵：掛 D、掛 R、暫停、重來、鏡頭。 */
+/* 小鍵：切換檔位、暫停、重來、鏡頭。 */
 .touch-button {
   display: grid;
   align-content: center;
@@ -1051,13 +1044,13 @@ body {
   pointer-events: none;
 }
 
-/* 目前掛著的檔。 */
-.touch-gear[data-active='true'] {
+/* 切換檔位鍵顯示目前的檔位；R 檔時標成黃色（與行車資訊的檔位同色）。 */
+.touch-gear[data-gear='reverse'] {
   border-color: rgb(255 212 94 / 0.8);
   background: rgb(255 212 94 / 0.24);
 }
 
-.touch-gear[data-active='true'] .touch-gear-letter {
+.touch-gear[data-gear='reverse'] .touch-gear-letter {
   color: #ffd76a;
 }
 

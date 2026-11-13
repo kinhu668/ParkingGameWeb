@@ -1,11 +1,21 @@
 // 介面用的文字格式：純函式，不碰 DOM。
+import type { TranslationKey } from '../core/i18n';
 import { radToDeg } from '../core/units';
+import type { Gear } from '../vehicle/gearbox';
 
 const SECONDS_PER_MINUTE = 60;
 const TENTHS_PER_SECOND = 10;
 
 /** 浮點誤差的容差：59.999999 秒要顯示成 1:00.0，不是 0:59.9。 */
 const TENTH_EPSILON = 1e-6;
+
+/** 檔位 → 顯示的字母與名稱的翻譯鍵（行車資訊與螢幕上的切換檔位鍵共用）。 */
+export const GEAR_LABELS: Readonly<
+  Record<Gear, { readonly letter: string; readonly key: TranslationKey }>
+> = {
+  forward: { letter: 'D', key: 'hud.gearForward' },
+  reverse: { letter: 'R', key: 'hud.gearReverse' },
+};
 
 /** 角度誤差顯示到小數第幾位；3 星的門檻是 3°。 */
 const ANGLE_DECIMALS = 1;

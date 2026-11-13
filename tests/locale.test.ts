@@ -66,19 +66,17 @@ const PLANNED_KEYS = [
   'bench.drawCalls',
   // 自訂按鍵：操作說明的新列、按鍵設定面板。
   'hud.controlBrake',
-  'hud.controlGears',
+  'hud.controlGear',
+  'hud.controlThrottle',
   'hud.controlsEdit',
-  'hud.gearManual',
   'pause.controls',
   'controls.title',
   'controls.hint',
   'controls.action.throttle',
-  'controls.action.reverse',
   'controls.action.steerLeft',
   'controls.action.steerRight',
   'controls.action.brake',
-  'controls.action.gearDrive',
-  'controls.action.gearReverse',
+  'controls.action.gearToggle',
   'controls.action.restart',
   'controls.action.toggleCamera',
   'controls.action.pause',
@@ -88,6 +86,7 @@ const PLANNED_KEYS = [
   'controls.gearNote',
   'controls.reset',
   'controls.done',
+  'touch.gearToggle',
 ];
 
 describe('翻譯檔', () => {
@@ -131,6 +130,29 @@ describe('翻譯檔', () => {
       expect(String(messages['controls.conflict']), locale).toContain('{key}');
       expect(String(messages['controls.conflict']), locale).toContain('{action}');
     }
+  });
+
+  test('檔位只有一個切換動作：沒有倒車油門、掛 D、掛 R、手排的字串，說明也不再講自排／手排', () => {
+    for (const locale of Object.keys(MESSAGES)) {
+      const messages = MESSAGES[locale] ?? {};
+      for (const removed of [
+        'controls.action.reverse',
+        'controls.action.gearDrive',
+        'controls.action.gearReverse',
+        'touch.gearDrive',
+        'touch.gearReverse',
+        'hud.controlDrive',
+        'hud.controlGears',
+        'hud.gearManual',
+      ]) {
+        expect(messages, `${locale} ${removed}`).not.toHaveProperty([removed]);
+      }
+      expect(String(messages['controls.gearNote']), locale).not.toMatch(/自排|手排|manual|automatic/i);
+    }
+    expect(zhTW['hud.controlThrottle']).toBe('油門');
+    expect(zhTW['controls.action.gearToggle']).toBe('切換 D／R 檔');
+    expect(en['hud.controlThrottle']).toBe('Throttle');
+    expect(en['controls.action.gearToggle']).toBe('Switch D / R');
   });
 
   test('中文版真的是中文、英文版真的是英文（防止兩份檔貼反）', () => {

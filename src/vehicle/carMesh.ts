@@ -23,6 +23,7 @@ import { BODY_LAYOUT, bodyTopHeightM, type BodyPart } from './carBody';
 import { createBeamGeometry, createBodyGeometries } from './carFittings';
 import { createCarInterior } from './carInterior';
 import { createBrakeDiscGeometry, createRimGeometry, createTireGeometry } from './carWheel';
+import type { Gear } from './gearbox';
 import { VEHICLE_CONFIG_SI } from './vehicleConfig';
 
 /** 燈號狀態。 */
@@ -351,13 +352,13 @@ export function setCarHoodView(car: CarMesh, enabled: boolean): void {
 }
 
 /**
- * 由駕駛輸入與車速決定燈號（與 bicycleModel 的車速規則一致，但不影響物理）：
- * 剎車、或油門與行進方向相反（正在煞車）→ 煞車燈；正在倒退、或靜止時按著倒車 → 倒車燈。
+ * 由駕駛輸入、車速與檔位決定燈號（與 bicycleModel 的車速規則一致，但不影響物理）：
+ * 剎車、或油門與行進方向相反（正在煞車）→ 煞車燈；掛著 R 檔 → 倒車燈（停著沒踩油門也亮）。
  */
-export function carLightsFor(input: DriveInput, speedMps: number): CarLights {
+export function carLightsFor(input: DriveInput, speedMps: number, gear: Gear): CarLights {
   return {
     braking: input.brake === true || speedMps * input.throttle < 0,
-    reversing: speedMps < 0 || (speedMps === 0 && input.throttle < 0),
+    reversing: gear === 'reverse',
   };
 }
 

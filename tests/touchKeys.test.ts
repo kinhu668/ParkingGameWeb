@@ -29,9 +29,8 @@ describe('控制項 ↔ 動作', () => {
     expect(badgesOn('brake')).toEqual(['brake']);
   });
 
-  test('掛檔、暫停、重來、鏡頭各一個；每個控制項都有鍵帽，每個動作只出現一次', () => {
-    expect(badgesOn('gearDrive')).toEqual(['gearDrive']);
-    expect(badgesOn('gearReverse')).toEqual(['gearReverse']);
+  test('切換檔位、暫停、重來、鏡頭各一個；每個控制項都有鍵帽，每個動作只出現一次', () => {
+    expect(badgesOn('gear')).toEqual(['gearToggle']);
     expect(badgesOn('pause')).toEqual(['pause']);
     expect(badgesOn('restart')).toEqual(['restart']);
     expect(badgesOn('camera')).toEqual(['toggleCamera']);
@@ -49,13 +48,12 @@ describe('控制項 ↔ 動作', () => {
 });
 
 describe('鍵帽上的字', () => {
-  test('預設綁定：A／D、W、逗號、Q／R、Esc、Backspace、V', () => {
+  test('預設綁定：A／D、W、S、R、Esc、Backspace、V', () => {
     expect(capText(DEFAULT_BINDINGS, 'steerLeft')).toBe('A');
     expect(capText(DEFAULT_BINDINGS, 'steerRight')).toBe('D');
     expect(capText(DEFAULT_BINDINGS, 'throttle')).toBe('W');
-    expect(capText(DEFAULT_BINDINGS, 'brake')).toBe(',');
-    expect(capText(DEFAULT_BINDINGS, 'gearDrive')).toBe('Q');
-    expect(capText(DEFAULT_BINDINGS, 'gearReverse')).toBe('R');
+    expect(capText(DEFAULT_BINDINGS, 'brake')).toBe('S');
+    expect(capText(DEFAULT_BINDINGS, 'gearToggle')).toBe('R');
     expect(capText(DEFAULT_BINDINGS, 'pause')).toBe('Esc');
     expect(capText(DEFAULT_BINDINGS, 'restart')).toBe('Backspace');
     expect(capText(DEFAULT_BINDINGS, 'toggleCamera')).toBe('V');
@@ -70,13 +68,13 @@ describe('鍵帽上的字', () => {
     expect(capText(result.bindings, 'throttle')).toBe('I');
     expect(result.bindings.throttle).toEqual(['KeyI', 'ArrowUp']);
     // 別的鍵帽不受影響。
-    expect(capText(result.bindings, 'brake')).toBe(',');
+    expect(capText(result.bindings, 'brake')).toBe('S');
     expect(capText(result.bindings, 'steerLeft')).toBe('A');
   });
 
   test('已經是別的動作的鍵：擋下來（與按鍵設定面板同一條規則），鍵帽不變', () => {
     const result = rebind(DEFAULT_BINDINGS, 'throttle', TOUCH_KEY_SLOT, 'KeyS');
-    expect(result).toEqual({ kind: 'conflict', action: 'reverse' });
+    expect(result).toEqual({ kind: 'conflict', action: 'brake' });
     expect(capText(DEFAULT_BINDINGS, 'throttle')).toBe('W');
   });
 

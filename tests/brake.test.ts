@@ -101,9 +101,9 @@ describe('腳剎：一局與車燈', () => {
   });
 
   test('踩腳剎亮煞車燈；沒踩不亮', () => {
-    expect(carLightsFor(BRAKE, 3).braking).toBe(true);
-    expect(carLightsFor(BRAKE, 0).braking).toBe(true);
-    expect(carLightsFor(IDLE, 3).braking).toBe(false);
-    expect(carLightsFor({ ...IDLE, brake: false }, 3).braking).toBe(false);
+    expect(carLightsFor(BRAKE, 3, 'forward').braking).toBe(true);
+    expect(carLightsFor(BRAKE, 0, 'reverse').braking).toBe(true);
+    expect(carLightsFor(IDLE, 3, 'forward').braking).toBe(false);
+    expect(carLightsFor({ ...IDLE, brake: false }, 3, 'forward').braking).toBe(false);
   });
 });
