@@ -13,6 +13,8 @@ import type { GroundVector } from '../core/heading';
 import { degToRad } from '../core/units';
 import type { WeatherId } from '../core/weather';
 import { createLightning } from '../effects/lightning';
+import { createLightningArcs } from '../effects/lightningArc';
+import type { StrikeArea } from '../effects/lightningBolt';
 import { createSceneEffects } from '../effects/sceneEffects';
 import type { ParkingSpot } from '../level/parkingJudge';
 import {
@@ -120,6 +122,11 @@ export interface GameScene {
    * 倒車燈與車尾的光斑照常畫。
    */
   drawAssistViews(draw: () => void): void;
+  /**
+   * 定格截圖用：把天氣的時間（閃電的時間表）直接擺到 timeSeconds。只能往前；`?cam=…&t=2` 的雷雨因此正好是第一道閃電
+   * （閃光＋電弧）。雨絲、落葉、光柱裡的霧氣不受影響（定格時停在時間 0）。沒有閃電的天氣什麼都不做。
+   */
+  showWeatherAt(timeSeconds: number): void;
   /**
    * 目標車位的發光標記的顯示狀態走一幀：停妥後變綠再淡出、重來後回來。
    * 每個畫面幀呼叫。沒呼叫過（定格截圖、關卡選擇的背景）就是琥珀色、完全顯示。
@@ -292,6 +299,11 @@ export function drivableRect(
     minZ: Math.min(...corners.map((corner) => corner.z)),
     maxZ: Math.max(...corners.map((corner) => corner.z)),
   };
+}
+
+/** 閃電落點用的場地：車位的位置與朝向，電弧落在場地外框的外面（effects/lightningBolt.ts）。 */
+export function lightningStrikeArea(spot: ParkingSpot, bounds: BoundsFt | undefined): StrikeArea {
+  return { spotX: spot.x, spotZ: spot.z, spotHeadingRad: spot.headingRad, ...drivableRect(spot, bounds) };
 }
 
 /**
@@ -515,14 +527,38 @@ export function createGameScene(
   });
   scene.add(effects.root);
 
-  // 閃電（只有閃光）：依固定的時間表，短暫提高補光、環境光與天空，霧色往閃光色靠。
-  // 定格截圖不走時間（累積時間 0），畫面是「沒有在閃」的狀態。
+  // 閃電：依固定的時間表，短暫提高補光、環境光與天空，霧色往閃光色靠；同時在場地外面的天空畫出電弧。
+  // 定格截圖的時間由 showWeatherAt 指定（`?cam=…&t=2` 正好是第一道）；沒指定就是時間 0，「沒有在閃」。
   const lightning =
     ambientFx && preset.lightning ? createLightning(DEFAULT_SEED + LIGHTNING_SEED_OFFSET) : undefined;
+  const arcs =
+    lightning === undefined
+      ? undefined
+      : createLightningArcs(
+          DEFAULT_SEED + LIGHTNING_SEED_OFFSET,
+          lightningStrikeArea(spot, bounds),
+          usesHdrChain(quality),
+          preset.fog,
+        );
+  if (arcs !== undefined) {
+    scene.add(arcs.root);
+  }
   const fogBaseColor = new Color(preset.fog.color);
   const flashColor = new Color(LIGHTNING_CONFIG.flashColor);
   let weatherSeconds = 0;
   let shownFlash = 0;
+  /** 把閃電擺到目前的累積時間：閃光強度變了才動燈光；電弧跟著同一個強度。 */
+  const showLightning = (): void => {
+    if (lightning === undefined) {
+      return;
+    }
+    const flash = lightning.flashAt(weatherSeconds);
+    if (flash !== shownFlash) {
+      shownFlash = flash;
+      applyFlash(flash);
+    }
+    arcs?.show(lightning.strikeIndex(), flash);
+  };
   const applyFlash = (flash: number): void => {
     lights.scaleFill(1 + LIGHTNING_CONFIG.hemisphereBoost * flash);
     scene.environmentIntensity =
@@ -554,6 +590,10 @@ export function createGameScene(
         });
       });
     },
+    showWeatherAt(timeSeconds) {
+      weatherSeconds = Math.max(weatherSeconds, timeSeconds);
+      showLightning();
+    },
     updateSpotGlow(parked, frameSeconds) {
       glow.show(parked, frameSeconds);
     },
@@ -566,14 +606,8 @@ export function createGameScene(
         shaftTime.value += frameSeconds;
       }
       glow.advance(frameSeconds);
-      if (lightning !== undefined) {
-        weatherSeconds += frameSeconds;
-        const flash = lightning.flashAt(weatherSeconds);
-        if (flash !== shownFlash) {
-          shownFlash = flash;
-          applyFlash(flash);
-        }
-      }
+      weatherSeconds += frameSeconds;
+      showLightning();
 
       // 車在場地裡時陰影範圍不動；開出去多遠，範圍就跟著平移多遠。
       lights.aimAt(

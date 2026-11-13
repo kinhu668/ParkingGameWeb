@@ -419,6 +419,8 @@ function runCameraShot(
 
   const gameScene = createLevelScene(renderer, quality, level);
   gameScene.update(vehicle);
+  // 閃電照同一個 t 走：雷雨的 `t=2` 正好是第一道（閃光＋電弧）；其他特效仍停在時間 0。
+  gameScene.showWeatherAt(timeSeconds);
   const camera = createPresetCamera(preset, vehicle.x, vehicle.z, spot);
 
   const draw = (): void => {
