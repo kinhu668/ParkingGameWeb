@@ -7,7 +7,7 @@ import type { QualitySettings } from '../render/quality';
 import type { VehiclePose } from '../vehicle/bicycleModel';
 import { createDust } from './dust';
 import { createLeaves } from './leaves';
-import { createRain } from './rain';
+import { DEFAULT_RAIN_STYLE, LOW_RAIN_STYLE, createRain } from './rain';
 import { createTireMarks } from './tireMarks';
 
 export interface SceneEffects {
@@ -35,6 +35,8 @@ const RAIN_SEED_OFFSET = 0xd3;
 export interface SceneEffectOptions {
   /** 雨絲數；0 = 不下雨。 */
   readonly rainStreaks?: number;
+  /** 雨絲數量少的級別（low）：每一條畫得長一點、亮一點。 */
+  readonly sparseRain?: boolean;
   /** 落葉（下雨時、`?fx=off` 時不飄）。 */
   readonly leaves?: boolean;
   /** 車輪揚起的灰塵（下雨時不揚）。 */
@@ -76,7 +78,14 @@ export function createSceneEffects(
     root.add(leaves.mesh);
   }
   const rainStreaks = Math.round(options.rainStreaks ?? 0);
-  const rain = rainStreaks > 0 ? createRain(rainStreaks, seed + RAIN_SEED_OFFSET) : undefined;
+  const rain =
+    rainStreaks > 0
+      ? createRain(
+          rainStreaks,
+          seed + RAIN_SEED_OFFSET,
+          options.sparseRain === true ? LOW_RAIN_STYLE : DEFAULT_RAIN_STYLE,
+        )
+      : undefined;
   if (rain !== undefined) {
     root.add(rain.lines);
   }

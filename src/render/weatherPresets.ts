@@ -316,11 +316,14 @@ export function weatherPreset(weather: WeatherId): WeatherPreset {
 }
 
 /**
- * 雨絲：一個跟著車走的長方體裡的短線段，一個 draw call。low 沒有雨絲（靠霧、壓暗的地面與天空表現雨天）。
+ * 雨絲：一個跟著車走的長方體裡的短線段，一個 draw call。每個畫質級別都有；low 的數量少，
+ * 所以每一條畫得長一點、亮一點（lowStreak），一眼看得出在下雨，又不拖慢低階裝置。
  */
 export const RAIN_CONFIG = {
   /** 各畫質級別的雨絲數上限（實際數量 = 上限 × 這種天氣的雨量）。 */
-  maxStreaks: { low: 0, medium: 900, high: 1800, ultra: 3000 } satisfies Record<QualityLevel, number>,
+  maxStreaks: { low: 560, medium: 900, high: 1800, ultra: 3000 } satisfies Record<QualityLevel, number>,
+  /** low 的雨絲：長度是一般的這個倍數、不透明度換成這個值（數量比 medium 少，靠每一條更醒目補回來）。 */
+  lowStreak: { lengthScale: 1.5, opacity: 0.6 },
   /** 雨絲所在的長方體：以車為中心的水平邊長與高度。 */
   boxSizeM: ftToM(110),
   boxHeightM: ftToM(42),

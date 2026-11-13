@@ -1,9 +1,11 @@
 // 天氣：`?weather=` 的解析與覆蓋規則、六種天氣的預設值（dusk 必須等於既有設定）、閃電的時間表與閃光曲線。
+import { LineBasicMaterial } from 'three';
 import { describe, expect, test } from 'vitest';
 import { DEFAULT_SEED } from '../src/core/gameConfig';
 import { parseFxOffParam } from '../src/core/urlParams';
 import { WEATHER_IDS, parseWeatherParam, resolveWeather } from '../src/core/weather';
 import { createLightning, flashCurve, lightningSchedule } from '../src/effects/lightning';
+import { DEFAULT_RAIN_STYLE, LOW_RAIN_STYLE, createRain } from '../src/effects/rain';
 import { LEVELS } from '../src/level/levelCatalog';
 import { PROTOTYPE_LEVEL } from '../src/level/prototypeLayout';
 import { QUALITY_LEVELS } from '../src/render/quality';
@@ -162,11 +164,48 @@ describe('天氣預設值', () => {
     }
   });
 
-  test('雨絲數：low 沒有，其餘級別只增不減', () => {
+  test('雨絲數：每個級別都有（low 也畫得出雨絲，但數量最少），級別越高越多', () => {
     const counts = QUALITY_LEVELS.map((level) => RAIN_CONFIG.maxStreaks[level]);
-    expect(counts[0]).toBe(0);
+    expect(counts[0]).toBeGreaterThan(0);
     expect(counts).toEqual([...counts].sort((a, b) => a - b));
-    expect(RAIN_CONFIG.maxStreaks.medium).toBeGreaterThan(0);
+    // low 的數量比 medium 少一截：低階裝置不被拖慢（雨絲是一個 draw call 的細線，很便宜）。
+    expect(RAIN_CONFIG.maxStreaks.low).toBeLessThanOrEqual(RAIN_CONFIG.maxStreaks.medium * 0.65);
+    // 雨天（雨量 0.6）的 low 仍有幾百條：窄巷裡（大半被牆擋住）也看得到。
+    expect(Math.round(RAIN_CONFIG.maxStreaks.low * WEATHER_PRESETS.rain.rain)).toBeGreaterThanOrEqual(300);
+  });
+
+  test('low 的雨絲比較長、比較亮（數量少，靠每一條更醒目補回來）；仍是半透明的細線', () => {
+    expect(LOW_RAIN_STYLE.lengthM).toBeGreaterThan(DEFAULT_RAIN_STYLE.lengthM);
+    expect(LOW_RAIN_STYLE.opacity).toBeGreaterThan(DEFAULT_RAIN_STYLE.opacity);
+    expect(LOW_RAIN_STYLE.opacity).toBeLessThan(0.8);
+    expect(DEFAULT_RAIN_STYLE).toEqual({ lengthM: RAIN_CONFIG.streakLengthM, opacity: RAIN_CONFIG.opacity });
+    const sparse = createRain(64, DEFAULT_SEED, LOW_RAIN_STYLE);
+    const normal = createRain(64, DEFAULT_SEED);
+    sparse.update(0, 0, 0);
+    normal.update(0, 0, 0);
+    const lengthOf = (rain: typeof sparse): number => {
+      const position = rain.lines.geometry.getAttribute('position');
+      return Math.hypot(
+        position.getX(1) - position.getX(0),
+        position.getY(1) - position.getY(0),
+        position.getZ(1) - position.getZ(0),
+      );
+    };
+    expect(lengthOf(sparse)).toBeCloseTo(LOW_RAIN_STYLE.lengthM, 5);
+    expect(lengthOf(normal)).toBeCloseTo(RAIN_CONFIG.streakLengthM, 5);
+    // 雨絲不吃霧：貼地的霧氣不會把它蓋成霧色；一個網格（一個 draw call）。
+    const materialOf = (rain: typeof sparse): LineBasicMaterial => {
+      const material = rain.lines.material;
+      if (!(material instanceof LineBasicMaterial)) {
+        throw new Error('雨絲的材質應該是 LineBasicMaterial');
+      }
+      return material;
+    };
+    for (const rain of [sparse, normal]) {
+      expect(materialOf(rain).fog).toBe(false);
+      expect(materialOf(rain).transparent).toBe(true);
+    }
+    expect(materialOf(sparse).opacity).toBe(LOW_RAIN_STYLE.opacity);
   });
 });
 

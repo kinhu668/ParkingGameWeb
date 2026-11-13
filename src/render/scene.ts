@@ -622,6 +622,7 @@ export function createGameScene(
   const raining = preset.rain > 0;
   const effects = createSceneEffects(quality, spot, start, DEFAULT_SEED, {
     rainStreaks: ambientFx ? RAIN_CONFIG.maxStreaks[quality.level] * preset.rain : 0,
+    sparseRain: quality.level === 'low',
     leaves: ambientFx && !raining,
     dust: !raining,
   });

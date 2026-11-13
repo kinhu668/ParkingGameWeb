@@ -1,4 +1,5 @@
 // 雨絲：一個跟著車走的長方體裡的短線段，全部在一個 LineSegments 裡（一個 draw call）。純視覺。
+// 每個畫質級別都有；low 的數量少，每一條畫得長一點、亮一點（LOW_RAIN_STYLE）。
 // 每條雨絲的位置只由種子與累積時間決定：同一個時間畫出來一樣，`?cam` 定格（時間 0）也看得到雨。
 // 雨絲釘在世界座標上（用長方體的邊長取餘數繞回來），車開動時雨不會跟著車平移。
 import { BufferAttribute, BufferGeometry, LineBasicMaterial, LineSegments } from 'three';
@@ -62,11 +63,30 @@ export interface Rain {
 const POSITION_ITEM_SIZE = 3;
 const VERTICES_PER_STREAK = 2;
 
+/** 一條雨絲畫多長、多不透明。 */
+export interface RainStreakStyle {
+  readonly lengthM: number;
+  readonly opacity: number;
+}
+
+/** 一般的雨絲（medium 以上）。 */
+export const DEFAULT_RAIN_STYLE: RainStreakStyle = {
+  lengthM: CONFIG.streakLengthM,
+  opacity: CONFIG.opacity,
+};
+
+/** low 的雨絲：數量少，每一條長一點、亮一點。 */
+export const LOW_RAIN_STYLE: RainStreakStyle = {
+  lengthM: CONFIG.streakLengthM * CONFIG.lowStreak.lengthScale,
+  opacity: CONFIG.lowStreak.opacity,
+};
+
 /**
  * @param count 雨絲數
  * @param seed 亂數種子
+ * @param style 一條雨絲的長度與不透明度；不給 = 一般的
  */
-export function createRain(count: number, seed: number): Rain {
+export function createRain(count: number, seed: number, style: RainStreakStyle = DEFAULT_RAIN_STYLE): Rain {
   const streaks = createRainStreaks(seed, count);
   const positions = new Float32Array(count * VERTICES_PER_STREAK * POSITION_ITEM_SIZE);
   const geometry = new BufferGeometry();
@@ -77,7 +97,7 @@ export function createRain(count: number, seed: number): Rain {
     new LineBasicMaterial({
       color: CONFIG.color,
       transparent: true,
-      opacity: CONFIG.opacity,
+      opacity: style.opacity,
       depthWrite: false,
       // 雨絲都在車附近（長方體只有幾十公尺）：不吃霧，貼地的霧氣才不會把雨絲蓋成霧色。
       fog: false,
@@ -90,9 +110,9 @@ export function createRain(count: number, seed: number): Rain {
 
   // 雨絲的方向：沿著落下的速度（往下＋風）往回拉一段固定的長度。
   const speed = Math.hypot(CONFIG.fallSpeedMps, CONFIG.windXMps, CONFIG.windZMps);
-  const tailX = (-CONFIG.windXMps / speed) * CONFIG.streakLengthM;
-  const tailY = (CONFIG.fallSpeedMps / speed) * CONFIG.streakLengthM;
-  const tailZ = (-CONFIG.windZMps / speed) * CONFIG.streakLengthM;
+  const tailX = (-CONFIG.windXMps / speed) * style.lengthM;
+  const tailY = (CONFIG.fallSpeedMps / speed) * style.lengthM;
+  const tailZ = (-CONFIG.windZMps / speed) * style.lengthM;
 
   return {
     lines,
