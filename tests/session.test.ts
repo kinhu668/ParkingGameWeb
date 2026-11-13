@@ -272,7 +272,7 @@ describe('sessionSnapshot（e2e 用的唯讀狀態）', () => {
 
 // ───────────────────────── 碰撞、計時、失敗、評分 ─────────────────────────
 
-const HANDBRAKE: DriveInput = { ...IDLE, handbrake: true };
+const BRAKE: DriveInput = { ...IDLE, brake: true };
 
 /** 英尺寫的碰撞盒（heading 0：寬沿 X、長沿 Z）。 */
 function wallFt(xFt: number, zFt: number, widthFt: number, lengthFt: number): Obb {
@@ -414,7 +414,7 @@ describe('碰撞：退回上一步並反彈', () => {
         input = {
           throttle: throttles[Math.floor(rng() * throttles.length)] ?? 0,
           steer: steers[Math.floor(rng() * steers.length)] ?? 0,
-          handbrake: rng() < 0.05,
+          brake: rng() < 0.05,
         };
       }
       session = stepSession(session, input);
@@ -520,13 +520,13 @@ describe('碰撞冷卻：同一個物件 0.5 秒（30 步）內不重複計', ()
 });
 
 describe('計時：從第一次駕駛輸入開始', () => {
-  test('hasDriveInput：油門、倒車、方向盤、手煞車任一個都算；全放開不算', () => {
+  test('hasDriveInput：油門、倒車、方向盤、剎車任一個都算；全放開不算', () => {
     expect(hasDriveInput(IDLE)).toBe(false);
     expect(hasDriveInput(FULL_THROTTLE)).toBe(true);
     expect(hasDriveInput(FULL_REVERSE)).toBe(true);
     expect(hasDriveInput(STEER_RIGHT)).toBe(true);
     expect(hasDriveInput({ ...IDLE, steer: -0.2 })).toBe(true);
-    expect(hasDriveInput(HANDBRAKE)).toBe(true);
+    expect(hasDriveInput(BRAKE)).toBe(true);
   });
 
   test('沒有輸入：不論等多久都是 ready、0 步', () => {
@@ -551,7 +551,7 @@ describe('計時：從第一次駕駛輸入開始', () => {
 
   test.each([
     ['方向盤', STEER_RIGHT],
-    ['手煞車', HANDBRAKE],
+    ['剎車', BRAKE],
     ['倒車', FULL_REVERSE],
   ])('只動%s也會開始計時', (_name, input) => {
     const started = stepSession(startSession(PROTOTYPE_LAYOUT), input);
@@ -625,7 +625,7 @@ describe('失敗', () => {
   });
 
   test('停妥成立的那一步剛好用完時間 → 成功；晚一步 → 失敗（失敗判斷在停車判定之前）', () => {
-    // 車一開始就在車位中央：第 1 步拉一下手煞車開始計時，第 60 步判定成立。
+    // 車一開始就在車位中央：第 1 步踩一下剎車開始計時，第 60 步判定成立。
     const withLimit = (timeLimitSteps: number): Session =>
       repeat(
         stepSession(
@@ -633,7 +633,7 @@ describe('失敗', () => {
             ...CENTERED_LAYOUT,
             rules: { timeLimitSteps, targetSteps: 30, maxCollisions: 0 },
           }),
-          HANDBRAKE,
+          BRAKE,
         ),
         IDLE,
         REQUIRED_HOLD_STEPS - 1,
@@ -743,7 +743,7 @@ describe('評分', () => {
       startState: { ...CENTERED_LAYOUT.startState, headingRad: degToRad(5) },
       rules: { timeLimitSteps: 3600, targetSteps: 1800, maxCollisions: 0 },
     };
-    const parked = repeat(stepSession(startSession(layout), HANDBRAKE), IDLE, REQUIRED_HOLD_STEPS - 1);
+    const parked = repeat(stepSession(startSession(layout), BRAKE), IDLE, REQUIRED_HOLD_STEPS - 1);
     expect(parked.status).toBe('parked');
     expect(parked.result?.stars).toBe(2);
     expect(parked.result?.angleErrorRad).toBeCloseTo(degToRad(5), 12);
@@ -753,7 +753,7 @@ describe('評分', () => {
     const straighter = repeat(
       stepSession(
         startSession({ ...layout, startState: { ...layout.startState, headingRad: degToRad(2) } }),
-        HANDBRAKE,
+        BRAKE,
       ),
       IDLE,
       REQUIRED_HOLD_STEPS - 1,

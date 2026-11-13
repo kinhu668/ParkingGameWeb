@@ -505,13 +505,13 @@ describe('車身配件 carFittings（燈組、車牌、門縫、保險桿、雨�
 });
 
 describe('燈號 carLightsFor / setCarLights', () => {
-  const drive = (throttle: -1 | 0 | 1, handbrake = false): DriveInput => ({
+  const drive = (throttle: -1 | 0 | 1, brake = false): DriveInput => ({
     throttle,
     steer: 0,
-    handbrake,
+    brake,
   });
 
-  test('煞車燈：手煞車，或油門與行進方向相反；滑行與加速不亮', () => {
+  test('煞車燈：踩剎車，或油門與行進方向相反；滑行與加速不亮', () => {
     expect(carLightsFor(drive(0, true), 3).braking).toBe(true);
     expect(carLightsFor(drive(-1), 3).braking).toBe(true);
     expect(carLightsFor(drive(1), -2).braking).toBe(true);

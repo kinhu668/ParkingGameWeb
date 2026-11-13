@@ -92,7 +92,7 @@ declare global {
 const SELECT_WORLD = 1;
 
 /** 暫停時餵給 HUD 與車燈的輸入：什麼都沒按。 */
-const NO_DRIVE_INPUT: DriveInput = { throttle: 0, steer: 0, handbrake: false };
+const NO_DRIVE_INPUT: DriveInput = { throttle: 0, steer: 0 };
 
 /**
  * 記住鏡頭、存檔與按鍵綁定用的 localStorage；瀏覽器停用儲存時連讀 `window.localStorage` 都會丟例外，那就當作沒有。

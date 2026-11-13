@@ -1,4 +1,4 @@
-// 腳剎（DriveInput.brake）：會讓車減速、停在剛好 0，與手煞車是兩個不同的輸入。
+// 腳剎（DriveInput.brake）：會讓車減速、停在剛好 0；力道與反向油門的煞車相同。
 import { describe, expect, test } from 'vitest';
 import { FIXED_STEP_SECONDS } from '../src/core/gameConfig';
 import { PROTOTYPE_LAYOUT } from '../src/level/prototypeLayout';
@@ -7,9 +7,8 @@ import { stepVehicle, type DriveInput, type VehicleState } from '../src/vehicle/
 import { carLightsFor } from '../src/vehicle/carMesh';
 import { VEHICLE_CONFIG_SI } from '../src/vehicle/vehicleConfig';
 
-const IDLE: DriveInput = { throttle: 0, steer: 0, handbrake: false };
+const IDLE: DriveInput = { throttle: 0, steer: 0 };
 const BRAKE: DriveInput = { ...IDLE, brake: true };
-const HANDBRAKE: DriveInput = { ...IDLE, handbrake: true };
 const DT = FIXED_STEP_SECONDS;
 
 function moving(speedMps: number): VehicleState {
@@ -41,12 +40,8 @@ describe('腳剎：車輛模型', () => {
     expect(stepVehicle(moving(0), BRAKE, DT)).toEqual(moving(0));
   });
 
-  test('比滑行快停、比手煞車慢停：腳剎與手煞車不是同一個動作', () => {
-    const coast = stepsToStop(6, IDLE);
-    const brake = stepsToStop(6, BRAKE);
-    const handbrake = stepsToStop(6, HANDBRAKE);
-    expect(brake).toBeLessThan(coast);
-    expect(handbrake).toBeLessThan(brake);
+  test('比滑行快停', () => {
+    expect(stepsToStop(6, BRAKE)).toBeLessThan(stepsToStop(6, IDLE));
   });
 
   test('踩著腳剎再踩油門：車不會加速，停著就一直停著', () => {
@@ -56,17 +51,19 @@ describe('腳剎：車輛模型', () => {
     expect(stepVehicle(moving(-4), { ...BRAKE, throttle: -1 }, DT).speedMps).toBeGreaterThan(-4);
   });
 
-  test('腳剎與手煞車一起：照手煞車的力道', () => {
-    expect(stepVehicle(moving(5), { ...BRAKE, handbrake: true }, DT).speedMps).toBeCloseTo(
-      5 - VEHICLE_CONFIG_SI.handbrakeMps2 * DT,
-      12,
+  test('力道與反向油門的煞車相同（前進與倒車都一樣）', () => {
+    expect(stepVehicle(moving(5), BRAKE, DT)).toEqual(
+      stepVehicle(moving(5), { ...IDLE, throttle: -1 }, DT),
+    );
+    expect(stepVehicle(moving(-3), BRAKE, DT)).toEqual(
+      stepVehicle(moving(-3), { ...IDLE, throttle: 1 }, DT),
     );
   });
 
   test('沒填 brake 與 brake: false 完全相同（照腳本開的路線不受影響）', () => {
     const start = moving(4);
     for (const throttle of [-1, 0, 1] as const) {
-      const without: DriveInput = { throttle, steer: 0.5, handbrake: false };
+      const without: DriveInput = { throttle, steer: 0.5 };
       expect(stepVehicle(start, { ...without, brake: false }, DT)).toEqual(
         stepVehicle(start, without, DT),
       );

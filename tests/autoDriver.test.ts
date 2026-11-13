@@ -177,19 +177,19 @@ describe('autoDrive：一次決策', () => {
     const second = autoDrive(route, INITIAL_DRIVER_STATE, start);
     expect(second).toEqual(first);
     expect(INITIAL_DRIVER_STATE).toEqual({ segmentIndex: 0, pathEdge: 0, braking: false, arcStart: null });
-    expect(first.input).toEqual({ throttle: 1, steer: 0, handbrake: false });
+    expect(first.input).toEqual({ throttle: 1, steer: 0 });
   });
 
-  test('一段跑完才換下一段；整條跑完之後一直拉著手煞車', () => {
+  test('一段跑完才換下一段；整條跑完之後一直踩著剎車', () => {
     const done = { ...INITIAL_DRIVER_STATE, segmentIndex: 2 };
     expect(autoDrive(route, done, start)).toEqual({
-      input: { throttle: 0, steer: 0, handbrake: true },
+      input: { throttle: 0, steer: 0, brake: true },
       state: done,
     });
-    // 倒車那一段：車還在動就不會開始（先拉手煞車等它停）。
+    // 倒車那一段：車還在動就不會開始（先踩剎車等它停）。
     const rolling = { ...start, speedMps: mphToMps(2) };
     const waiting = autoDrive(route, { ...INITIAL_DRIVER_STATE, segmentIndex: 1 }, rolling);
-    expect(waiting.input).toEqual({ throttle: 0, steer: 0, handbrake: true });
+    expect(waiting.input).toEqual({ throttle: 0, steer: 0, brake: true });
     expect(waiting.state.arcStart).toBeNull();
   });
 

@@ -19,11 +19,11 @@ describe('示範路線 demoRoute', () => {
     expect(DEMO_ROUTE_STEPS).toBe(DEMO_ROUTE_SECONDS * PHYSICS_HZ);
   });
 
-  test('一開始直行加速，結尾拉手煞車；路線結束後一直拉著', () => {
-    expect(demoInputAtStep(0)).toEqual({ throttle: 1, steer: 0, handbrake: false });
-    expect(demoInputAtStep(DEMO_ROUTE_STEPS - 1)).toEqual({ throttle: 0, steer: 0, handbrake: true });
-    expect(demoInputAtStep(DEMO_ROUTE_STEPS)).toEqual({ throttle: 0, steer: 0, handbrake: true });
-    expect(demoInputAtStep(DEMO_ROUTE_STEPS * 10)).toEqual({ throttle: 0, steer: 0, handbrake: true });
+  test('一開始直行加速，結尾踩剎車；路線結束後一直踩著', () => {
+    expect(demoInputAtStep(0)).toEqual({ throttle: 1, steer: 0 });
+    expect(demoInputAtStep(DEMO_ROUTE_STEPS - 1)).toEqual({ throttle: 0, steer: 0, brake: true });
+    expect(demoInputAtStep(DEMO_ROUTE_STEPS)).toEqual({ throttle: 0, steer: 0, brake: true });
+    expect(demoInputAtStep(DEMO_ROUTE_STEPS * 10)).toEqual({ throttle: 0, steer: 0, brake: true });
   });
 
   test('分段邊界落在整數步：第 104 步還在直行，第 105 步（1.75 秒）開始右轉', () => {
@@ -31,12 +31,12 @@ describe('示範路線 demoRoute', () => {
     expect(demoInputAtStep(105).steer).toBe(1);
   });
 
-  test('路線包含前進、右轉、左轉、手煞車', () => {
+  test('路線包含前進、右轉、左轉、踩剎車', () => {
     const inputs = Array.from({ length: DEMO_ROUTE_STEPS }, (_, step) => demoInputAtStep(step));
     expect(inputs.some((input) => input.throttle === 1)).toBe(true);
     expect(inputs.some((input) => input.steer > 0)).toBe(true);
     expect(inputs.some((input) => input.steer < 0)).toBe(true);
-    expect(inputs.some((input) => input.handbrake)).toBe(true);
+    expect(inputs.some((input) => input.brake === true)).toBe(true);
   });
 
   test('0 步就是起點', () => {

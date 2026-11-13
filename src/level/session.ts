@@ -76,9 +76,9 @@ const MAX_BOUNCE_SPEED_MPS = mphToMps(COLLISION_RULES.maxBounceSpeedMph);
 
 const NO_OBSTACLES: readonly Obb[] = [];
 
-/** 這一步有沒有駕駛輸入（油門、倒車、方向盤、手煞車、腳剎任一個）。計時從第一次有輸入的那一步開始。 */
+/** 這一步有沒有駕駛輸入（油門、倒車、方向盤、剎車任一個）。計時從第一次有輸入的那一步開始。 */
 export function hasDriveInput(input: DriveInput): boolean {
-  return input.throttle !== 0 || input.steer !== 0 || input.handbrake || input.brake === true;
+  return input.throttle !== 0 || input.steer !== 0 || input.brake === true;
 }
 
 /** 開新的一局：車在起始狀態、判定進度為 0、未停妥、計時未開始、碰撞 0 次。 */

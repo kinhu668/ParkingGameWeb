@@ -96,27 +96,25 @@ export const NO_TOUCH_DRIVE: TouchDriveState = { wheelAngleRad: 0, gas: false, b
 
 /**
  * 觸控狀態 → 駕駛輸入。油門踏板只有一顆：方向是目前檔位允許的方向——
- * 自排與手排 D 檔向前，手排 R 檔向後（要倒車先點掛 R）。剎車踏板是腳剎。
+ * 自排與手排 D 檔向前，手排 R 檔向後（要倒車先點掛 R）。剎車踏板對應 `brake`。
  */
 export function touchDriveInput(state: TouchDriveState, gearbox: Gearbox): DriveInput {
   const direction = gearbox.manual && gearbox.gear === 'reverse' ? -1 : 1;
   return {
     throttle: state.gas ? direction : 0,
     steer: steerFromWheelAngle(state.wheelAngleRad),
-    handbrake: false,
     brake: state.brake,
   };
 }
 
 /**
  * 鍵盤與觸控的輸入合在一起（外接鍵盤與螢幕可以同時用）：
- * 油門以鍵盤為主，鍵盤沒踩才看觸控；轉向相加後夾在 ±1；手煞車與腳剎任一邊踩著就算。
+ * 油門以鍵盤為主，鍵盤沒踩才看觸控；轉向相加後夾在 ±1；剎車任一邊踩著就算。
  */
 export function mergeDriveInputs(keyboard: DriveInput, touch: DriveInput): DriveInput {
   return {
     throttle: keyboard.throttle !== 0 ? keyboard.throttle : touch.throttle,
     steer: Math.min(Math.max(keyboard.steer + touch.steer, -1), 1),
-    handbrake: keyboard.handbrake || touch.handbrake,
     brake: (keyboard.brake ?? false) || (touch.brake ?? false),
   };
 }

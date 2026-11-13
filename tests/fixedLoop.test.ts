@@ -7,10 +7,10 @@ const START: VehicleState = { x: 0, z: 0, headingRad: 0, speedMps: 0, steerRad: 
 
 /** 依「第幾步物理」決定輸入，所以最後狀態只取決於總共跑了幾步。 */
 function scriptedInput(step: number): DriveInput {
-  if (step < 40) return { throttle: 1, steer: 0, handbrake: false };
-  if (step < 80) return { throttle: 1, steer: 1, handbrake: false };
-  if (step < 100) return { throttle: 0, steer: -1, handbrake: false };
-  return { throttle: -1, steer: -0.5, handbrake: false };
+  if (step < 40) return { throttle: 1, steer: 0 };
+  if (step < 80) return { throttle: 1, steer: 1 };
+  if (step < 100) return { throttle: 0, steer: -1 };
+  return { throttle: -1, steer: -0.5 };
 }
 
 /** 照主迴圈的用法餵一串幀時間：每幀推進累加器，要跑幾步就跑幾步物理。 */

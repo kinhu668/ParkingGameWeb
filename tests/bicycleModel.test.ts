@@ -16,10 +16,10 @@ const DIGITS = 9;
 const FULL_TURN_RAD = 2 * Math.PI;
 
 const AT_REST: VehicleState = { x: 0, z: 0, headingRad: 0, speedMps: 0, steerRad: 0 };
-const IDLE: DriveInput = { throttle: 0, steer: 0, handbrake: false };
+const IDLE: DriveInput = { throttle: 0, steer: 0 };
 const FULL_THROTTLE: DriveInput = { ...IDLE, throttle: 1 };
 const FULL_REVERSE: DriveInput = { ...IDLE, throttle: -1 };
-const HANDBRAKE: DriveInput = { ...IDLE, handbrake: true };
+const BRAKE: DriveInput = { ...IDLE, brake: true };
 const STEER_RIGHT: DriveInput = { ...IDLE, steer: 1 };
 const STEER_LEFT: DriveInput = { ...IDLE, steer: -1 };
 
@@ -202,46 +202,46 @@ describe('反向油門煞車', () => {
   });
 });
 
-describe('手煞車', () => {
-  test('18 mph 手煞車：0.6 秒停下，停在剛好 0', () => {
-    const states = trace(AT_TOP_SPEED, HANDBRAKE, stepsIn(1));
-    expect(speedMph(states[stepsIn(0.3) - 1] ?? AT_REST)).toBeCloseTo(9, DIGITS);
-    expect(speedMph(states[stepsIn(0.6) - 1] ?? AT_TOP_SPEED)).toBeCloseTo(0, DIGITS);
+describe('剎車', () => {
+  test('18 mph 踩剎車：1 秒停下，停在剛好 0', () => {
+    const states = trace(AT_TOP_SPEED, BRAKE, stepsIn(1.5));
+    expect(speedMph(states[stepsIn(0.5) - 1] ?? AT_REST)).toBeCloseTo(9, DIGITS);
+    expect(speedMph(states[stepsIn(1) - 1] ?? AT_TOP_SPEED)).toBeCloseTo(0, DIGITS);
     for (const state of states) {
       expect(state.speedMps).toBeGreaterThanOrEqual(0);
     }
-    for (const state of states.slice(stepsIn(0.6))) {
+    for (const state of states.slice(stepsIn(1))) {
       expect(state.speedMps).toBe(0);
     }
   });
 
-  test('手煞車比滑行快', () => {
+  test('踩剎車比滑行快，走的距離也比較短', () => {
     const steps = stepsIn(0.5);
-    const withHandbrake = run(AT_TOP_SPEED, HANDBRAKE, steps);
+    const braking = run(AT_TOP_SPEED, BRAKE, steps);
     const coasting = run(AT_TOP_SPEED, IDLE, steps);
-    expect(withHandbrake.speedMps).toBeLessThan(coasting.speedMps);
-    // 走的距離也比較短（heading 0，往 −Z 走）。
-    expect(-withHandbrake.z).toBeLessThan(-coasting.z);
+    expect(braking.speedMps).toBeLessThan(coasting.speedMps);
+    // heading 0，往 −Z 走。
+    expect(-braking.z).toBeLessThan(-coasting.z);
   });
 
-  test('手煞車按住時油門無效：前進或倒車油門的結果都和沒踩油門一樣', () => {
-    const steps = stepsIn(1);
-    const noThrottle = trace(AT_TOP_SPEED, HANDBRAKE, steps);
-    expect(trace(AT_TOP_SPEED, { ...HANDBRAKE, throttle: 1 }, steps)).toEqual(noThrottle);
-    expect(trace(AT_TOP_SPEED, { ...HANDBRAKE, throttle: -1 }, steps)).toEqual(noThrottle);
+  test('踩著剎車時油門無效：前進或倒車油門的結果都和沒踩油門一樣', () => {
+    const steps = stepsIn(1.5);
+    const noThrottle = trace(AT_TOP_SPEED, BRAKE, steps);
+    expect(trace(AT_TOP_SPEED, { ...BRAKE, throttle: 1 }, steps)).toEqual(noThrottle);
+    expect(trace(AT_TOP_SPEED, { ...BRAKE, throttle: -1 }, steps)).toEqual(noThrottle);
   });
 
-  test('靜止時按住手煞車再踩油門：車不動', () => {
-    const forwardAttempt = run(AT_REST, { ...HANDBRAKE, throttle: 1 }, stepsIn(1));
-    const reverseAttempt = run(AT_REST, { ...HANDBRAKE, throttle: -1 }, stepsIn(1));
+  test('靜止時踩著剎車再踩油門：車不動', () => {
+    const forwardAttempt = run(AT_REST, { ...BRAKE, throttle: 1 }, stepsIn(1));
+    const reverseAttempt = run(AT_REST, { ...BRAKE, throttle: -1 }, stepsIn(1));
     expect(forwardAttempt).toEqual(AT_REST);
     expect(reverseAttempt).toEqual(AT_REST);
   });
 
-  test('倒車中手煞車：0.3 秒停下，不變號', () => {
+  test('倒車中踩剎車：0.5 秒停下，不變號', () => {
     const start = { ...AT_REST, speedMps: -VEHICLE_CONFIG_SI.maxReverseSpeedMps };
-    const states = trace(start, { ...HANDBRAKE, throttle: -1 }, stepsIn(0.5));
-    expect(speedMph(states[stepsIn(0.3) - 1] ?? start)).toBeCloseTo(0, DIGITS);
+    const states = trace(start, { ...BRAKE, throttle: -1 }, stepsIn(1));
+    expect(speedMph(states[stepsIn(0.5) - 1] ?? start)).toBeCloseTo(0, DIGITS);
     for (const state of states) {
       expect(state.speedMps).toBeLessThanOrEqual(0);
     }
@@ -421,7 +421,7 @@ describe('單步的積分公式', () => {
     speedMps: VEHICLE_CONFIG_SI.maxSpeedMps,
     steerRad: VEHICLE_CONFIG_SI.maxSteerRad,
   };
-  const input: DriveInput = { throttle: 1, steer: 1, handbrake: false };
+  const input: DriveInput = { throttle: 1, steer: 1 };
   const next = stepVehicle(start, input, DT);
   const expectedTurn =
     (start.speedMps / VEHICLE_CONFIG_SI.wheelbaseM) * Math.tan(start.steerRad) * DT;
@@ -492,7 +492,7 @@ describe('全鎖定速繞圈', () => {
 
   test('前進右轉：後軸軌跡半徑在 1% 內，順時針繞滿一圈', () => {
     const result = circle(
-      { throttle: 1, steer: 1, handbrake: false },
+      { throttle: 1, steer: 1 },
       VEHICLE_CONFIG_SI.maxSpeedMps,
       VEHICLE_CONFIG_SI.maxSteerRad,
       4,
@@ -507,7 +507,7 @@ describe('全鎖定速繞圈', () => {
 
   test('前進左轉：同樣半徑，逆時針繞滿一圈', () => {
     const result = circle(
-      { throttle: 1, steer: -1, handbrake: false },
+      { throttle: 1, steer: -1 },
       VEHICLE_CONFIG_SI.maxSpeedMps,
       -VEHICLE_CONFIG_SI.maxSteerRad,
       4,
@@ -519,7 +519,7 @@ describe('全鎖定速繞圈', () => {
 
   test('倒車右轉：同樣半徑，逆時針繞滿一圈', () => {
     const result = circle(
-      { throttle: -1, steer: 1, handbrake: false },
+      { throttle: -1, steer: 1 },
       -VEHICLE_CONFIG_SI.maxReverseSpeedMps,
       VEHICLE_CONFIG_SI.maxSteerRad,
       8,
@@ -554,8 +554,8 @@ describe('靜止時打方向盤', () => {
     expect(states.at(-1)?.steerRad).toBe(-VEHICLE_CONFIG_SI.maxSteerRad);
   });
 
-  test('按住手煞車打方向盤也不動', () => {
-    const state = run(parked, { throttle: 1, steer: 1, handbrake: true }, stepsIn(1));
+  test('踩著剎車打方向盤也不動', () => {
+    const state = run(parked, { throttle: 1, steer: 1, brake: true }, stepsIn(1));
     expect(state.x).toBe(parked.x);
     expect(state.z).toBe(parked.z);
     expect(state.headingRad).toBe(parked.headingRad);
@@ -563,15 +563,15 @@ describe('靜止時打方向盤', () => {
 });
 
 describe('可重現', () => {
-  /** 一段混合前進、轉彎、煞車、倒車、手煞車的輸入。 */
+  /** 一段混合前進、轉彎、滑行、倒車、踩剎車的輸入。 */
   function scriptedInput(step: number): DriveInput {
-    if (step < 90) return { throttle: 1, steer: 0, handbrake: false };
-    if (step < 200) return { throttle: 1, steer: 1, handbrake: false };
-    if (step < 260) return { throttle: 0, steer: -0.4, handbrake: false };
-    if (step < 330) return { throttle: -1, steer: -1, handbrake: false };
-    if (step < 420) return { throttle: -1, steer: 0.7, handbrake: false };
-    if (step < 450) return { throttle: 1, steer: 0, handbrake: true };
-    return { throttle: 1, steer: -1, handbrake: false };
+    if (step < 90) return { throttle: 1, steer: 0 };
+    if (step < 200) return { throttle: 1, steer: 1 };
+    if (step < 260) return { throttle: 0, steer: -0.4 };
+    if (step < 330) return { throttle: -1, steer: -1 };
+    if (step < 420) return { throttle: -1, steer: 0.7 };
+    if (step < 450) return { throttle: 1, steer: 0, brake: true };
+    return { throttle: 1, steer: -1 };
   }
 
   function drive(): VehicleState[] {
@@ -616,7 +616,7 @@ describe('可重現', () => {
   test('stepVehicle 不改動傳入的狀態', () => {
     const start = Object.freeze({ ...AT_TOP_SPEED, steerRad: 0.1 });
     const copy = { ...start };
-    stepVehicle(start, { throttle: 1, steer: 1, handbrake: false }, DT);
+    stepVehicle(start, { throttle: 1, steer: 1 }, DT);
     expect(start).toEqual(copy);
   });
 });

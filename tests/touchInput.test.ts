@@ -108,7 +108,6 @@ describe('觸控 → 駕駛輸入', () => {
     expect(touchDriveInput(NO_TOUCH_DRIVE, INITIAL_GEARBOX)).toEqual({
       throttle: 0,
       steer: 0,
-      handbrake: false,
       brake: false,
     });
   });
@@ -129,9 +128,9 @@ describe('觸控 → 駕駛輸入', () => {
     }
   });
 
-  test('剎車踏板是腳剎，不是手煞車；可以與油門同時踩', () => {
+  test('剎車踏板是腳剎；可以與油門同時踩', () => {
     const both = touchDriveInput({ wheelAngleRad: 0, gas: true, brake: true }, INITIAL_GEARBOX);
-    expect(both).toMatchObject({ throttle: 1, brake: true, handbrake: false });
+    expect(both).toMatchObject({ throttle: 1, brake: true });
   });
 
   test('手排 R 檔踩油門 → 車真的往後走；踩剎車 → 慢下來', () => {
@@ -154,21 +153,21 @@ describe('觸控 → 駕駛輸入', () => {
 });
 
 describe('鍵盤與觸控合併', () => {
-  const NONE: DriveInput = { throttle: 0, steer: 0, handbrake: false, brake: false };
+  const NONE: DriveInput = { throttle: 0, steer: 0, brake: false };
 
   test('只有一邊有輸入就是那一邊；鍵盤的行為不變', () => {
-    const keyboard: DriveInput = { throttle: -1, steer: 1, handbrake: true, brake: false };
+    const keyboard: DriveInput = { throttle: -1, steer: 1, brake: false };
     expect(mergeDriveInputs(keyboard, NONE)).toEqual(keyboard);
-    const touch: DriveInput = { throttle: 1, steer: -0.4, handbrake: false, brake: true };
+    const touch: DriveInput = { throttle: 1, steer: -0.4, brake: true };
     expect(mergeDriveInputs(NONE, touch)).toEqual(touch);
   });
 
   test('油門以鍵盤為主；轉向相加後夾住；剎車任一邊踩著就算', () => {
     const merged = mergeDriveInputs(
-      { throttle: -1, steer: 1, handbrake: false },
-      { throttle: 1, steer: 0.5, handbrake: false, brake: true },
+      { throttle: -1, steer: 1 },
+      { throttle: 1, steer: 0.5, brake: true },
     );
-    expect(merged).toEqual({ throttle: -1, steer: 1, handbrake: false, brake: true });
+    expect(merged).toEqual({ throttle: -1, steer: 1, brake: true });
     expect(mergeDriveInputs({ ...NONE, steer: -1 }, { ...NONE, steer: 0.25 }).steer).toBeCloseTo(-0.75, 9);
   });
 });

@@ -32,9 +32,7 @@ export interface DriveInput {
   readonly throttle: -1 | 0 | 1;
   /** 方向盤：−1（左打到底）到 +1（右打到底），0 = 放開。超出範圍會被夾住。 */
   readonly steer: number;
-  /** 手煞車是否按住。 */
-  readonly handbrake: boolean;
-  /** 腳剎是否踩著；不填 = 沒踩（照腳本開的路線用不到腳剎）。比手煞車緩，力道與反向油門的煞車相同。 */
+  /** 剎車是否踩著；不填 = 沒踩。力道與反向油門的煞車相同。 */
   readonly brake?: boolean;
 }
 
@@ -77,12 +75,9 @@ function nextSteer(steerRad: number, steerInput: number, dtSeconds: number): num
   );
 }
 
-/** 步驟 2：車速。優先順序：手煞車 → 腳剎 → 沒油門滑行 → 反向油門煞車 → 同向（或靜止）加速。 */
+/** 步驟 2：車速。優先順序：剎車 → 沒油門滑行 → 反向油門煞車 → 同向（或靜止）加速。 */
 function nextSpeed(speedMps: number, input: DriveInput, dtSeconds: number): number {
-  if (input.handbrake) {
-    return moveToward(speedMps, 0, VEHICLE_CONFIG_SI.handbrakeMps2 * dtSeconds);
-  }
-  // 腳剎：不論有沒有踩油門都只減速，停在剛好 0。
+  // 剎車：不論有沒有踩油門都只減速，停在剛好 0。
   if (input.brake === true) {
     return moveToward(speedMps, 0, VEHICLE_CONFIG_SI.brakeMps2 * dtSeconds);
   }

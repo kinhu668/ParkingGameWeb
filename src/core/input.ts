@@ -45,7 +45,6 @@ export function driveInputFromHeldCodes(
   return {
     throttle: axis(anyHeld(bindings.throttle, heldCodes), anyHeld(bindings.reverse, heldCodes)),
     steer: axis(anyHeld(bindings.steerRight, heldCodes), anyHeld(bindings.steerLeft, heldCodes)),
-    handbrake: anyHeld(bindings.handbrake, heldCodes),
     brake: anyHeld(bindings.brake, heldCodes),
   };
 }

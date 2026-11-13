@@ -2,9 +2,9 @@
 // 純函式，不 import three、不碰 DOM。內部一律公尺、秒、弧度。
 // 路線是「段」的陣列，兩種段：
 //   path：純追蹤（pure pursuit，以後軸為參考點）跟一條折線；最後一點是「車身中心」要停的位置，
-//         接近終點減速、手煞車停住。
+//         接近終點減速、踩剎車停住。
 //   arc ：先在原地把方向盤打到位，再走固定距離（後軸走的弧長）。倒車入庫、平行停車的那幾把用它。
-// 每一段都在車完全停住之後才換下一段；整條路線跑完就一直拉著手煞車。
+// 每一段都在車完全停住之後才換下一段；整條路線跑完就一直踩著剎車。
 import { forward, headingDelta, right, type GroundVector } from '../core/heading';
 import { ftToM, mphPerSToMps2, mphToMps } from '../core/units';
 import type { DriveInput, VehicleState } from '../vehicle/bicycleModel';
@@ -70,7 +70,7 @@ const DRIVER_TUNING_US = {
   minLookaheadFt: 5,
   /** 接近終點時的減速度：車速上限 = √(蠕行² + 2 × 減速度 × 剩餘距離)。 */
   approachDecelMphPerS: 7,
-  /** 最後一小段的蠕行車速；用它進手煞車，停的位置誤差才小。 */
+  /** 最後一小段的蠕行車速；用它進剎車，停的位置誤差才小。 */
   creepMph: 1.5,
   /** 車速低於「目標 − 這個值」才補油門，高於目標就放開滑行，免得每一步都在油門與滑行間切換。 */
   speedBandMph: 0.4,
@@ -87,8 +87,8 @@ const STEER_SETTLED_RAD = (DRIVER_TUNING_US.steerSettledDeg * Math.PI) / 180;
 const WHEELBASE_M = VEHICLE_CONFIG_SI.wheelbaseM;
 const HALF_WHEELBASE_M = WHEELBASE_M / 2;
 
-/** 路線跑完之後（以及每一段收尾時）的輸入：拉住手煞車。 */
-const HOLD_INPUT: DriveInput = { throttle: 0, steer: 0, handbrake: true };
+/** 路線跑完之後（以及每一段收尾時）的輸入：踩住剎車。 */
+const HOLD_INPUT: DriveInput = { throttle: 0, steer: 0, brake: true };
 
 function gearSign(gear: RouteGear): 1 | -1 {
   return gear === 'forward' ? 1 : -1;
@@ -100,9 +100,9 @@ function rearAxle(vehicle: VehicleState): GroundVector {
   return { x: vehicle.x - ahead.x * HALF_WHEELBASE_M, z: vehicle.z - ahead.z * HALF_WHEELBASE_M };
 }
 
-/** 用手煞車從這個車速停下來要走的距離。 */
-function handbrakeDistanceM(speedMps: number): number {
-  return speedMps ** 2 / (2 * VEHICLE_CONFIG_SI.handbrakeMps2);
+/** 踩剎車從這個車速停下來要走的距離。 */
+function brakingDistanceM(speedMps: number): number {
+  return speedMps ** 2 / (2 * VEHICLE_CONFIG_SI.brakeMps2);
 }
 
 /**
@@ -180,7 +180,7 @@ function drivePath(segment: PathSegment, state: DriverState, vehicle: VehicleSta
   const remainingM = totalM - axleS - sign * HALF_WHEELBASE_M;
 
   const speedMps = Math.abs(vehicle.speedMps);
-  const braking = state.braking || remainingM <= handbrakeDistanceM(speedMps);
+  const braking = state.braking || remainingM <= brakingDistanceM(speedMps);
   const nextState: DriverState = { ...state, pathEdge: edge, braking };
   if (braking && vehicle.speedMps === 0) {
     return { input: HOLD_INPUT, state: nextState, done: true };
@@ -199,10 +199,10 @@ function drivePath(segment: PathSegment, state: DriverState, vehicle: VehicleSta
   const steer = Math.min(Math.max(steerRad / VEHICLE_CONFIG_SI.maxSteerRad, -1), 1);
 
   if (braking) {
-    return { input: { throttle: 0, steer, handbrake: true }, state: nextState, done: false };
+    return { input: { throttle: 0, steer, brake: true }, state: nextState, done: false };
   }
   return {
-    input: { throttle: throttleFor(vehicle, segment.gear, segment.speedMps, remainingM), steer, handbrake: false },
+    input: { throttle: throttleFor(vehicle, segment.gear, segment.speedMps, remainingM), steer },
     state: nextState,
     done: false,
   };
@@ -217,9 +217,9 @@ function arcTravelledM(segment: ArcSegment, start: NonNullable<DriverState['arcS
   return Math.abs(headingDelta(start.headingRad, vehicle.headingRad)) * radiusM;
 }
 
-/** arc：原地打方向盤 → 走固定距離 → 手煞車停住。 */
+/** arc：原地打方向盤 → 走固定距離 → 踩剎車停住。 */
 function driveArc(segment: ArcSegment, state: DriverState, vehicle: VehicleState): SegmentStep {
-  const hold: DriveInput = { throttle: 0, steer: segment.steer, handbrake: true };
+  const hold: DriveInput = { throttle: 0, steer: segment.steer, brake: true };
   let start = state.arcStart;
   if (start === null) {
     const targetRad = segment.steer * VEHICLE_CONFIG_SI.maxSteerRad;
@@ -230,7 +230,7 @@ function driveArc(segment: ArcSegment, state: DriverState, vehicle: VehicleState
     start = { x: vehicle.x, z: vehicle.z, headingRad: vehicle.headingRad };
   }
   const remainingM = segment.distanceM - arcTravelledM(segment, start, vehicle);
-  const braking = state.braking || remainingM <= handbrakeDistanceM(Math.abs(vehicle.speedMps));
+  const braking = state.braking || remainingM <= brakingDistanceM(Math.abs(vehicle.speedMps));
   const nextState: DriverState = { ...state, arcStart: start, braking };
   if (braking) {
     return { input: hold, state: nextState, done: vehicle.speedMps === 0 };
@@ -239,7 +239,6 @@ function driveArc(segment: ArcSegment, state: DriverState, vehicle: VehicleState
     input: {
       throttle: throttleFor(vehicle, segment.gear, segment.speedMps, remainingM),
       steer: segment.steer,
-      handbrake: false,
     },
     state: nextState,
     done: false,
@@ -248,7 +247,7 @@ function driveArc(segment: ArcSegment, state: DriverState, vehicle: VehicleState
 
 /**
  * 一次決策：看現在的車輛狀態，回傳這一步的輸入與新的進度。
- * 一段跑完（車停住）就在同一次決策裡接下一段；整條跑完回傳「拉住手煞車」。
+ * 一段跑完（車停住）就在同一次決策裡接下一段；整條跑完回傳「踩住剎車」。
  */
 export function autoDrive(
   route: Route,

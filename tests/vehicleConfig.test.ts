@@ -8,11 +8,10 @@ describe('VEHICLE_CONFIG_US 與規格第 4 節逐項一致', () => {
     expect(VEHICLE_CONFIG_US.maxReverseSpeedMph).toBe(9);
   });
 
-  test('加速度 6、煞車 18、滑行減速 3、手煞車 30 mph/s', () => {
+  test('加速度 6、煞車 18、滑行減速 3 mph/s', () => {
     expect(VEHICLE_CONFIG_US.accelerationMphPerS).toBe(6);
     expect(VEHICLE_CONFIG_US.brakeMphPerS).toBe(18);
     expect(VEHICLE_CONFIG_US.coastDecelMphPerS).toBe(3);
-    expect(VEHICLE_CONFIG_US.handbrakeMphPerS).toBe(30);
   });
 
   test('最大轉向角 35°、打方向盤 90°/s、回正 120°/s', () => {
@@ -28,14 +27,13 @@ describe('VEHICLE_CONFIG_US 與規格第 4 節逐項一致', () => {
     expect(VEHICLE_CONFIG_US.heightFt).toBe(4.6);
   });
 
-  test('只有規格列出的 13 個數值，沒有多也沒有少', () => {
+  test('只有這 12 個數值，沒有多也沒有少', () => {
     expect(VEHICLE_CONFIG_US).toEqual({
       maxSpeedMph: 18,
       maxReverseSpeedMph: 9,
       accelerationMphPerS: 6,
       brakeMphPerS: 18,
       coastDecelMphPerS: 3,
-      handbrakeMphPerS: 30,
       maxSteerDeg: 35,
       steerRateDegPerS: 90,
       steerReturnRateDegPerS: 120,
@@ -55,7 +53,6 @@ describe('VEHICLE_CONFIG_SI 等於經 units.ts 換算的結果', () => {
       accelerationMps2: mphPerSToMps2(VEHICLE_CONFIG_US.accelerationMphPerS),
       brakeMps2: mphPerSToMps2(VEHICLE_CONFIG_US.brakeMphPerS),
       coastDecelMps2: mphPerSToMps2(VEHICLE_CONFIG_US.coastDecelMphPerS),
-      handbrakeMps2: mphPerSToMps2(VEHICLE_CONFIG_US.handbrakeMphPerS),
       maxSteerRad: degToRad(VEHICLE_CONFIG_US.maxSteerDeg),
       steerRateRadPerS: degToRad(VEHICLE_CONFIG_US.steerRateDegPerS),
       steerReturnRateRadPerS: degToRad(VEHICLE_CONFIG_US.steerReturnRateDegPerS),
@@ -72,11 +69,10 @@ describe('VEHICLE_CONFIG_SI 等於經 units.ts 換算的結果', () => {
     expect(VEHICLE_CONFIG_SI.maxReverseSpeedMps).toBeCloseTo(4.02336, 12);
   });
 
-  test('加減速：6／18／3／30 mph/s = 2.68224／8.04672／1.34112／13.4112 m/s²', () => {
+  test('加減速：6／18／3 mph/s = 2.68224／8.04672／1.34112 m/s²', () => {
     expect(VEHICLE_CONFIG_SI.accelerationMps2).toBeCloseTo(2.68224, 12);
     expect(VEHICLE_CONFIG_SI.brakeMps2).toBeCloseTo(8.04672, 12);
     expect(VEHICLE_CONFIG_SI.coastDecelMps2).toBeCloseTo(1.34112, 12);
-    expect(VEHICLE_CONFIG_SI.handbrakeMps2).toBeCloseTo(13.4112, 12);
   });
 
   test('轉向：35° = 7π/36、90°/s = π/2、120°/s = 2π/3', () => {

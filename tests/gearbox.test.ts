@@ -11,7 +11,7 @@ import {
   type Gearbox,
 } from '../src/vehicle/gearbox';
 
-const IDLE: DriveInput = { throttle: 0, steer: 0, handbrake: false, brake: false };
+const IDLE: DriveInput = { throttle: 0, steer: 0, brake: false };
 const FORWARD: DriveInput = { ...IDLE, throttle: 1 };
 const BACKWARD: DriveInput = { ...IDLE, throttle: -1 };
 const AT_REST: VehicleState = { x: 0, z: 0, headingRad: 0, speedMps: 0, steerRad: 0 };
@@ -90,12 +90,11 @@ describe('手排（按了掛 D／掛 R）', () => {
     expect(inputForGear(IDLE, shiftTo('reverse'))).toBe(IDLE);
   });
 
-  test('方向盤與手煞車不受檔位影響', () => {
-    const pressed: DriveInput = { throttle: 1, steer: -1, handbrake: true, brake: false };
+  test('方向盤不受檔位影響', () => {
+    const pressed: DriveInput = { throttle: 1, steer: -1, brake: false };
     expect(inputForGear(pressed, shiftTo('reverse'))).toEqual({
       throttle: 0,
       steer: -1,
-      handbrake: true,
       brake: true,
     });
   });
@@ -164,7 +163,7 @@ describe('重來：回到自排 D 檔', () => {
     ['只按著轉向', STEER_ONLY],
     ['按著油門', FORWARD],
     ['按著油門與轉向', { ...FORWARD, steer: -1 as const }],
-    ['按著腳剎與手煞車', { ...IDLE, brake: true, handbrake: true }],
+    ['按著腳剎', { ...IDLE, brake: true }],
   ])('手排 R 檔重來後%s：一直是自排 D 檔，車不會往後', (_name, pressed) => {
     let gearbox = gearboxForFrame(shiftTo('reverse'), RESTART);
     let vehicle = AT_REST;
@@ -178,7 +177,7 @@ describe('重來：回到自排 D 檔', () => {
       expect(gearbox).toBe(INITIAL_GEARBOX);
       expect(vehicle.speedMps).toBeGreaterThanOrEqual(0);
     }
-    expect(vehicle.speedMps > 0).toBe(pressed.throttle === 1 && pressed.handbrake === false);
+    expect(vehicle.speedMps > 0).toBe(pressed.throttle === 1);
   });
 
   test('重來之後又按了掛 R（同一幀或之後）：R 檔手排——這是玩家新下的指令', () => {

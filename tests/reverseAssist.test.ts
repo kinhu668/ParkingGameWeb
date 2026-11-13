@@ -198,7 +198,7 @@ describe('引導線的幾何', () => {
     let travelledM = 0;
     while (travelledM < 3) {
       // 直接設定車速與轉向角，不經過油門與方向盤的動態。
-      const stepped = stepVehicle(state, { throttle: 0, steer: 0, handbrake: false }, dt);
+      const stepped = stepVehicle(state, { throttle: 0, steer: 0 }, dt);
       state = { ...stepped, speedMps, steerRad };
       travelledM += Math.abs(stepped.speedMps) * dt;
     }

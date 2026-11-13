@@ -15,7 +15,6 @@ describe('driveInputFromHeldCodes', () => {
     expect(driveInputFromHeldCodes(held())).toEqual({
       throttle: 0,
       steer: 0,
-      handbrake: false,
       brake: false,
     });
   });
@@ -34,14 +33,21 @@ describe('driveInputFromHeldCodes', () => {
     expect(driveInputFromHeldCodes(held('ArrowRight')).steer).toBe(1);
   });
 
-  test('空白鍵與 / 是手煞車，不是腳剎', () => {
-    for (const code of ['Space', 'Slash']) {
-      expect(driveInputFromHeldCodes(held(code))).toMatchObject({ handbrake: true, brake: false });
-    }
+  test('逗號是剎車', () => {
+    expect(driveInputFromHeldCodes(held('Comma'))).toEqual({ throttle: 0, steer: 0, brake: true });
   });
 
-  test('逗號是腳剎，不是手煞車', () => {
-    expect(driveInputFromHeldCodes(held('Comma'))).toMatchObject({ handbrake: false, brake: true });
+  test('空白鍵與 / 預設沒有綁任何動作：按住不影響駕駛輸入', () => {
+    expect(driveInputFromHeldCodes(held('Space', 'Slash'))).toEqual({
+      throttle: 0,
+      steer: 0,
+      brake: false,
+    });
+  });
+
+  test('空白鍵可以改綁成剎車', () => {
+    const custom: ControlBindings = { ...DEFAULT_BINDINGS, brake: ['Comma', 'Space'] };
+    expect(driveInputFromHeldCodes(held('Space'), custom).brake).toBe(true);
   });
 
   test('照傳入的綁定算：改綁之後舊的鍵不再有作用', () => {
@@ -57,7 +63,6 @@ describe('driveInputFromHeldCodes', () => {
     expect(driveInputFromHeldCodes(held('KeyW', 'ArrowDown', 'Comma'), custom)).toEqual({
       throttle: 0,
       steer: 0,
-      handbrake: false,
       brake: false,
     });
   });
@@ -74,12 +79,11 @@ describe('driveInputFromHeldCodes', () => {
     expect(driveInputFromHeldCodes(held('KeyD', 'ArrowRight')).steer).toBe(1);
   });
 
-  test('可以同時油門、轉向、手煞車', () => {
-    expect(driveInputFromHeldCodes(held('KeyW', 'KeyD', 'Space'))).toEqual({
+  test('可以同時油門、轉向、剎車', () => {
+    expect(driveInputFromHeldCodes(held('KeyW', 'KeyD', 'Comma'))).toEqual({
       throttle: 1,
       steer: 1,
-      handbrake: true,
-      brake: false,
+      brake: true,
     });
   });
 
@@ -91,7 +95,6 @@ describe('driveInputFromHeldCodes', () => {
     ).toEqual({
       throttle: 0,
       steer: 0,
-      handbrake: false,
       brake: false,
     });
   });
@@ -198,7 +201,7 @@ describe('attachKeyboardInput：一次性的按鍵（重來、切換鏡頭）', 
     const { target, input } = attach();
     key(target, 'keydown', 'KeyV');
     expect(input.consumeRestart()).toBe(false);
-    expect(input.driveInput()).toEqual({ throttle: 0, steer: 0, handbrake: false, brake: false });
+    expect(input.driveInput()).toEqual({ throttle: 0, steer: 0, brake: false });
     expect(input.consumeToggleCamera()).toBe(true);
 
     key(target, 'keydown', 'Backspace');

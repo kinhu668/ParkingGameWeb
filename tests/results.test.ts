@@ -7,9 +7,9 @@ import { startSession, stepSession, type Session, type SessionLayout } from '../
 import { resultReadout } from '../src/ui/results';
 import type { DriveInput } from '../src/vehicle/bicycleModel';
 
-const IDLE: DriveInput = { throttle: 0, steer: 0, handbrake: false };
-const HANDBRAKE: DriveInput = { throttle: 0, steer: 0, handbrake: true };
-const THROTTLE: DriveInput = { throttle: 1, steer: 0, handbrake: false };
+const IDLE: DriveInput = { throttle: 0, steer: 0 };
+const BRAKE: DriveInput = { throttle: 0, steer: 0, brake: true };
+const THROTTLE: DriveInput = { throttle: 1, steer: 0 };
 
 function run(session: Session, input: DriveInput, steps: number): Session {
   let current = session;
@@ -19,7 +19,7 @@ function run(session: Session, input: DriveInput, steps: number): Session {
   return current;
 }
 
-/** 車一開始就停在車位正中央：拉住手煞車滿判定時間就停妥。 */
+/** 車一開始就停在車位正中央：踩住剎車滿判定時間就停妥。 */
 const IN_SPOT_LAYOUT: SessionLayout = {
   spot: PROTOTYPE_LAYOUT.spot,
   startState: {
@@ -34,11 +34,11 @@ describe('resultReadout', () => {
   test('還沒結束（ready、driving）→ null', () => {
     const ready = startSession(IN_SPOT_LAYOUT);
     expect(resultReadout(ready)).toBeNull();
-    expect(resultReadout(run(ready, HANDBRAKE, 5))).toBeNull();
+    expect(resultReadout(run(ready, BRAKE, 5))).toBeNull();
   });
 
   test('停妥：星數、成績時間、碰撞 n / 上限、角度誤差', () => {
-    const parked = run(startSession(IN_SPOT_LAYOUT), HANDBRAKE, REQUIRED_HOLD_STEPS);
+    const parked = run(startSession(IN_SPOT_LAYOUT), BRAKE, REQUIRED_HOLD_STEPS);
     expect(parked.status).toBe('parked');
     expect(resultReadout(parked)).toEqual({
       outcome: 'parked',
@@ -57,7 +57,7 @@ describe('resultReadout', () => {
       rules: { timeLimitSteps: 90, targetSteps: 60, maxCollisions: 2 },
     };
     // 轉一下方向盤開始計時，之後放著不動直到超時。
-    const started = stepSession(startSession(layout), { throttle: 0, steer: 1, handbrake: false });
+    const started = stepSession(startSession(layout), { throttle: 0, steer: 1 });
     const failed = run(started, IDLE, 200);
     expect(failed.status).toBe('failed');
     expect(resultReadout(failed)).toMatchObject({

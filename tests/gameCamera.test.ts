@@ -251,7 +251,7 @@ describe('跟車鏡頭 chase_near / chase_far', () => {
 });
 
 describe('倒車時跟車鏡頭不翻面', () => {
-  const REVERSE: DriveInput = { throttle: -1, steer: 0, handbrake: false };
+  const REVERSE: DriveInput = { throttle: -1, steer: 0 };
   const START: VehicleState = { x: 0, z: 0, headingRad: 0, speedMps: 0, steerRad: 0 };
 
   /** 從靜止開始用真正的物理倒車，每一步更新鏡頭並回報「鏡頭在車頭方向上的偏移」。 */

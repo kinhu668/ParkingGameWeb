@@ -146,8 +146,8 @@ describe('gearFor：檔位', () => {
 });
 
 describe('hudReadout：由一局的現況算出顯示內容', () => {
-  const THROTTLE: DriveInput = { throttle: 1, steer: 0, handbrake: false };
-  const IDLE_INPUT: DriveInput = { throttle: 0, steer: 0, handbrake: false };
+  const THROTTLE: DriveInput = { throttle: 1, steer: 0 };
+  const IDLE_INPUT: DriveInput = { throttle: 0, steer: 0 };
 
   function repeat(session: Session, input: DriveInput, steps: number): Session {
     let current = session;
