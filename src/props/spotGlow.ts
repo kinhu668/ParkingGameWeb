@@ -146,6 +146,15 @@ export function glowVeilCameraFade(distanceM: number): number {
   return t * t * (3 - 2 * t);
 }
 
+/** 鏡頭在離地 cameraYM 的高度時光幕還剩多少（0–1）：貼近地面的鏡頭是 1，高處的鏡頭（遠距跟車、俯視）是 0。 */
+export function glowVeilHeightFade(cameraYM: number): number {
+  const t = Math.min(
+    Math.max((cameraYM - CONFIG.veil.cameraLowM) / (CONFIG.veil.cameraHighM - CONFIG.veil.cameraLowM), 0),
+    1,
+  );
+  return 1 - t * t * (3 - 2 * t);
+}
+
 /**
  * 光幕的幾何（車位本地座標）：車位輪廓的四個邊各一片直立的面，從光牆的頂端到 veil.heightM，
  * 分成幾層，每層的不透明度照 glowVeilAlpha（存在 alpha 屬性裡）。沒有頂蓋。
@@ -214,12 +223,16 @@ const VEIL_FRAGMENT_SHADER = /* glsl */ `
   uniform float veilOpacity;
   uniform float fadeNear;
   uniform float fadeFar;
+  uniform float cameraLow;
+  uniform float cameraHigh;
   varying float vAlpha;
   varying float vDistance;
   void main() {
     // 貼近鏡頭的部分不畫：鏡頭在光幕的範圍裡時，眼前沒有東西。
     float nearFade = smoothstep( fadeNear, fadeFar, vDistance );
-    gl_FragColor = vec4( veilColor, vAlpha * veilOpacity * nearFade );
+    // 高處的鏡頭（遠距跟車、俯視）不畫：它們看得到整個車位，光幕只會蓋住旁邊的東西。
+    float heightFade = 1.0 - smoothstep( cameraLow, cameraHigh, cameraPosition.y );
+    gl_FragColor = vec4( veilColor, vAlpha * veilOpacity * nearFade * heightFade );
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
   }
@@ -318,6 +331,8 @@ export function createSpotGlow(spot: GlowSpot, animate = true): SpotGlow {
       veilOpacity: { value: 1 },
       fadeNear: { value: CONFIG.veil.fadeNearM },
       fadeFar: { value: CONFIG.veil.fadeFarM },
+      cameraLow: { value: CONFIG.veil.cameraLowM },
+      cameraHigh: { value: CONFIG.veil.cameraHighM },
     },
     vertexShader: VEIL_VERTEX_SHADER,
     fragmentShader: VEIL_FRAGMENT_SHADER,

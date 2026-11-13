@@ -11,11 +11,17 @@ import {
   createVeilGeometry,
   glowVeilAlpha,
   glowVeilCameraFade,
+  glowVeilHeightFade,
   glowWallAlpha,
 } from '../src/props/spotGlow';
 import { SKIP_AMBIENT_OCCLUSION } from '../src/render/ambientOcclusionFlag';
 import { createGameCamera } from '../src/render/gameCamera';
-import { GAME_CAMERA_CONFIG, SPOT_GLOW_CONFIG as CONFIG } from '../src/render/renderConfig';
+import {
+  CAMERA_CONFIG,
+  FIXED_CAMERA_CONFIG,
+  GAME_CAMERA_CONFIG,
+  SPOT_GLOW_CONFIG as CONFIG,
+} from '../src/render/renderConfig';
 
 const VEIL = CONFIG.veil;
 
@@ -119,6 +125,37 @@ describe('不擋鏡頭：離鏡頭近的光幕完全不畫', () => {
     }
     // 兩片光幕疊在一起（穿過車位看另一邊）也還是淡的。
     expect(1 - (1 - VEIL.opacity) ** 2).toBeLessThan(0.4);
+  });
+});
+
+describe('高處的鏡頭不畫光幕', () => {
+  test('貼近地面的鏡頭（駕駛座、引擎蓋、近距跟車）全濃；遠距跟車、俯視、?cam=follow／top 完全不畫', () => {
+    for (const lowM of [
+      GAME_CAMERA_CONFIG.cockpit.heightM,
+      GAME_CAMERA_CONFIG.hood.heightM,
+      GAME_CAMERA_CONFIG.chaseNear.heightM,
+      FIXED_CAMERA_CONFIG.spotLowHeightM,
+    ]) {
+      expect(glowVeilHeightFade(lowM)).toBe(1);
+    }
+    for (const highM of [
+      GAME_CAMERA_CONFIG.chaseFar.heightM,
+      GAME_CAMERA_CONFIG.top.heightM,
+      CAMERA_CONFIG.offsetHeightM,
+      FIXED_CAMERA_CONFIG.topHeightM,
+    ]) {
+      expect(glowVeilHeightFade(highM)).toBe(0);
+    }
+    let previous = 1;
+    for (let step = 0; step <= 20; step += 1) {
+      const fade = glowVeilHeightFade(VEIL.cameraLowM + ((VEIL.cameraHighM - VEIL.cameraLowM) * step) / 20);
+      expect(fade).toBeLessThanOrEqual(previous);
+      previous = fade;
+    }
+    expect(previous).toBe(0);
+    const glow = createSpotGlow(PROTOTYPE_LAYOUT.spot);
+    expect(uniformOf(glow.veil, 'cameraLow')).toBe(VEIL.cameraLowM);
+    expect(uniformOf(glow.veil, 'cameraHigh')).toBe(VEIL.cameraHighM);
   });
 });
 
