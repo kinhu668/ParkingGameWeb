@@ -287,7 +287,7 @@ export const WEATHER_PRESETS: Readonly<Record<WeatherId, WeatherPreset>> = {
     surfaceWetness: 0,
     // 乾的夜晚：只有薄薄一層夜霧；光柱看得到，但比雨裡淡。
     air: { mistDensityPerM: 0.006, mistHeightM: ftToM(10), lampShaft: 2.4, headlightShaft: 0.6 },
-    assistView: { darkGain: 5, kneeLuma: 0.3 },
+    assistView: { darkGain: 5, kneeLuma: 0.24 },
   },
 };
 
