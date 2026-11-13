@@ -126,6 +126,7 @@ export function createGroundMaterial(
         value: new Vector2(config.stainMacroAWeight, config.stainMacroBWeight),
       },
       uGroundStainSmear: { value: new Vector2(stainSmear.x, stainSmear.z) },
+      uGroundStainDrift: { value: config.stainDriftM },
       uGroundStainShape: {
         value: new Vector4(
           config.stainStreakStretch,

@@ -109,7 +109,14 @@ export function groundStainAmount(
   const uvOf = (name: (typeof GROUND_LAYER_ORDER)[number]): { u: number; v: number } =>
     groundLayerUv(layerOf(name), x, z);
   const stainLayer = layerOf('stains');
-  const stainUv = groundLayerUv(stainLayer, x, z);
+  // 漂移：油漬層的取樣位置被最大的那一層噪聲（347 ft）推開，每個地方推的方向與距離都不同，
+  // 所以油漬層自己的格子（61.3 ft）在世界座標上不是整齊的格子，平移一個周期對不回去。
+  const macroAUv = uvOf('macroA');
+  const macroATexel = sample(macroAUv.u, macroAUv.v);
+  const macroA = macroATexel.patch;
+  const driftX = (macroATexel.patch - 0.5) * config.stainDriftM;
+  const driftZ = (macroATexel.blotch - 0.5) * config.stainDriftM;
+  const stainUv = groundLayerUv(stainLayer, x + driftX, z + driftZ);
   const warpTexel = sample(stainUv.u * config.stainWarpScale, stainUv.v * config.stainWarpScale);
   const warpU = (warpTexel.patch - 0.5) * config.stainWarp;
   const warpV = (warpTexel.blotch - 0.5) * config.stainWarp;
@@ -120,16 +127,14 @@ export function groundStainAmount(
   const smear = groundStainSmear();
   const bodyUv = groundLayerUv(
     stainLayer,
-    x + smear.x * (streak - 0.5),
-    z + smear.z * (streak - 0.5),
+    x + driftX + smear.x * (streak - 0.5),
+    z + driftZ + smear.z * (streak - 0.5),
   );
   const body = sample(bodyUv.u + warpU, bodyUv.v + warpV).blotch;
   const splatter = sample(
     stainUv.u * config.stainSplatterScale + warpU,
     stainUv.v * config.stainSplatterScale + warpV,
   ).patch;
-  const macroAUv = uvOf('macroA');
-  const macroA = sample(macroAUv.u, macroAUv.v).patch;
   const macroBUv = uvOf('macroB');
   const macroB = sample(macroBUv.u, macroBUv.v).patch;
 
@@ -290,6 +295,7 @@ uniform vec3 uGroundStainWarp;
 uniform vec4 uGroundStainShape;
 uniform vec2 uGroundStainMacro;
 uniform vec2 uGroundStainSmear;
+uniform float uGroundStainDrift;
 uniform vec4 uGroundWet;
 uniform vec4 uGroundPuddle;
 uniform vec4 uGroundHeights;
@@ -340,7 +346,8 @@ float groundHeight( vec2 p, vec2 crackWarp, float crackMask ) {
 const FRAGMENT_ALBEDO = /* glsl */ `
 float groundFine = texture2D( uGroundNoise, groundUv( uGroundLayers[ 0 ], vGroundXZ ) ).r;
 float groundCoarse = texture2D( uGroundNoise, groundUv( uGroundLayers[ 1 ], vGroundXZ ) ).r;
-float groundMacroA = texture2D( uGroundNoise, groundUv( uGroundLayers[ 2 ], vGroundXZ ) ).g;
+vec4 groundMacroATexel = texture2D( uGroundNoise, groundUv( uGroundLayers[ 2 ], vGroundXZ ) );
+float groundMacroA = groundMacroATexel.g;
 float groundMacroB = texture2D( uGroundNoise, groundUv( uGroundLayers[ 3 ], vGroundXZ ) ).g;
 
 // 裂縫：取樣位置被兩層大片噪聲扭曲，而且只出現在一部分區域，裂縫層自己的周期就看不出來。
@@ -350,11 +357,13 @@ float groundCrack = texture2D( uGroundNoise, groundUv( uGroundLayers[ 4 ], vGrou
 
 // 油漬與污斑：不是圓團。取樣位置先被較高頻的噪聲扭曲（邊緣彎彎曲曲），
 // 斑塊被順著車道拉長的條紋拖出尾巴（拉絲）、減去高頻的缺口（濺灑），再被大片噪聲調整濃淡，最後才過門檻。
-vec2 groundStainUv = groundUv( uGroundLayers[ 5 ], vGroundXZ );
+// 漂移：取樣位置被最大的那一層噪聲推開，油漬層自己的周期在世界座標上就不是整齊的格子。
+vec2 groundStainXZ = vGroundXZ + ( groundMacroATexel.ga - 0.5 ) * uGroundStainDrift;
+vec2 groundStainUv = groundUv( uGroundLayers[ 5 ], groundStainXZ );
 vec2 groundStainWarp = texture2D( uGroundNoise, groundStainUv * uGroundStainWarp.x ).ga - 0.5;
 vec2 groundStreakUv = groundUv( uGroundLayers[ 7 ], vGroundXZ ) + groundStainWarp * uGroundStainWarp.y;
 float groundStainStreak = texture2D( uGroundNoise, vec2( groundStreakUv.x, groundStreakUv.y / uGroundStainShape.x ) ).a;
-vec2 groundStainBodyUv = groundUv( uGroundLayers[ 5 ], vGroundXZ + uGroundStainSmear * ( groundStainStreak - 0.5 ) );
+vec2 groundStainBodyUv = groundUv( uGroundLayers[ 5 ], groundStainXZ + uGroundStainSmear * ( groundStainStreak - 0.5 ) );
 float groundStainBody = texture2D( uGroundNoise, groundStainBodyUv + groundStainWarp * uGroundStainWarp.y ).a;
 float groundStainSplatter = texture2D( uGroundNoise, groundStainUv * uGroundStainShape.z + groundStainWarp * uGroundStainWarp.y ).g;
 float groundStain = smoothstep( uGroundStain.x, uGroundStain.y,

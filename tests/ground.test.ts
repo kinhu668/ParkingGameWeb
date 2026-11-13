@@ -272,6 +272,41 @@ describe('油漬 groundStainAmount', () => {
   const layers = groundLayerTransforms(DEFAULT_SEED);
   const amount = (x: number, z: number): number => groundStainAmount(sample, layers, x, z);
 
+  test('油漬層自己的周期（61.3 ft）看不出來：沿油漬層的格子平移一到四個周期，油漬都對不回去', () => {
+    const layer = GROUND_CONFIG.layers.stains;
+    const angleRad = (layer.angleDeg * Math.PI) / 180;
+    // 貼圖座標 u、v 各走一整圈的世界位移：圖樣如果有周期，照這兩個向量平移就會疊回去。
+    const periodU = { x: Math.cos(angleRad) * layer.periodM, z: -Math.sin(angleRad) * layer.periodM };
+    const periodV = { x: Math.sin(angleRad) * layer.periodM, z: Math.cos(angleRad) * layer.periodM };
+    // 720 × 720 ft（霧的遠端約 700 ft）、每格 2 ft。
+    const cells = 360;
+    const cellM = ftToM(2);
+    const stained = (x: number, z: number): boolean => amount(x, z) > 0.5;
+    const points: { x: number; z: number }[] = [];
+    for (let row = 0; row < cells; row += 1) {
+      for (let column = 0; column < cells; column += 1) {
+        const x = (column - cells / 2) * cellM;
+        const z = (row - cells / 2) * cellM;
+        if (stained(x, z)) {
+          points.push({ x, z });
+        }
+      }
+    }
+    expect(points.length).toBeGreaterThan(200);
+    const coverage = points.length / (cells * cells);
+    /** 有油漬的格子平移之後還落在油漬上的比例；完全重複 = 1，毫無關聯 ≈ 覆蓋率。 */
+    const overlap = (shiftX: number, shiftZ: number): number =>
+      points.filter((point) => stained(point.x + shiftX, point.z + shiftZ)).length / points.length;
+    expect(overlap(0, 0)).toBe(1);
+    for (let steps = 1; steps <= 4; steps += 1) {
+      for (const [u, v] of [[steps, 0], [0, steps], [steps, steps], [steps, -steps]] as const) {
+        const value = overlap(u * periodU.x + v * periodV.x, u * periodU.z + v * periodV.z);
+        // 舊做法（取樣位置不漂移）這裡是 0.35–0.6：三到六成的油漬會疊回去，俯視看得出成排。
+        expect(value, `平移 (${u}, ${v}) 個周期，覆蓋率 ${coverage.toFixed(3)}`).toBeLessThan(0.2);
+      }
+    }
+  });
+
   test('只看世界座標與種子：同一點每次都一樣，換種子就是另一片油漬', () => {
     const points = Array.from({ length: 400 }, (_, index) => ({
       x: ftToM(-150 + (index % 20) * 15.3),
@@ -414,13 +449,18 @@ describe('著色器片段 patchGroundShader', () => {
 
   test('油漬用世界座標算：扭曲、拉絲、濺灑三項都在，取樣座標都來自 vGroundXZ', () => {
     const { fragmentShader } = patched([]);
-    expect(fragmentShader).toContain('vec2 groundStainUv = groundUv( uGroundLayers[ 5 ], vGroundXZ );');
+    // 漂移：油漬層的取樣位置先被最大的那一層噪聲推開（油漬層自己的周期才看不出來），仍然只看世界座標。
+    expect(fragmentShader).toContain(
+      'vec2 groundStainXZ = vGroundXZ + ( groundMacroATexel.ga - 0.5 ) * uGroundStainDrift;',
+    );
+    expect(fragmentShader).toContain('uniform float uGroundStainDrift;');
+    expect(fragmentShader).toContain('vec2 groundStainUv = groundUv( uGroundLayers[ 5 ], groundStainXZ );');
     // 扭曲：取樣位置被另一次取樣推開。
     expect(fragmentShader).toContain('groundStainWarp * uGroundStainWarp.y');
     // 拉絲：條紋層只拉長一個方向（非等向），斑塊再被它沿拉絲方向拖動。
     expect(fragmentShader).toContain(`uGroundLayers[ ${GROUND_LAYER_ORDER.indexOf('stainStreaks')} ], vGroundXZ`);
     expect(fragmentShader).toContain('groundStreakUv.y / uGroundStainShape.x');
-    expect(fragmentShader).toContain('vGroundXZ + uGroundStainSmear * ( groundStainStreak - 0.5 )');
+    expect(fragmentShader).toContain('groundStainXZ + uGroundStainSmear * ( groundStainStreak - 0.5 )');
     // 濺灑：減去高頻的缺口。
     expect(fragmentShader).toContain('- ( groundStainSplatter - 0.5 ) * uGroundStainShape.w');
     for (const uniform of ['uGroundStainWarp', 'uGroundStainShape', 'uGroundStainMacro', 'uGroundStainSmear']) {
