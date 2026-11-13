@@ -79,6 +79,8 @@ export function createRain(count: number, seed: number): Rain {
       transparent: true,
       opacity: CONFIG.opacity,
       depthWrite: false,
+      // 雨絲都在車附近（長方體只有幾十公尺）：不吃霧，貼地的霧氣才不會把雨絲蓋成霧色。
+      fog: false,
     }),
   );
   lines.name = 'rain';

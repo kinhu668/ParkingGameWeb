@@ -74,7 +74,10 @@ export interface PropsQualitySettings {
   readonly lampHeads: number;
   /** 其中真的會照亮場景的燈（SpotLight，不投影）；其餘只有自發光燈殼、光錐與地上的光暈。 */
   readonly realLights: number;
-  /** 半透明的光錐（體積光感）。 */
+  /**
+   * 乾淨的空氣裡（黃昏）也畫路燈的光錐。false 的級別（low）只在有水氣的天氣（雨、雷雨、夜晚）才畫：
+   * 那些天氣少了光錐就看不出空氣的厚度。
+   */
   readonly lightCones: boolean;
   /** 混凝土柱。 */
   readonly pillars: number;
@@ -98,6 +101,19 @@ export interface HeadlightQualitySettings {
   readonly groundPool: boolean;
   /** 真的會照亮場景的頭燈（SpotLight）盞數：0 = 沒有、1 = 車頭中央一盞、2 = 左右各一盞。 */
   readonly spotLights: number;
+}
+
+/**
+ * 光柱（render/lightShaft.ts）：路燈的光錐與車頭燈的光柱。有水氣的天氣（雨、雷雨、夜晚）每個級別都有，
+ * 低畫質用便宜的版本（段數少、車頭只有一道、沒有霧氣流動的噪聲）。
+ */
+export interface LightShaftQualitySettings {
+  /** 圓錐一圈的段數。 */
+  readonly radialSegments: number;
+  /** 車頭燈的光柱：1 = 車頭中央一道寬的、2 = 左右各一道。 */
+  readonly headlightBeams: number;
+  /** 霧氣流動的噪聲層數（0 = 沒有，亮度是平滑的）。 */
+  readonly noiseOctaves: number;
 }
 
 /** 倒車輪胎痕（純視覺）：留在地上的段數上限與壽命。 */
@@ -153,6 +169,8 @@ export interface QualitySettings {
   readonly particles: ParticleQualitySettings;
   /** 玩家車頭燈照地的做法。 */
   readonly headlights: HeadlightQualitySettings;
+  /** 路燈與車頭燈的光柱。 */
+  readonly lightShafts: LightShaftQualitySettings;
 }
 
 /** 自動選擇畫質用的裝置線索。瀏覽器不一定提供每一項，沒有就不填。 */

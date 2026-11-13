@@ -63,6 +63,8 @@ import {
   SUN_CONFIG,
   WHEEL_STOP_CONFIG,
 } from './renderConfig';
+import { installHeightFog } from './heightFog';
+import type { ShaftSetup } from './lightShaft';
 import { createOcclusionFade, type Point3 } from './occlusionFade';
 import { fitShadowBox, type ShadowBox } from './shadowArea';
 import {
@@ -268,6 +270,31 @@ function boundsEdgeBoxes(bounds: BoundsFt, level: ObstacleSource): GroundEdgeBox
 }
 
 /**
+ * 場地的外框（世界座標、與座標軸平行，公尺）：有邊界的關卡是可行駛範圍，原型關是路緣圍成的場地。
+ */
+export function drivableRect(
+  spot: ParkingSpot,
+  bounds: BoundsFt | undefined,
+): { readonly minX: number; readonly maxX: number; readonly minZ: number; readonly maxZ: number } {
+  const inner = curbInnerBounds(spot);
+  const corners =
+    bounds === undefined
+      ? [
+          spotLocalToWorld(spot, inner.minX, inner.minZ),
+          spotLocalToWorld(spot, inner.maxX, inner.minZ),
+          spotLocalToWorld(spot, inner.maxX, inner.maxZ),
+          spotLocalToWorld(spot, inner.minX, inner.maxZ),
+        ]
+      : boundsCorners(bounds, 0);
+  return {
+    minX: Math.min(...corners.map((corner) => corner.x)),
+    maxX: Math.max(...corners.map((corner) => corner.x)),
+    minZ: Math.min(...corners.map((corner) => corner.z)),
+    maxZ: Math.max(...corners.map((corner) => corner.z)),
+  };
+}
+
+/**
  * 把環境貼圖（反射＋補光）設到 scene 上，回傳整組天空（穹頂要不要加進場景由呼叫端決定）。
  * 遊戲場景與展示台共用同一套做法；展示台不給天氣（＝黃昏），也不用天空當背景。
  * @param weather 這種天氣的天空、霧色與太陽方向；不給 = 黃昏
@@ -363,6 +390,15 @@ export function createGameScene(
   configureSurfaceLibrary(quality.materials);
   setSurfaceWetness(preset.surfaceWetness);
 
+  // 貼地的霧氣（高度霧）：有水氣的天氣（雨、雷雨、夜晚）才有；要在任何材質編譯之前掛進 three。
+  installHeightFog(preset.air);
+  // 光柱（路燈的光錐、車頭燈的光柱）：亮度跟著天氣，霧氣流動的時間全場景共用一個。
+  const shaftTime = { value: 0 };
+  const shaftAir = (strength: number): ShaftSetup => ({
+    air: { strength, fogNearM: preset.fog.nearM, fogFarM: preset.fog.farM, time: shaftTime },
+    quality: quality.lightShafts,
+  });
+
   const scene = new Scene();
   const skyDome = addSkyEnvironment(scene, renderer, quality, { ...preset, sunDirection }).dome;
   scene.add(skyDome);
@@ -390,20 +426,7 @@ export function createGameScene(
     preset.hemisphere,
   );
   // 車開出這個範圍（世界座標的外框）才讓陰影範圍跟著車移動。
-  const inner = curbInnerBounds(spot);
-  const lotCorners =
-    bounds === undefined
-      ? [
-          spotLocalToWorld(spot, inner.minX, inner.minZ),
-          spotLocalToWorld(spot, inner.maxX, inner.minZ),
-          spotLocalToWorld(spot, inner.maxX, inner.maxZ),
-          spotLocalToWorld(spot, inner.minX, inner.maxZ),
-        ]
-      : boundsCorners(bounds, 0);
-  const lotMinX = Math.min(...lotCorners.map((corner) => corner.x));
-  const lotMaxX = Math.max(...lotCorners.map((corner) => corner.x));
-  const lotMinZ = Math.min(...lotCorners.map((corner) => corner.z));
-  const lotMaxZ = Math.max(...lotCorners.map((corner) => corner.z));
+  const { minX: lotMinX, maxX: lotMaxX, minZ: lotMinZ, maxZ: lotMaxZ } = drivableRect(spot, bounds);
 
   // 原型關的停車場擺設（固定種子）；有環境模組的關卡不用。
   const lotLayout =
@@ -445,6 +468,7 @@ export function createGameScene(
         preset.lampsOn,
         'classic',
         buildingShadowHeightM,
+        shaftAir(preset.air.lampShaft),
       ),
     );
   } else if (environmentLayout !== undefined) {
@@ -457,6 +481,7 @@ export function createGameScene(
         usesHdrChain(quality),
         preset.lampsOn,
         buildingShadowHeightM,
+        shaftAir(preset.air.lampShaft),
       ),
     );
   }
@@ -474,7 +499,11 @@ export function createGameScene(
   const car = createCarMesh(quality.vehicleDetail);
   scene.add(car.root);
   // 頭燈照地：掛在車底下，跟著車走、跟著車頭轉。只有遊戲場景的車有，展示台的沒有。
-  const headlights = createCarHeadlights(quality.headlights, usesHdrChain(quality));
+  const headlights = createCarHeadlights(
+    quality.headlights,
+    usesHdrChain(quality),
+    shaftAir(preset.air.headlightShaft),
+  );
   car.root.add(headlights.root);
 
   // 倒車輪胎痕、灰塵、落葉、雨絲：純視覺的小效果，數量跟著畫質級別走。下雨時不揚灰塵、不飄落葉。
@@ -532,6 +561,10 @@ export function createGameScene(
     update(pose, frameSeconds = 0) {
       updateCarMesh(car, pose);
       effects.update(pose, frameSeconds);
+      // 光柱裡的霧氣流動：`?fx=off` 不走時間（光柱照樣畫，只是靜止的）。
+      if (ambientFx) {
+        shaftTime.value += frameSeconds;
+      }
       glow.advance(frameSeconds);
       if (lightning !== undefined) {
         weatherSeconds += frameSeconds;

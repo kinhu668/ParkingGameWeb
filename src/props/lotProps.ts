@@ -29,6 +29,13 @@ import { createScenerySurface } from '../materials/surfaceMaterial';
 import type { SurfaceId } from '../materials/surfaces';
 import type { ParkingSpot } from '../level/parkingJudge';
 import { SKIP_AMBIENT_OCCLUSION } from '../render/ambientOcclusionFlag';
+import {
+  DEFAULT_SHAFT_SETUP,
+  createShaftGeometry,
+  createShaftMaterial,
+  type ShaftSetup,
+  type ShaftShape,
+} from '../render/lightShaft';
 import type { PropsQualitySettings, VehicleDetail } from '../render/quality';
 import { LOT_PROPS_CONFIG as LOT, OCCLUSION_FADE_CONFIG as FADE } from '../render/renderConfig';
 import { createSpotFrame, createWheelStopGeometry, createWheelStopMaterial } from './lotEdges';
@@ -247,6 +254,7 @@ function addLamps(
   hdr: boolean,
   lampsLit: boolean,
   style: LampStyle,
+  shafts: ShaftSetup,
 ): void {
   if (lamps.length === 0) {
     return;
@@ -318,7 +326,7 @@ function addLamps(
 
   const heads = lamps.map(lampHeadPosition);
   const realLights = Math.min(props.realLights, lamps.length);
-  // 加色混合的材質不做色調映射：直接畫到畫面上時，色調映射會把「沒有光」的邊緣也抬成一圈看得見的冷色。
+  // 地上光暈的材質。加色混合的材質不做色調映射：直接畫到畫面上時，色調映射會把「沒有光」的邊緣也抬成一圈看得見的冷色。
   const glow = (brightness: { readonly hdr: number; readonly direct: number }): MeshBasicMaterial =>
     new MeshBasicMaterial({
       color: new Color(LOT.lampConeColor).multiplyScalar(hdr ? brightness.hdr : brightness.direct),
@@ -330,32 +338,34 @@ function addLamps(
       toneMapped: false,
     });
 
-  // 光錐：頂端在燈頭、往地面張開；頂點顏色從頂端的 1 淡到地面的 0，加色混合，不寫深度。
-  // 只畫朝外的那一面：鏡頭在光錐外面時每個像素只疊一層，不會把畫面洗白，也省一半的填色。
-  if (props.lightCones) {
-    const cone = new CylinderGeometry(1, 1, 1, 24, 6, true).translate(0, -0.5, 0);
-    const position = cone.getAttribute('position');
-    const fade = new Float32Array(position.count * 3);
-    for (let index = 0; index < position.count; index += 1) {
-      // y：0 是頂端、−1 是地面。半徑沿高度由頂端的小圓張到地面的大圓。
-      const down = -position.getY(index);
-      const radius =
-        LOT.lampConeTopRadiusM + (LOT.lampConeBottomRadiusM - LOT.lampConeTopRadiusM) * down;
-      position.setXYZ(index, position.getX(index) * radius, -down, position.getZ(index) * radius);
-      const brightness = (1 - down) ** 2;
-      fade.set([brightness, brightness, brightness], index * 3);
-    }
-    cone.setAttribute('color', new BufferAttribute(fade, 3));
+  // 光錐：頂端在燈頭、往地面張開的一道光柱（render/lightShaft.ts）。只畫朝外的那一面、加色混合、不寫深度；
+  // 亮度照「視線穿過光錐多長」算，邊緣自然淡掉。有水氣的天氣（雨、雷雨、夜晚）比黃昏亮，而且每個畫質級別都有；
+  // 乾淨的空氣裡只有 props.lightCones 的級別才畫。
+  if (props.lightCones || shafts.air.strength > 1) {
+    // 每一盞燈頭的高度都一樣（桿高相同）：光錐的長度直接做進幾何，實例只有平移。
+    const coneLengthM = heads[0]?.y ?? heightM;
+    const shape: ShaftShape = {
+      nearRadiusM: LOT.lampConeTopRadiusM,
+      farRadiusM: LOT.lampConeBottomRadiusM,
+      lengthM: coneLengthM,
+      ...LOT.lampCone,
+    };
     const cones = instanced(
-      cone,
-      glow(LOT.lampConeBrightness),
+      createShaftGeometry(shape, shafts.quality.radialSegments),
+      createShaftMaterial(
+        shape,
+        LOT.lampConeColor,
+        hdr ? LOT.lampConeBrightness.hdr : LOT.lampConeBrightness.direct,
+        shafts.air,
+        shafts.quality,
+      ),
       heads.map((position3) => ({
         x: position3.x,
         y: position3.y,
         z: position3.z,
         rotationY: 0,
         scaleX: 1,
-        scaleY: position3.y,
+        scaleY: 1,
         scaleZ: 1,
       })),
       { name: 'lampCones', receiveShadow: false },
@@ -595,6 +605,7 @@ function createSignGeometry(): BufferGeometry {
  * @param lampsLit 路燈亮不亮（白天的天氣不亮）；不給 = 亮
  * @param lampStyle 路燈的樣式；不給 = 原型關的 classic
  * @param buildingShadowHeightM 背景建築在陰影貼圖裡最高算多高（shadowReach.ts）；不給 = 不設限，照實投影
+ * @param shafts 路燈光錐所在的空氣與畫質做法；不給 = 黃昏那種乾淨的空氣
  */
 export function createLotProps(
   spot: ParkingSpot,
@@ -604,6 +615,7 @@ export function createLotProps(
   lampsLit = true,
   lampStyle: LampStyle = 'classic',
   buildingShadowHeightM = Infinity,
+  shafts: ShaftSetup = DEFAULT_SHAFT_SETUP,
 ): Group {
   const frame = createSpotFrame(spot);
   frame.name = 'lotProps';
@@ -641,7 +653,7 @@ export function createLotProps(
   };
 
   frame.add(createParkedCars(layout.parkedCars, props.meshDetail));
-  addLamps(frame, layout.lamps, props, hdr, lampsLit, lampStyle);
+  addLamps(frame, layout.lamps, props, hdr, lampsLit, lampStyle, shafts);
 
   // 混凝土柱與柱頂的橫梁：同一個材質，一個 draw call。
   const concrete = [...layout.pillars, ...layout.beams];

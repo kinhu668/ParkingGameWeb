@@ -14,6 +14,12 @@ import {
   type BufferGeometry,
 } from 'three';
 import { SKIP_AMBIENT_OCCLUSION } from '../render/ambientOcclusionFlag';
+import {
+  createShaftGeometry,
+  createShaftMaterial,
+  type ShaftSetup,
+  type ShaftShape,
+} from '../render/lightShaft';
 import type { HeadlightQualitySettings } from '../render/quality';
 import { HEADLIGHT_CONFIG as CONFIG } from '../render/renderConfig';
 import { VEHICLE_CONFIG_SI } from './vehicleConfig';
@@ -110,14 +116,65 @@ function createPool(name: string, shape: BeamShape, color: number, brightness: n
   return pool;
 }
 
+/** 一道光柱的形狀；只有一道時（low）整道放寬，蓋住兩盞燈。 */
+export function headlightShaftShape(beams: number): ShaftShape {
+  const widthScale = beams === 1 ? CONFIG.shaft.singleBeamWidthScale : 1;
+  return {
+    ...CONFIG.shaft.beam,
+    nearRadiusM: CONFIG.shaft.beam.nearRadiusM * widthScale,
+    farRadiusM: CONFIG.shaft.beam.farRadiusM * widthScale,
+  };
+}
+
+/**
+ * 頭燈在空氣裡打出來的光柱（有水氣的天氣才有）：從燈殼的高度往車頭前方、略往下的圓錐，一個網格一道。
+ * 每個畫質級別都有（low 也是；它沒有地上的光斑，光柱是唯一看得出頭燈在照的東西）。
+ */
+function createHeadlightShafts(hdr: boolean, shafts: ShaftSetup): Mesh[] {
+  const beams = Math.min(Math.max(Math.round(shafts.quality.headlightBeams), 0), 2);
+  if (beams === 0 || shafts.air.strength <= 0) {
+    return [];
+  }
+  const shape = headlightShaftShape(beams);
+  const geometry = createShaftGeometry(shape, shafts.quality.radialSegments);
+  const material = createShaftMaterial(
+    shape,
+    CONFIG.color,
+    hdr ? CONFIG.shaft.brightness.hdr : CONFIG.shaft.brightness.direct,
+    shafts.air,
+    shafts.quality,
+  );
+  const lateralOffsets = beams === 2 ? [-CONFIG.lampOffsetM, CONFIG.lampOffsetM] : [0];
+  return lateralOffsets.map((lateralM) => {
+    const shaft = new Mesh(geometry, material);
+    shaft.name = 'headlightShaft';
+    shaft.position.set(lateralM, CONFIG.shaft.heightM, -HALF_LENGTH_M - CONFIG.shaft.aheadOfNoseM);
+    // 光柱的幾何沿本地 −Y；轉成朝車頭（−Z）、再往下俯 pitchDownRad。
+    shaft.rotation.x = Math.PI / 2 - CONFIG.shaft.pitchDownRad;
+    shaft.renderOrder = POOL_RENDER_ORDER;
+    shaft.userData[SKIP_AMBIENT_OCCLUSION] = true;
+    return shaft;
+  });
+}
+
 /**
  * @param settings 這個畫質級別的頭燈做法
  * @param hdr 這個級別是不是走高動態範圍的後製鏈（決定光斑的亮度）
+ * @param shafts 光柱所在的空氣與畫質做法；不給（或空氣的亮度倍率是 0）= 不建立光柱
  */
-export function createCarHeadlights(settings: HeadlightQualitySettings, hdr: boolean): CarHeadlights {
+export function createCarHeadlights(
+  settings: HeadlightQualitySettings,
+  hdr: boolean,
+  shafts?: ShaftSetup,
+): CarHeadlights {
   const root = new Group();
   root.name = 'headlights';
   const spotLights = Math.min(Math.max(Math.round(settings.spotLights), 0), 2);
+  if (shafts !== undefined) {
+    for (const shaft of createHeadlightShafts(hdr, shafts)) {
+      root.add(shaft);
+    }
+  }
 
   let reversePool: Mesh | undefined;
   if (settings.groundPool) {

@@ -21,6 +21,7 @@ import { ftToM } from '../core/units';
 import { createScenerySurface } from '../materials/surfaceMaterial';
 import type { SurfaceId } from '../materials/surfaces';
 import type { ParkingSpot } from '../level/parkingJudge';
+import { DEFAULT_SHAFT_SETUP, type ShaftSetup } from '../render/lightShaft';
 import type { PropsQualitySettings } from '../render/quality';
 import {
   LOT_PROPS_CONFIG as LOT,
@@ -84,6 +85,7 @@ export function createSpotArrow(spot: ParkingSpot): Group {
  * @param hdr 這個級別是不是走高動態範圍的後製鏈（決定路燈光錐與光暈的亮度）
  * @param lampsLit 路燈亮不亮（跟著天氣）；白天路燈不亮，招牌也不自發光
  * @param buildingShadowHeightM 建築在陰影貼圖裡最高算多高（shadowReach.ts）；不給 = 不設限，照實投影
+ * @param shafts 路燈光錐所在的空氣與畫質做法；不給 = 黃昏那種乾淨的空氣
  */
 export function createEnvironment(
   spot: ParkingSpot,
@@ -92,6 +94,7 @@ export function createEnvironment(
   hdr: boolean,
   lampsLit = true,
   buildingShadowHeightM = Infinity,
+  shafts: ShaftSetup = DEFAULT_SHAFT_SETUP,
 ): Group {
   const group = new Group();
   group.name = 'environment';
@@ -106,6 +109,7 @@ export function createEnvironment(
       lampsLit,
       'braced',
       buildingShadowHeightM,
+      shafts,
     ),
   );
 

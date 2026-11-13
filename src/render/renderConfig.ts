@@ -23,6 +23,8 @@ export const RENDERER_CONFIG = {
  * 輪胎痕（tireMarks）與粒子（particles）：low 只有少量輪胎痕、沒有粒子；級別越高，痕留得越久、灰塵與落葉越多。
  * 擺設（props）：級別越高，背景車、路燈、樹、建築越多；只有 high、ultra 有幾盞真的會照亮場景的路燈，
  * 其餘的燈（與 low、medium 的全部）只有自發光燈殼、光錐與地上的光暈。
+ * 光柱（lightShafts）：有水氣的天氣（雨、雷雨、夜晚）每個級別都有路燈光錐與車頭燈光柱；low 的段數少、車頭只有一道、
+ * 沒有霧氣流動的噪聲。乾淨的空氣（黃昏）裡 low 不畫光錐（props.lightCones）。
  */
 export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = {
   low: {
@@ -31,6 +33,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = 
     tireMarks: { maxSegments: 60, lifetimeS: 6 },
     particles: { dust: 0, leaves: 0 },
     headlights: { groundPool: false, spotLights: 0 },
+    lightShafts: { radialSegments: 12, headlightBeams: 1, noiseOctaves: 0 },
     maxPixelRatio: 1,
     toneMapping: 'agx',
     shadowMapSize: 1024,
@@ -63,6 +66,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = 
     tireMarks: { maxSegments: 160, lifetimeS: 10 },
     particles: { dust: 64, leaves: 36 },
     headlights: { groundPool: true, spotLights: 0 },
+    lightShafts: { radialSegments: 20, headlightBeams: 2, noiseOctaves: 1 },
     maxPixelRatio: 1.5,
     toneMapping: 'agx',
     shadowMapSize: 2048,
@@ -95,6 +99,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = 
     tireMarks: { maxSegments: 360, lifetimeS: 16 },
     particles: { dust: 110, leaves: 100 },
     headlights: { groundPool: true, spotLights: 1 },
+    lightShafts: { radialSegments: 28, headlightBeams: 2, noiseOctaves: 2 },
     maxPixelRatio: 2,
     toneMapping: 'agx',
     shadowMapSize: 4096,
@@ -127,6 +132,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = 
     tireMarks: { maxSegments: 600, lifetimeS: 24 },
     particles: { dust: 160, leaves: 160 },
     headlights: { groundPool: true, spotLights: 2 },
+    lightShafts: { radialSegments: 36, headlightBeams: 2, noiseOctaves: 2 },
     maxPixelRatio: 2,
     toneMapping: 'agx',
     shadowMapSize: 4096,
@@ -915,15 +921,18 @@ export const LOT_PROPS_CONFIG = {
   /** 燈殼底下的發光面：暖黃，亮度高過泛光門檻。 */
   lampGlowColor: 0xffd49a,
   lampGlowIntensity: 3.2,
-  /** 光錐：頂端與地面的半徑、頂端的亮度（加色混合，往地面淡到 0）。 */
+  /** 光錐（render/lightShaft.ts 的光柱）：頂端與地面的半徑；亮度沿光軸的分布見 lampCone。 */
   lampConeTopRadiusM: ftToM(0.8),
   lampConeBottomRadiusM: ftToM(13),
   lampConeColor: 0xffc98a,
+  /** 光錐沿光軸的亮度：燈頭下方很快亮起來，往地面淡到 0；越張越稀（半徑的這個冪次）。 */
+  lampCone: { riseFraction: 0.03, falloffExponent: 0.85, spreadExponent: 0.25 },
   /**
    * 光錐與光暈是加色混合。走後製鏈的級別加在色調映射之前（場景亮度），直接畫到畫面上的級別加在色調映射之後
    * （顯示亮度，同樣的數值看起來亮得多），所以兩邊各有自己的亮度。
+   * 光錐的數值是黃昏（乾淨的空氣）的亮度；雨、雷雨、夜晚再乘上天氣的倍率（WeatherPreset.air.lampShaft）。
    */
-  lampConeBrightness: { hdr: 0.11, direct: 0.04 },
+  lampConeBrightness: { hdr: 0.12, direct: 0.1 },
   /** 地上的光暈（沒有真光源的燈才畫）：半徑與中心的亮度。 */
   lampPoolRadiusM: ftToM(14),
   lampPoolBrightness: { hdr: 0.32, direct: 0.085 },
@@ -1040,6 +1049,70 @@ export const HEADLIGHT_CONFIG = {
   lightAheadOfNoseM: ftToM(0.3),
   /** 光軸瞄準車頭前方這麼遠的地面。 */
   lightAimAheadM: ftToM(40),
+
+  /**
+   * 光斑打在路緣上（vehicle/headlightCurbs.ts）：路緣石、車擋、人行道比貼地的光斑高，會把光斑切掉；
+   * 在它們的頂面與朝著車的立面補上同樣亮度的貼片。
+   */
+  raisedSurfaces: {
+    /** 比這個高度矮的東西才補（再高的是牆，車燈照牆是另一回事；有真光源的級別由 SpotLight 照）。 */
+    maxHeightM: ftToM(1.5),
+    /** 貼片的格子大小：亮度存在頂點上，格子要與貼地光斑的格子（約 0.8 ft）差不多細，才跟得上兩瓣光的形狀。 */
+    cellM: ftToM(0.8),
+    /** 貼片比路緣的面高出（立面是往外）多少，不共面。 */
+    liftM: ftToM(0.02),
+    /** 貼片數的上限（緩衝區的大小）；整片光斑都落在人行道上也夠用。 */
+    maxPatches: 3600,
+  },
+
+  /**
+   * 光柱（render/lightShaft.ts）：有水氣的天氣（雨、雷雨、夜晚）裡，頭燈在空氣中打出來的那道光。
+   * 從燈殼的高度往前、略往下；兩道（low 是車頭中央一道寬的）。亮度再乘上天氣的倍率
+   * （WeatherPreset.air.headlightShaft；0 = 乾淨的空氣，不建立）。
+   */
+  shaft: {
+    /** 光源端在車頭前緣之前多遠、離地多高（燈殼的高度）。 */
+    aheadOfNoseM: ftToM(0.1),
+    heightM: ftToM(2.15),
+    /** 光軸往下俯的角度：光柱的下緣在車頭前方十幾英尺碰到地面，接上地上的光斑。 */
+    pitchDownRad: degToRad(2.5),
+    /** 一道光柱的形狀：燈殼處與最遠處的半徑、長度、沿光軸的亮度。 */
+    beam: {
+      nearRadiusM: ftToM(0.45),
+      farRadiusM: ftToM(4.6),
+      lengthM: ftToM(36),
+      riseFraction: 0.03,
+      falloffExponent: 1.6,
+      spreadExponent: 0.5,
+    },
+    /** 只有一道時（low）：光源端與遠端都放寬成這個倍數，蓋住兩盞燈。 */
+    singleBeamWidthScale: 1.7,
+    /** 最亮處加到畫面上的量（走後製鏈／直接畫到畫面上），還要乘上天氣的倍率。 */
+    brightness: { hdr: 0.3, direct: 0.24 },
+  },
+} as const;
+
+/**
+ * 光柱（render/lightShaft.ts）共用的數值：路燈的光錐與車頭燈的光柱都用同一個著色器。
+ */
+export const LIGHT_SHAFT_CONFIG = {
+  /** 圓錐沿光軸切成幾段（頂點只用來定形狀，亮度是每個像素算的，不必多）。 */
+  heightSegments: 2,
+  /** 邊緣的柔和度：亮度 ∝（弦長 ÷ 這一處的直徑）的這個冪次。1 = 照實（邊緣收得很急）；越大邊緣越柔。 */
+  edgeExponent: 1.8,
+  /** 順著光軸看（俯視路燈、從車後看頭燈）弦長比直徑長得多；亮度最多算到「橫著看正中間」的這個倍數，不洗白。 */
+  maxThickness: 1.5,
+  /** 光柱的表面離鏡頭這麼近以內完全不畫、到這麼遠才是全亮：鏡頭穿進光柱的瞬間不會整片跳掉。 */
+  cameraFadeNearM: ftToM(1.5),
+  cameraFadeFarM: ftToM(12),
+  /** 遠處的光柱被線性遠霧吃掉的比例（1 = 到霧的遠端完全看不見）。 */
+  fogFade: 0.85,
+  /** 霧氣流動的噪聲：亮度上下的幅度（0–1）、一格的大小、流動的速度（世界座標，公尺／秒）。 */
+  noiseAmount: 0.3,
+  noiseCellM: ftToM(4.5),
+  noiseDriftMps: { x: 0.35, y: -0.5, z: 0.15 },
+  /** 視線與圓錐斜面幾乎平行時，二次式退化；係數的絕對值小於這個值就當成平行。 */
+  parallelEpsilon: 1e-5,
 } as const;
 
 /**
