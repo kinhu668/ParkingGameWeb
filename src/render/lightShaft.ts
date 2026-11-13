@@ -244,6 +244,9 @@ const SHAFT_FRAGMENT_SHADER = /* glsl */ `
     #endif
 
     gl_FragColor = vec4( shaftColor * brightness, 1.0 );
+    // 輸出色域：直接畫到畫面上（low、medium）時 three 在這裡轉成 sRGB，與其他加色的光（地上的光暈、光斑）同一套；
+    // 畫進後製鏈的緩衝區時不轉，維持線性。不做色調映射（toneMapped = false）。
+    #include <colorspace_fragment>
   }
 `;
 

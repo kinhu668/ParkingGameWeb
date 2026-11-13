@@ -400,7 +400,7 @@ export const LIGHTNING_CONFIG = {
     coreFraction: 0.12,
     /** 芯與光暈在閃光最亮時加到畫面上的量：走後製鏈（場景亮度，芯超過泛光門檻）／直接畫到畫面上（顯示亮度）。 */
     coreBrightness: { hdr: 9, direct: 1.25 },
-    haloBrightness: { hdr: 0.5, direct: 0.22 },
+    haloBrightness: { hdr: 0.5, direct: 0.07 },
     /** 離鏡頭這麼近以內的電弧完全不畫、到這麼遠才全亮：電弧不可能塞住鏡頭。 */
     cameraFadeNearM: ftToM(25),
     cameraFadeFarM: ftToM(60),

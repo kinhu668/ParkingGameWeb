@@ -956,7 +956,7 @@ export const LOT_PROPS_CONFIG = {
    * （顯示亮度，同樣的數值看起來亮得多），所以兩邊各有自己的亮度。
    * 光錐的數值是黃昏（乾淨的空氣）的亮度；雨、雷雨、夜晚再乘上天氣的倍率（WeatherPreset.air.lampShaft）。
    */
-  lampConeBrightness: { hdr: 0.12, direct: 0.1 },
+  lampConeBrightness: { hdr: 0.12, direct: 0.05 },
   /** 地上的光暈（沒有真光源的燈才畫）：半徑與中心的亮度。 */
   lampPoolRadiusM: ftToM(14),
   lampPoolBrightness: { hdr: 0.32, direct: 0.085 },
@@ -1126,7 +1126,7 @@ export const HEADLIGHT_CONFIG = {
     /** 只有一道時（low）：光源端與遠端都放寬成這個倍數，蓋住兩盞燈。 */
     singleBeamWidthScale: 1.7,
     /** 最亮處加到畫面上的量（走後製鏈／直接畫到畫面上），還要乘上天氣的倍率。 */
-    brightness: { hdr: 0.3, direct: 0.24 },
+    brightness: { hdr: 0.3, direct: 0.075 },
   },
 } as const;
 

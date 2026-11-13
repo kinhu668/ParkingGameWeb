@@ -77,6 +77,8 @@ const ARC_FRAGMENT_SHADER = /* glsl */ `
     brightness *= smoothstep( cameraFadeNear, cameraFadeFar, vDistance );
     brightness *= 1.0 - fogFade * smoothstep( fogNear, fogFar, vViewDepth );
     gl_FragColor = vec4( arcColor * brightness, 1.0 );
+    // 輸出色域：直接畫到畫面上時轉成 sRGB（與落點的閃光同一套）；畫進後製鏈的緩衝區時維持線性。
+    #include <colorspace_fragment>
   }
 `;
 
