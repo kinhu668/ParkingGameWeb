@@ -289,7 +289,7 @@ export const GAME_CAMERA_CONFIG = {
     /** 看向車身中心上方這個高度。 */
     lookAtHeightM: ftToM(4),
     /** 被擋住時鏡頭離看向點至少這麼遠；不夠就抬高仰角換取距離（見 avoidance）。 */
-    tightDistanceM: ftToM(11),
+    tightDistanceM: ftToM(12.5),
   },
   /** 遠距離跟車：較高較遠的斜俯視，看得到車四周的地面。 */
   chaseFar: {
