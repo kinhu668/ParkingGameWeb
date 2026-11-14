@@ -242,6 +242,43 @@ export const GAME_CAMERA_CONFIG = {
   positionTimeConstantS: 0.14,
   lookAtTimeConstantS: 0.08,
 
+  /**
+   * 跟車鏡頭的避讓：實心的東西（樓、牆、停著的車、子母車…）擋在車與鏡頭之間，或鏡頭的位置落在它裡面／屋頂上時，
+   * 鏡頭沿「車 → 鏡頭」這根桿子拉近；拉得太近（車快塞滿畫面）就把桿子往上抬，從車的後上方往下看，同時把視角拉寬。
+   * 鏡頭永遠看向車，所以拉近、抬高之後俯仰自動跟著變，車留在畫面中央。
+   */
+  avoidance: {
+    /** 鏡頭與擋塊之間至少留這麼多（公尺）：比遮擋半透明的 cameraClearanceM 略大，貼著牆時牆不會被淡掉。 */
+    clearanceM: ftToM(1.6),
+    /** 佔地面積小於這個的方塊不擋鏡頭（細桿、薄片：招牌柱、窗框、投遞箱），交給遮擋半透明。 */
+    minFootprintM2: ftToM(1) * ftToM(10),
+    /**
+     * 先試小幅度抬高：桿子抬高不超過這個角度就能整根越過擋塊（停著的車、矮牆、子母車）的話，鏡頭留在原本的距離、
+     * 只是高一點，不拉近。越不過去的（樓、巷子的高牆）才拉近。
+     */
+    clearLiftRad: degToRad(15),
+    /**
+     * 只有比這個矮的擋塊才用「抬高越過去」（車、子母車、7 ft 的矮牆）。更高的（樓、巷子的牆）一律拉近：
+     * 越過屋簷從屋頂上往下看，畫面下半是屋頂，而且鏡頭會在「巷子裡」與「屋頂上」之間跳。
+     */
+    clearLiftMaxTopM: ftToM(9),
+    /** 桿子最多抬到這個仰角（從水平往上）。 */
+    maxElevationRad: degToRad(68),
+    /** 找仰角時每次抬多少。 */
+    elevationStepRad: degToRad(3),
+    /**
+     * 被擋住時車身的寬度最多佔畫面寬度的這個比例（以看向點的距離、squeezedFovDeg 來算）。直式的手機畫面很窄，
+     * 鏡頭要離得比 tightDistanceM 更遠（＝抬得更高）才不會整個畫面都是車；橫式畫面用不到（tightDistanceM 比較大）。
+     */
+    maxCarWidthFraction: 0.5,
+    /** 桿子短到「最近距離」的這個倍數以內，視角開始往 squeezedFovDeg 拉寬；短到最近距離就是 squeezedFovDeg。 */
+    widenFromRatio: 1.6,
+    /** 被擠到最近時的垂直視角：近看一台車要廣角才裝得下整台車和前面的路（與駕駛座的視角相同）。 */
+    squeezedFovDeg: 72,
+    /** 避讓的位移與視角的平滑時間常數（秒）；鏡頭不會因為平滑落後而穿進擋塊（每一幀最後再擋一次）。 */
+    timeConstantS: 0.18,
+  },
+
   /** 近距離跟車：鏡頭在車尾後方不遠、略高於車頂，看向車身上方。 */
   chaseNear: {
     fovDeg: 58,
@@ -251,6 +288,8 @@ export const GAME_CAMERA_CONFIG = {
     heightM: ftToM(5.5),
     /** 看向車身中心上方這個高度。 */
     lookAtHeightM: ftToM(4),
+    /** 被擋住時鏡頭離看向點至少這麼遠；不夠就抬高仰角換取距離（見 avoidance）。 */
+    tightDistanceM: ftToM(11),
   },
   /** 遠距離跟車：較高較遠的斜俯視，看得到車四周的地面。 */
   chaseFar: {
@@ -259,6 +298,7 @@ export const GAME_CAMERA_CONFIG = {
     behindRearM: ftToM(30),
     heightM: ftToM(22),
     lookAtHeightM: ftToM(2),
+    tightDistanceM: ftToM(13),
   },
   /** 引擎蓋：視點在引擎蓋中線上方，沿車頭向前略俯，畫面下方看得到引擎蓋與車頭。 */
   hood: {

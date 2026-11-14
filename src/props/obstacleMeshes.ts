@@ -33,7 +33,12 @@ import type { VehicleDetail } from '../render/quality';
 import { OCCLUSION_FADE_CONFIG as FADE } from '../render/renderConfig';
 import { createBinGeometry, createTrafficConeGeometry, tinted } from './lotProps';
 import type { PropPlacement } from './lotLayout';
-import { occluderBox, registerOccluders, type Occluder } from './occluders';
+import {
+  occluderBox,
+  registerCameraBlockers,
+  registerOccluders,
+  type Occluder,
+} from './occluders';
 import { createParkedCars } from './parkedCars';
 import { createSignMesh } from './signs';
 
@@ -657,6 +662,21 @@ export function createObstacleMeshes(source: ObstacleSource, detail: VehicleDeta
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     group.add(mesh);
+    // 巷子兩旁的建築：跟車鏡頭不能跑進去或跑到屋頂上（從屋頂往下看只看得到屋頂）。不登記成會淡的東西：
+    // 車貼著牆開時整棟樓忽明忽暗比被擋住更糟。矮路緣擋不到鏡頭，不登記。
+    if (ftToM(style.heightFt) >= FADE.minHeightM) {
+      registerCameraBlockers(
+        group,
+        boxes.map((wallBox, instance) => {
+          const heightM = ftToM(style.heightFt * (BOUNDS_SIDE_VARIATION[instance]?.height ?? 1));
+          return occluderBox(
+            { x: ftToM(wallBox.centerXFt), y: heightM / 2, z: ftToM(wallBox.centerZFt) },
+            { x: ftToM(wallBox.widthFt), y: heightM, z: ftToM(wallBox.lengthFt) },
+            headingToRotationY(degToRad(wallBox.headingDeg)),
+          );
+        }),
+      );
+    }
   }
   return group;
 }

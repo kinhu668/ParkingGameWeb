@@ -315,6 +315,8 @@ function addLamps(
           ),
         ],
         parts: instanceParts([posts, lenses], index),
+        // 細桿：鏡頭不為它讓位，只淡。
+        passable: true,
       };
     }),
   );
@@ -517,6 +519,8 @@ function addPlants(
         ...instanceParts([foliage], 2 * index),
         ...instanceParts([foliage], 2 * index + 1),
       ],
+      // 樹：鏡頭穿過樹冠時只淡，不為它讓位。
+      passable: true,
     })),
   );
 }
