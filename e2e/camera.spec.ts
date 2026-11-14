@@ -227,15 +227,18 @@ test('巷子關（w1_l10）開場：遠、近距離跟車都在巷子裡看得�
   expect(Math.abs(settled.zFt - opening.zFt)).toBeLessThan(0.01);
   expect(Math.abs(settled.yFt - opening.yFt)).toBeLessThan(0.01);
 
-  // 切一圈回到近距離跟車：同樣在巷子裡。
-  for (let press = 0; press < GAME_CAMERA_VIEWS.length - 1; press += 1) {
+  // 切一圈回到近距離跟車：同樣在巷子裡。一次按一下、等 HUD 換了再按下一下（同一幀裡連按只算一次）。
+  const label = page.locator('#hud-camera');
+  for (const view of ['hood', 'cockpit', 'top', 'chase_near'] as const) {
     await page.keyboard.press('KeyV');
+    await expect(label).toHaveAttribute('data-view', view);
   }
   await expectCarShownInAlley(page, 'chase_near');
   await page.screenshot({ path: `${OUTPUT_DIR}/alley-opening-chase_near.png` });
 
   // 再切到遠距離跟車、重來：鏡頭直接回到開場的位置。
   await page.keyboard.press('KeyV');
+  await expect(label).toHaveAttribute('data-view', 'chase_far');
   await page.keyboard.press('Backspace');
   await expectCarShownInAlley(page, 'chase_far');
   const restarted = await cameraSnapshot(page);
