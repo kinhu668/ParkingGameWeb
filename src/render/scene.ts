@@ -87,7 +87,8 @@ import {
 } from './renderConfig';
 import { installHeightFog } from './heightFog';
 import type { ShaftSetup } from './lightShaft';
-import { createOcclusionFade, type Point3 } from './occlusionFade';
+import { collectCameraBlockers } from './cameraBlockers';
+import { createOcclusionFade, type Point3, type SightBox } from './occlusionFade';
 import { fitShadowBox, type ShadowBox } from './shadowArea';
 import {
   SUN_DIRECTION,
@@ -110,6 +111,10 @@ const LIGHTNING_SEED_OFFSET = 0x1f3;
 
 export interface GameScene {
   readonly scene: Scene;
+  /**
+   * 跟車鏡頭要避開的擋塊（樓、牆、停著的車、障礙物、巷子兩旁的建築；世界座標）。交給 createGameCamera。
+   */
+  readonly cameraBlockers: readonly SightBox[];
   /**
    * 每個畫面幀呼叫：把車擺到算圖姿態，並讓地面跟著車走（車開出場地時陰影範圍也跟著走）。
    * @param frameSeconds 距離上一幀多久（輪胎痕、灰塵、落葉用）；定格截圖不傳，這些效果停在起始狀態。
@@ -684,8 +689,12 @@ export function createGameScene(
   // 要在第一次畫之前；沒烘的表面維持中性貼圖，之後才出現的庫材質頂多是沒有紋路的底色。
   prepareSurfaceLibrary(renderer, quality.materials, surfacesUsedIn(scene));
 
+  // 跟車鏡頭的擋塊：與遮擋半透明讀同一份登記，但 `?fx=off` 也要有（鏡頭不該因為關了特效就跑進牆裡）。
+  const cameraBlockers = collectCameraBlockers(scene);
+
   return {
     scene,
+    cameraBlockers,
     fadeOccluders(cameraPosition, pose, enabled, frameSeconds) {
       occlusion?.update(cameraPosition, pose, enabled, frameSeconds);
     },

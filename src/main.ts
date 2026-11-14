@@ -51,7 +51,7 @@ import {
 } from './level/session';
 import { runBench } from './render/benchMode';
 import { createPresetCamera } from './render/followCamera';
-import { createGameCamera } from './render/gameCamera';
+import { cameraSnapshot, createGameCamera, type CameraSnapshot } from './render/gameCamera';
 import { resolveQuality } from './render/quality';
 import {
   createRenderContext,
@@ -68,7 +68,7 @@ import { createReverseAssist } from './ui/reverseAssist';
 import type { ControlsAccess } from './ui/controlsPanel';
 import './ui/style.css';
 import { createTouchControls, preventPageGestures } from './ui/touchControls';
-import { interpolateVehiclePose } from './vehicle/bicycleModel';
+import { interpolateVehiclePose, type VehiclePose } from './vehicle/bicycleModel';
 import { carLightsFor } from './vehicle/carMesh';
 import {
   INITIAL_GEAR,
@@ -90,6 +90,8 @@ declare global {
       readonly snapshot: () => SessionSnapshot;
       /** 目標車位的發光標記：位置與大小（ft）、變綠了多少、不透明度、有沒有在畫。 */
       readonly spotGlow: () => SpotGlowSnapshot;
+      /** 鏡頭目前的模式、位置、視角，以及車在畫面上的位置。 */
+      readonly camera: () => CameraSnapshot;
     };
   }
 }
@@ -207,10 +209,15 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
   }
 
   // 進場的鏡頭：?view= > 上次存的 > 預設。
+  // 鏡頭一建立就在起點、已經避開這一關的擋塊（樓、牆、停著的車…），第一幀就是對的位置。
   const gameCamera = createGameCamera(
     resolveInitialView(window.location.search, storage),
     layout.startState,
+    gameScene.cameraBlockers,
   );
+  // 避讓的擺位看畫面的長寬比（直式的手機要離得更遠）：先把長寬比設好再就位，第一幀就是對的。
+  pipeline.fit(gameCamera.camera);
+  gameCamera.snapTo(layout.startState);
   hud.showCameraView(gameCamera.view());
 
   /** 切換鏡頭：換到循環順序的下一個，記住選擇，HUD 顯示名稱。切換鏡頭鍵與螢幕上的「鏡頭」鍵都走這裡。 */
@@ -260,6 +267,8 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
   let gear: Gear = INITIAL_GEAR;
   let previousVehicle = session.vehicle;
   let accumulatorSeconds = 0;
+  /** 上一幀車的算圖姿態（還沒畫過就是起點）；鏡頭快照用。 */
+  let shownPose: VehiclePose = layout.startState;
   let lastFrameMs: number | undefined;
   /** 已經寫進存檔的那一次成績；同一次停妥只寫一次，重來後再過關會是新的成績。 */
   let savedResult: SessionResult | null = null;
@@ -268,6 +277,7 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
     levelId: level.id,
     snapshot: () => sessionSnapshot(session),
     spotGlow: () => gameScene.spotGlow(),
+    camera: () => cameraSnapshot(gameCamera, shownPose),
   });
 
   function frame(nowMs: number): void {
@@ -351,6 +361,7 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
     }
 
     const pose = interpolateVehiclePose(previousVehicle, session.vehicle, loop.alpha);
+    shownPose = pose;
     gameScene.update(pose, simSeconds);
     // 駕駛座視角要藏起玻璃，其他模式恢復。
     gameScene.setInteriorView(gameCamera.view() === 'cockpit');
