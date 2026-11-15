@@ -1,5 +1,7 @@
 // 天氣的 e2e：同一關、同一個鏡頭，六種 `?weather=` 的定格兩兩不同、同一種重拍逐位元組相同；
 // `?weather=` 蓋過關卡 JSON，不認得的值當作沒給。
+// 濕地／積水的倒影：有積水的天氣 medium 以上是平面反射（<html data-ground-mirror="planar">），low 與乾的天氣沒有；
+// 手機自動選到的級別不多畫倒影那一遍（只映天空）。
 import type { Page } from '@playwright/test';
 import { expect, OUTPUT_DIR, test } from './fixtures';
 
@@ -74,4 +76,52 @@ test('雷雨的定格：t=0 沒有在閃，t=2 是第一道閃電（閃光＋電
   // 不是雷雨的天氣沒有閃電。
   await captureShot(page, `${storm}&t=2&weather=rain`);
   await expect(html).toHaveAttribute('data-lightning', 'none');
+});
+
+/** 看得到一大片地面與停著的車的定格：大賣場關（JSON 是晴天），鏡頭在車位旁的低角度。 */
+const MIRROR_SHOT = 'level=w1_l03&cam=spot_low&t=0';
+
+test('濕地的倒影：有積水的天氣 medium 以上是平面反射；low、乾的天氣與基準的黃昏沒有', async ({ page }) => {
+  const html = page.locator('html');
+  // 沒有 ?quality=：軟體算圖自動選 medium。
+  for (const weather of ['rain', 'storm', 'wet']) {
+    await captureShot(page, `/?${MIRROR_SHOT}&weather=${weather}`, `mirror-${weather}-medium.png`);
+    await expect(html).toHaveAttribute('data-ground-mirror', 'planar');
+  }
+  for (const weather of ['clear', 'dusk', 'night']) {
+    await captureShot(page, `/?${MIRROR_SHOT}&weather=${weather}`);
+    await expect(html).toHaveAttribute('data-ground-mirror', 'none');
+  }
+  // low 沒有潮濕著色器：雨天也不多畫倒影那一遍。
+  await captureShot(page, `/?${MIRROR_SHOT}&weather=rain&quality=low`);
+  await expect(html).toHaveAttribute('data-ground-mirror', 'none');
+
+  // 一般遊戲也一樣（每幀都先畫倒影再畫主畫面）；倒車輔助層的小畫面與主畫面共用同一個場景，沒有錯誤。
+  await page.goto('/?level=w1_l10&lang=zh-TW');
+  await expect(page.locator('#hud-camera')).toBeVisible();
+  await expect(html).toHaveAttribute('data-ground-mirror', 'planar');
+});
+
+test.describe('手機', () => {
+  test.use({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
+
+  test('自動選到的級別不多畫倒影那一遍（積水只映天空）；?quality= 明確指定才畫，畫面也不同', async ({ page }) => {
+    const html = page.locator('html');
+    const auto = await captureShot(page, `/?${MIRROR_SHOT}&weather=rain`, 'mirror-rain-phone-auto.png');
+    await expect(html).toHaveAttribute('data-quality', 'medium');
+    await expect(html).toHaveAttribute('data-quality-source', 'auto');
+    await expect(html).toHaveAttribute('data-ground-mirror', 'sky');
+
+    const forced = await captureShot(
+      page,
+      `/?${MIRROR_SHOT}&weather=rain&quality=medium`,
+      'mirror-rain-phone-medium.png',
+    );
+    await expect(html).toHaveAttribute('data-ground-mirror', 'planar');
+    expect(forced === auto, '平面反射的畫面應該與只映天空的不同').toBe(false);
+
+    // 乾的天氣在手機上也沒有倒影。
+    await captureShot(page, `/?${MIRROR_SHOT}`);
+    await expect(html).toHaveAttribute('data-ground-mirror', 'none');
+  });
 });
