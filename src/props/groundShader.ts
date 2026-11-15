@@ -247,6 +247,19 @@ export type GroundMirrorMode =
   | 'planar';
 
 /**
+ * 積水上要不要有雨滴的漣漪：正在下雨、會動的環境效果開著（`?fx=off` 沒有）、積水有倒影（mirror 不是 none），
+ * 而且這個級別有地面法線（漣漪是靠法線與倒影的偏移顯現的；沒有法線的級別不值得每個像素多算這一段）。
+ */
+export function groundRipplesEnabled(
+  quality: Pick<GroundQualitySettings, 'normals'>,
+  mirror: GroundMirrorMode,
+  rain: number,
+  ambientFx: boolean,
+): boolean {
+  return quality.normals && mirror !== 'none' && rain > 0 && ambientFx;
+}
+
+/**
  * 這個場景的地面倒影做法：天氣沒有積水的倒影（reflection = 0）或沒有潮濕著色器 → none；
  * 畫質級別有開倒影那一遍 → planar；其餘 → sky。
  */
@@ -264,11 +277,13 @@ export function groundMirrorMode(
  * 這個畫質級別要打開的著色器開關（#define 的內容）。
  * @param edgeBoxCount 要在著色器裡算影子的箱子數（路緣石、車擋）；0 = 不算
  * @param mirror 濕地與積水的倒影做法；不給 = 沒有
+ * @param ripples 積水上有沒有雨滴的漣漪（groundRipplesEnabled）
  */
 export function groundShaderDefines(
   quality: GroundQualitySettings,
   edgeBoxCount = 0,
   mirror: GroundMirrorMode = 'none',
+  ripples = false,
 ): readonly string[] {
   const defines: string[] = [];
   if (quality.normals) {
@@ -286,6 +301,9 @@ export function groundShaderDefines(
       // 取樣數寫進開關：迴圈的次數要是編譯期常數。
       defines.push(`GROUND_PLANAR_TAPS ${Math.max(Math.round(quality.reflection?.streakTaps ?? 1), 1)}`);
     }
+    if (ripples && quality.normals) {
+      defines.push('GROUND_RIPPLES');
+    }
   }
   return defines;
 }
@@ -298,9 +316,13 @@ export function groundShaderDefines(
  */
 export function groundMirrorAmount(cosView: number, wet: number, puddle: number): number {
   const config = GROUND_REFLECTION_CONFIG;
-  const grazing = (1 - Math.min(Math.max(cosView, 0), 1)) ** config.fresnelPower;
-  const film = config.wetReflectance + (config.wetGrazingReflectance - config.wetReflectance) * grazing;
-  const water = config.puddleReflectance + (1 - config.puddleReflectance) * grazing;
+  const away = 1 - Math.min(Math.max(cosView, 0), 1);
+  const film =
+    config.wetReflectance +
+    (config.wetGrazingReflectance - config.wetReflectance) * away ** config.wetFresnelPower;
+  const water =
+    config.puddleReflectance +
+    (config.puddleGrazingReflectance - config.puddleReflectance) * away ** config.puddleFresnelPower;
   return Math.max(wet, puddle) * (film + (water - film) * puddle);
 }
 
@@ -378,10 +400,12 @@ float groundEdgeLight( vec2 p ) {
 #endif
 
 #ifdef GROUND_MIRROR
-// 濕地與積水的倒影：x 積水正視的反射率、y 濕柏油正視的反射率、z 濕柏油貼地看的上限、w 隨視線角度上升的指數。
+// 濕地與積水的反射率：x 積水正視、y 積水貼地看的上限、z 濕柏油正視、w 濕柏油貼地看的上限。
 uniform vec4 uGroundMirror;
-// x 倒影的整體強度（天氣）、y 積水的底色再壓暗的比例。
-uniform vec2 uGroundMirrorLook;
+// x 倒影的整體強度（天氣）、y 積水的底色再壓暗的比例、z 積水的反射率隨視線角度上升的指數、w 濕柏油的。
+uniform vec4 uGroundMirrorLook;
+// 環境貼圖的亮度乘上這個值才等於畫面上的天空（兩者的倍率不同）：只映天空的積水與平面反射的積水才一樣亮。
+uniform float uGroundMirrorSky;
 #endif
 #ifdef GROUND_PLANAR_TAPS
 // 平面反射的貼圖（場景對地面鏡像後畫的，線性亮度、有 mipmap）與「世界座標 → 貼圖座標」的矩陣。
@@ -393,6 +417,39 @@ uniform float uGroundReflectionStrength;
 uniform vec3 uGroundReflectionShape;
 // 取第幾級 mip（越大越糊）：x 濕柏油、y 積水。
 uniform vec2 uGroundReflectionBlur;
+#endif
+
+#ifdef GROUND_RIPPLES
+// 雨滴的漣漪的時間（秒）。
+uniform float uGroundRippleTime;
+// x 水面傾斜的幅度、y 傾斜把倒影推開的量、z 傾斜讓反射率變亮／變暗的幅度。
+uniform vec3 uGroundRipple;
+// 兩層格子：xy 邊長（公尺）、zw 每秒重來幾次。
+uniform vec4 uGroundRippleCells;
+// x 最大半徑（佔格子邊長）、y 波紋的疏密、z 波包的寬度。
+uniform vec3 uGroundRippleShape;
+// 離鏡頭多遠開始淡出、到多遠完全沒有。
+uniform vec2 uGroundRippleFade;
+
+// 只看格子編號的雜湊（三個 0–1 的數）：同一格每次都一樣。
+vec3 groundRippleHash( vec2 cell ) {
+	vec3 q = fract( vec3( cell.xyx ) * vec3( 0.1031, 0.1030, 0.0973 ) );
+	q += dot( q, q.yzx + 33.33 );
+	return fract( ( q.xxy + q.yzz ) * q.zyx );
+}
+
+// 一層格子：每一格一個雨滴，一圈波紋從落點擴散出去、邊擴散邊消失。回傳水面的斜率（世界座標 xz）。
+vec2 groundRippleLayer( vec2 p, float cellM, float rateHz ) {
+	vec2 scaled = p / cellM;
+	vec2 cell = floor( scaled );
+	vec3 random = groundRippleHash( cell );
+	// 落點離格子邊至少 0.3 格（不小於最大半徑），波紋不會被格子切斷。
+	vec2 offset = scaled - cell - ( 0.3 + 0.4 * random.xy );
+	float age = fract( uGroundRippleTime * rateHz + random.z );
+	float fromRing = length( offset ) - age * uGroundRippleShape.x;
+	float wave = sin( fromRing * uGroundRippleShape.y ) * exp( - fromRing * fromRing * uGroundRippleShape.z * uGroundRippleShape.z );
+	return normalize( offset + 1e-5 ) * wave * ( 1.0 - age ) * ( 1.0 - age );
+}
 #endif
 
 #ifdef GROUND_NORMALS
@@ -461,6 +518,14 @@ float groundPuddle = 0.0;
 		groundColor *= 1.0 - uGroundMirrorLook.y * groundPuddle;
 	#endif
 #endif
+// 雨滴打在積水上的漣漪：水面的斜率（世界座標 xz）。只在積水上、近處才有。
+vec2 groundRipple = vec2( 0.0 );
+#ifdef GROUND_RIPPLES
+	groundRipple = ( groundRippleLayer( vGroundXZ, uGroundRippleCells.x, uGroundRippleCells.z )
+		+ groundRippleLayer( vGroundXZ + 17.3, uGroundRippleCells.y, uGroundRippleCells.w ) )
+		* uGroundRipple.x * groundPuddle
+		* ( 1.0 - smoothstep( uGroundRippleFade.x, uGroundRippleFade.y, length( vViewPosition ) ) );
+#endif
 diffuseColor.rgb = groundColor;
 
 float groundEdgeLit = 1.0;
@@ -494,6 +559,8 @@ const FRAGMENT_NORMAL = /* glsl */ `
 	// 遠處的起伏小於一個像素：淡出，免得閃爍。積水的水面是平的。
 	float groundFade = 1.0 - smoothstep( uGroundNormalFade.x, uGroundNormalFade.y, length( vViewPosition ) );
 	groundSlope *= groundFade * ( 1.0 - groundPuddle );
+	// 積水的水面是平的，只有雨滴的漣漪讓它起伏（路燈與車燈的高光跟著碎開）。
+	groundSlope += groundRipple;
 	vec3 groundNormal = normalize( vec3( - groundSlope.x, 1.0, - groundSlope.y ) );
 	normal = normalize( ( viewMatrix * vec4( groundNormal, 0.0 ) ).xyz );
 }
@@ -512,11 +579,14 @@ const FRAGMENT_MIRROR = /* glsl */ `
 	float groundMirrorMask = max( groundWet, groundPuddle );
 	// 地面是平的：視線與法線的夾角只看視線方向與世界的上方（視角座標）。
 	float groundCosView = saturate( dot( geometryViewDir, normalize( viewMatrix[ 1 ].xyz ) ) );
-	float groundGrazing = pow( 1.0 - groundCosView, uGroundMirror.w );
-	float groundFilm = mix( uGroundMirror.y, uGroundMirror.z, groundGrazing );
-	float groundWater = mix( uGroundMirror.x, 1.0, groundGrazing );
+	float groundFilm = mix( uGroundMirror.z, uGroundMirror.w, pow( 1.0 - groundCosView, uGroundMirrorLook.w ) );
+	float groundWater = mix( uGroundMirror.x, uGroundMirror.y, pow( 1.0 - groundCosView, uGroundMirrorLook.z ) );
 	float groundMirrorAmount = uGroundMirrorLook.x * groundMirrorMask * mix( groundFilm, groundWater, groundPuddle );
-	vec3 groundMirror = radiance;
+	#ifdef GROUND_RIPPLES
+		// 漣漪：水面朝鏡頭傾斜的那一側映到比較亮的天空，背對的那一側比較暗，一圈一圈才看得出來。
+		groundMirrorAmount *= clamp( 1.0 + uGroundRipple.z * dot( groundRipple, normalize( vGroundXZ - cameraPosition.xz ) ), 0.0, 2.0 );
+	#endif
+	vec3 groundMirror = radiance * uGroundMirrorSky;
 	#ifdef GROUND_PLANAR_TAPS
 	{
 		vec4 groundPlanarCoord = uGroundReflectionMatrix * vec4( vGroundXZ.x, 0.0, vGroundXZ.y, 1.0 );
@@ -524,6 +594,10 @@ const FRAGMENT_MIRROR = /* glsl */ `
 		// 濕柏油：顆粒把倒影打散、變糊，並沿畫面的上下方向拉長（路燈在濕地上的長條反光）。積水是平的：清楚、不拉長。
 		float groundPlanarRough = 1.0 - groundPuddle;
 		groundPlanarUv += ( vec2( groundFine, groundCoarse ) - 0.5 ) * uGroundReflectionShape.y * groundPlanarRough * vec2( 1.0, uGroundReflectionShape.z );
+		#ifdef GROUND_RIPPLES
+			// 漣漪把水面的倒影推開（斜率的 x 在貼圖上是左右、z 是上下；鏡像鏡頭的畫面左右對調，但波紋是對稱的）。
+			groundPlanarUv += groundRipple * uGroundRipple.y;
+		#endif
 		float groundPlanarLod = mix( uGroundReflectionBlur.y, uGroundReflectionBlur.x, groundPlanarRough );
 		#if GROUND_PLANAR_TAPS > 1
 			vec3 groundPlanar = vec3( 0.0 );

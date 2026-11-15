@@ -566,6 +566,8 @@ export function createGameScene(
     groundMirror === 'planar' && quality.ground.reflection !== null
       ? createGroundReflection(renderer, quality.ground.reflection)
       : undefined;
+  // 雨滴打在積水上的漣漪：正在下雨而且會動的環境效果開著才有；時間每幀往前走（定格截圖停在 0）。
+  const rippleTime = { value: 0 };
   const ground = createGround(
     DEFAULT_SEED,
     quality.ground,
@@ -584,7 +586,12 @@ export function createGameScene(
         )
       : groundEdgeShadows({ x: 0, z: 0 }, 0, sunDirection, boundsEdgeBoxes(bounds, level)),
     preset.ground,
-    reflection?.uniforms,
+    {
+      reflection: reflection?.uniforms,
+      // 環境貼圖與天空穹頂是同一張天空、倍率不同：只映天空的積水照穹頂的亮度映。
+      skyScale: preset.sky.intensity / preset.sky.environmentIntensity,
+      ripples: ambientFx && preset.rain > 0 ? { rain: preset.rain, time: rippleTime } : undefined,
+    },
   );
   scene.add(ground);
 
@@ -771,6 +778,7 @@ export function createGameScene(
       // 光柱裡的霧氣流動：`?fx=off` 不走時間（光柱照樣畫，只是靜止的）。
       if (ambientFx) {
         shaftTime.value += frameSeconds;
+        rippleTime.value += frameSeconds;
       }
       glow.advance(frameSeconds);
       weatherSeconds += frameSeconds;

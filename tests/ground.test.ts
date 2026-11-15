@@ -14,6 +14,7 @@ import {
   groundLayerUv,
   groundMirrorAmount,
   groundMirrorMode,
+  groundRipplesEnabled,
   groundShaderDefines,
   groundStainAmount,
   groundStainSmear,
@@ -668,7 +669,7 @@ describe('濕地／積水的倒影', () => {
         16,
         undefined,
         weatherPreset(weather).ground,
-        planarUniforms(),
+        { reflection: planarUniforms() },
       );
       expect(material.customProgramCacheKey(), weather).toBe(
         createGroundMaterial(DEFAULT_SEED, small('high'), 16).customProgramCacheKey(),
@@ -684,7 +685,7 @@ describe('濕地／積水的倒影', () => {
     const rain = weatherPreset('rain').ground;
     const reflection = planarUniforms();
     const planar = compiled(
-      createGroundMaterial(DEFAULT_SEED, small('high'), 16, undefined, rain, reflection),
+      createGroundMaterial(DEFAULT_SEED, small('high'), 16, undefined, rain, { reflection }),
     );
     expect(planar.fragmentShader).toContain('#define GROUND_MIRROR');
     expect(planar.fragmentShader).toContain(
@@ -695,15 +696,21 @@ describe('濕地／積水的倒影', () => {
     expect(planar.uniforms.uGroundReflectionStrength).toBe(reflection.strength);
     expect(planar.uniforms.uGroundMirror).toBeDefined();
 
-    const sky = compiled(createGroundMaterial(DEFAULT_SEED, small('high'), 16, undefined, rain));
+    const sky = compiled(
+      createGroundMaterial(DEFAULT_SEED, small('high'), 16, undefined, rain, { skyScale: 0.5 }),
+    );
     expect(sky.fragmentShader).toContain('#define GROUND_MIRROR');
     expect(sky.fragmentShader).not.toContain('#define GROUND_PLANAR_TAPS');
     expect(sky.uniforms.uGroundMirror).toBeDefined();
     expect(sky.uniforms.uGroundReflection).toBeUndefined();
+    // 環境貼圖照畫面上天空的亮度映（倍率由場景給；沒給是 1）。
+    expect(sky.uniforms.uGroundMirrorSky?.value).toBe(0.5);
+    expect(planar.uniforms.uGroundMirrorSky?.value).toBe(1);
+    expect(sky.fragmentShader).toContain('vec3 groundMirror = radiance * uGroundMirrorSky;');
 
     // low：沒有潮濕著色器，雨天仍是整片壓暗的替代做法，沒有倒影。
     const low = compiled(
-      createGroundMaterial(DEFAULT_SEED, small('low'), 16, undefined, rain, reflection),
+      createGroundMaterial(DEFAULT_SEED, small('low'), 16, undefined, rain, { reflection }),
     );
     expect(low.fragmentShader).not.toContain('#define GROUND_MIRROR');
     expect(low.uniforms.uGroundReflection).toBeUndefined();
@@ -735,9 +742,11 @@ describe('濕地／積水的倒影', () => {
     // 正上方往下看：就是設定裡的兩個「正視」反射率。
     expect(groundMirrorAmount(1, 1, 0)).toBeCloseTo(config.wetReflectance, 9);
     expect(groundMirrorAmount(1, 1, 1)).toBeCloseTo(config.puddleReflectance, 9);
-    // 貼著地面看：積水接近鏡子，濕柏油到上限為止。
-    expect(groundMirrorAmount(0, 1, 1)).toBeCloseTo(1, 9);
+    // 貼著地面看：各自到上限為止；積水接近鏡子但不是整片鏡子。
+    expect(groundMirrorAmount(0, 1, 1)).toBeCloseTo(config.puddleGrazingReflectance, 9);
     expect(groundMirrorAmount(0, 1, 0)).toBeCloseTo(config.wetGrazingReflectance, 9);
+    expect(config.puddleGrazingReflectance).toBeGreaterThan(0.8);
+    expect(config.puddleGrazingReflectance).toBeLessThan(1);
     let previousWet = 0;
     let previousPuddle = 0;
     for (let step = 0; step <= 20; step += 1) {
@@ -751,7 +760,80 @@ describe('濕地／積水的倒影', () => {
       previousWet = wet;
       previousPuddle = puddle;
     }
-    // 跟車鏡頭俯視的角度（視線與地面法線夾 55° 左右）積水的倒影就看得出來，不必等到貼地。
-    expect(groundMirrorAmount(Math.cos((55 * Math.PI) / 180), 1, 1)).toBeGreaterThan(0.25);
+    // 跟車鏡頭俯視的角度（視線與地面法線夾 55° 左右）積水的倒影就看得出來，不必等到貼地；
+    // 從正上方看（俯視鏡頭）淡得多，積水不會整片泛白。
+    const chase = groundMirrorAmount(Math.cos((55 * Math.PI) / 180), 1, 1);
+    expect(chase).toBeGreaterThan(0.25);
+    expect(groundMirrorAmount(1, 1, 1)).toBeLessThan(chase / 2);
+  });
+
+  test('雨滴的漣漪：正在下雨、fx 開著、有倒影、有地面法線的級別才有；時間是場景每幀更新的同一個物件', () => {
+    expect(groundRipplesEnabled(QUALITY_PRESETS.high.ground, 'planar', 0.6, true)).toBe(true);
+    expect(groundRipplesEnabled(QUALITY_PRESETS.ultra.ground, 'sky', 1, true)).toBe(true);
+    // ?fx=off、沒下雨（雨後）、沒有倒影、沒有法線的級別（medium）：都沒有。
+    expect(groundRipplesEnabled(QUALITY_PRESETS.high.ground, 'planar', 0.6, false)).toBe(false);
+    expect(groundRipplesEnabled(QUALITY_PRESETS.high.ground, 'planar', 0, true)).toBe(false);
+    expect(groundRipplesEnabled(QUALITY_PRESETS.high.ground, 'none', 1, true)).toBe(false);
+    expect(groundRipplesEnabled(QUALITY_PRESETS.medium.ground, 'planar', 1, true)).toBe(false);
+    expect(groundShaderDefines(QUALITY_PRESETS.high.ground, 0, 'sky', true)).toContain('GROUND_RIPPLES');
+    expect(groundShaderDefines(QUALITY_PRESETS.high.ground, 0, 'sky', false)).not.toContain('GROUND_RIPPLES');
+    expect(groundShaderDefines(QUALITY_PRESETS.medium.ground, 0, 'planar', true)).not.toContain('GROUND_RIPPLES');
+    expect(groundShaderDefines(QUALITY_PRESETS.high.ground, 0, 'none', true)).not.toContain('GROUND_RIPPLES');
+
+    const time = { value: 0 };
+    const storm = weatherPreset('storm');
+    const rippling = compiled(
+      createGroundMaterial(DEFAULT_SEED, small('high'), 16, undefined, storm.ground, {
+        reflection: planarUniforms(),
+        ripples: { rain: storm.rain, time },
+      }),
+    );
+    expect(rippling.fragmentShader).toContain('#define GROUND_RIPPLES');
+    expect(rippling.uniforms.uGroundRippleTime).toBe(time);
+    // 漣漪讓積水的水面起伏（法線），也把倒影推開；只出現在積水上。
+    expect(rippling.fragmentShader).toContain('groundSlope += groundRipple;');
+    expect(rippling.fragmentShader).toContain('groundPlanarUv += groundRipple * uGroundRipple.y;');
+    expect(rippling.fragmentShader).toContain('* uGroundRipple.x * groundPuddle');
+
+    // 雨天的幅度比雷雨小（照雨量打折）。
+    const rain = weatherPreset('rain');
+    const lighter = compiled(
+      createGroundMaterial(DEFAULT_SEED, small('high'), 16, undefined, rain.ground, {
+        reflection: planarUniforms(),
+        ripples: { rain: rain.rain, time },
+      }),
+    );
+    const slopeOf = (shader: { uniforms: Record<string, { value: unknown }> }): number =>
+      (shader.uniforms.uGroundRipple?.value as { x: number }).x;
+    expect(slopeOf(lighter)).toBeGreaterThan(0);
+    expect(slopeOf(lighter)).toBeLessThan(slopeOf(rippling));
+
+    // 沒給（?fx=off、定格以外的靜態模式）就沒有；medium 給了也沒有；雨後（沒在下雨）給了也沒有。
+    for (const material of [
+      createGroundMaterial(DEFAULT_SEED, small('high'), 16, undefined, storm.ground, {
+        reflection: planarUniforms(),
+      }),
+      createGroundMaterial(DEFAULT_SEED, small('medium'), 16, undefined, storm.ground, {
+        reflection: planarUniforms(),
+        ripples: { rain: storm.rain, time },
+      }),
+      createGroundMaterial(DEFAULT_SEED, small('high'), 16, undefined, weatherPreset('wet').ground, {
+        reflection: planarUniforms(),
+        ripples: { rain: weatherPreset('wet').rain, time },
+      }),
+    ]) {
+      const shader = compiled(material);
+      expect(shader.fragmentShader).not.toContain('#define GROUND_RIPPLES');
+      expect(shader.uniforms.uGroundRippleTime).toBeUndefined();
+    }
+  });
+
+  test('漣漪的波紋不會被格子切斷：最大半徑不超過落點離格子邊的距離；兩層格子不成整數比', () => {
+    const ripple = GROUND_REFLECTION_CONFIG.ripple;
+    // 著色器裡落點在格子的 0.3–0.7 之間。
+    expect(ripple.maxRadius).toBeLessThanOrEqual(0.3);
+    const ratio = ripple.cellsM[1] / ripple.cellsM[0];
+    expect(Math.abs(ratio - Math.round(ratio))).toBeGreaterThan(0.1);
+    expect(ripple.fadeEndM).toBeGreaterThan(ripple.fadeStartM);
   });
 });

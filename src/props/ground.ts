@@ -26,6 +26,7 @@ import {
   GROUND_EDGE_SHADOW_SOFTNESS,
   groundLayerTransforms,
   groundMirrorMode,
+  groundRipplesEnabled,
   groundShaderDefines,
   groundStainSmear,
   patchGroundShader,
@@ -55,6 +56,30 @@ function createNoiseTexture(seed: number, sizePx: number, anisotropy: number): D
 /** 沒有指定天氣時的潮濕設定：GROUND_CONFIG 原本的數值。 */
 const DEFAULT_WETNESS: GroundWetnessPreset = { ...GROUND_CONFIG, fallback: null, reflection: 0 };
 
+/** 積水上雨滴的漣漪（只有正在下雨、`?fx=off` 沒開時才給）。 */
+export interface GroundRipples {
+  /** 雨量（WeatherPreset.rain，0–1）：漣漪的幅度照它打折。 */
+  readonly rain: number;
+  /** 漣漪的時間（秒）；物件固定，場景每幀把經過的時間加上去。定格截圖停在 0（每一格的時間差固定，所以可重現）。 */
+  readonly time: { value: number };
+}
+
+/** 濕地與積水映出來的東西（天氣有積水的倒影時才用得到；每一項都可以不給）。 */
+export interface GroundWater {
+  /**
+   * 平面反射的貼圖與矩陣（render/groundReflection.ts）；不給 = 濕與積水的地方只映天空（環境貼圖）。
+   * quality.reflection 是 null（這個級別不畫倒影那一遍）時不必給。
+   */
+  readonly reflection?: GroundReflectionUniforms | undefined;
+  /**
+   * 環境貼圖的亮度乘上這個值才等於畫面上的天空（天空穹頂的倍率 ÷ 環境光的倍率）；不給 = 1。
+   * 只映天空的積水因此與平面反射的積水一樣亮。
+   */
+  readonly skyScale?: number | undefined;
+  /** 積水上雨滴的漣漪；不給 = 沒有（沒下雨、`?fx=off`）。 */
+  readonly ripples?: GroundRipples | undefined;
+}
+
 /**
  * 柏油材質：MeshStandardMaterial 加上世界座標的程序化細節，仍然吃環境貼圖、陰影與霧。
  * @param seed 噪聲貼圖與各層位移的亂數種子
@@ -62,8 +87,7 @@ const DEFAULT_WETNESS: GroundWetnessPreset = { ...GROUND_CONFIG, fallback: null,
  * @param maxAnisotropy 顯示卡支援的各向異性過濾上限
  * @param edgeShadows 路緣石、車擋的影子；不給就只有陰影貼圖的影子
  * @param wetness 這種天氣的潮濕與積水；不給 = GROUND_CONFIG（黃昏的少量潮濕斑）
- * @param reflection 平面反射的貼圖與矩陣（render/groundReflection.ts）；不給 = 濕與積水的地方只映天空。
- *   quality.reflection 是 null（這個級別不畫倒影那一遍）時不必給。
+ * @param water 濕地與積水映出來的東西（倒影貼圖、天空的亮度、漣漪）；不給 = 只映天空、沒有漣漪
  */
 export function createGroundMaterial(
   seed: number,
@@ -71,8 +95,9 @@ export function createGroundMaterial(
   maxAnisotropy: number,
   edgeShadows?: GroundEdgeShadows,
   wetness: GroundWetnessPreset = DEFAULT_WETNESS,
-  reflection?: GroundReflectionUniforms,
+  water: GroundWater = {},
 ): MeshStandardMaterial {
+  const { reflection, ripples } = water;
   const config = GROUND_CONFIG;
   // 沒有潮濕著色器的級別：雨天用整片壓暗＋降粗糙度代替。
   const fallback = quality.wetness ? null : wetness.fallback;
@@ -88,7 +113,9 @@ export function createGroundMaterial(
     reflection === undefined ? { ...quality, reflection: null } : quality,
     wetness.reflection,
   );
-  const defines = groundShaderDefines(quality, edgeShadows?.boxes.length, mirror);
+  const rippling =
+    ripples !== undefined && groundRipplesEnabled(quality, mirror, ripples.rain, true);
+  const defines = groundShaderDefines(quality, edgeShadows?.boxes.length, mirror, rippling);
   // 有限差分的步長：細顆粒層的一個貼圖像素。
   const normalEpsM = config.layers.fineGrain.periodM / quality.textureSizePx;
 
@@ -174,12 +201,20 @@ export function createGroundMaterial(
         uGroundMirror: {
           value: new Vector4(
             look.puddleReflectance,
+            look.puddleGrazingReflectance,
             look.wetReflectance,
             look.wetGrazingReflectance,
-            look.fresnelPower,
           ),
         },
-        uGroundMirrorLook: { value: new Vector2(wetness.reflection, look.puddleDarken) },
+        uGroundMirrorLook: {
+          value: new Vector4(
+            wetness.reflection,
+            look.puddleDarken,
+            look.puddleFresnelPower,
+            look.wetFresnelPower,
+          ),
+        },
+        uGroundMirrorSky: { value: water.skyScale ?? 1 },
       });
     }
     if (mirror === 'planar' && reflection !== undefined) {
@@ -192,6 +227,27 @@ export function createGroundMaterial(
           value: new Vector3(look.wetStreakLength, look.grainDistortion, look.streakSkew),
         },
         uGroundReflectionBlur: { value: new Vector2(look.wetBlurLod, look.puddleBlurLod) },
+      });
+    }
+    if (rippling && ripples !== undefined) {
+      const ripple = GROUND_REFLECTION_CONFIG.ripple;
+      Object.assign(shader.uniforms, {
+        uGroundRippleTime: ripples.time,
+        uGroundRipple: {
+          value: new Vector3(ripple.slope * ripples.rain, ripple.reflectionShift, ripple.contrast),
+        },
+        uGroundRippleCells: {
+          value: new Vector4(
+            ripple.cellsM[0],
+            ripple.cellsM[1],
+            ripple.ratesHz[0],
+            ripple.ratesHz[1],
+          ),
+        },
+        uGroundRippleShape: {
+          value: new Vector3(ripple.maxRadius, ripple.frequency, ripple.sharpness),
+        },
+        uGroundRippleFade: { value: new Vector2(ripple.fadeStartM, ripple.fadeEndM) },
       });
     }
     if (edgeShadows !== undefined && edgeShadows.boxes.length > 0) {
@@ -229,7 +285,7 @@ export function createGroundMaterial(
  * @param maxAnisotropy 顯示卡支援的各向異性過濾上限；斜看地面時遠處才不會糊成一片
  * @param edgeShadows 路緣石、車擋的影子（著色器裡直接算）；不給就只有陰影貼圖的影子
  * @param wetness 這種天氣的潮濕與積水；不給 = 黃昏
- * @param reflection 平面反射的貼圖與矩陣；不給 = 濕與積水的地方只映天空
+ * @param water 濕地與積水映出來的東西（倒影貼圖、天空的亮度、漣漪）；不給 = 只映天空、沒有漣漪
  */
 export function createGround(
   seed: number,
@@ -237,11 +293,11 @@ export function createGround(
   maxAnisotropy: number,
   edgeShadows?: GroundEdgeShadows,
   wetness?: GroundWetnessPreset,
-  reflection?: GroundReflectionUniforms,
+  water?: GroundWater,
 ): Mesh {
   const ground = new Mesh(
     new PlaneGeometry(GROUND_CONFIG.sizeM, GROUND_CONFIG.sizeM),
-    createGroundMaterial(seed, quality, maxAnisotropy, edgeShadows, wetness, reflection),
+    createGroundMaterial(seed, quality, maxAnisotropy, edgeShadows, wetness, water),
   );
   // PlaneGeometry 預設立在 XY 平面、面朝 +Z；繞 X 轉 −90° 讓它躺平、面朝 +Y。
   ground.rotation.x = -Math.PI / 2;
