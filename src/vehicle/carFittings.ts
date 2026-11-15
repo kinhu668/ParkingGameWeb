@@ -380,12 +380,14 @@ function createPlate(
  * 一端的左右兩個燈組：黑色燈殼裡嵌幾格燈罩，外圈一圈鍍鉻框，整組跟著端面的弧度包向車角。
  * @param front true = 頭燈、false = 尾燈
  * @param shares 由內到外每一格燈罩佔的寬度比例（加起來是 1）
+ * @param curveSegments 燈殼與鍍鉻框沿著端面的弧度分幾段
  * @returns housing：燈殼；lenses：由內到外每一格燈罩（左右併在一起）；bezel：鍍鉻框（尾燈另有一條橫過燈罩的飾條）
  */
 function createLampClusters(
   front: boolean,
   centerYM: number,
   shares: readonly number[],
+  curveSegments: number,
 ): { housing: BufferGeometry; lenses: BufferGeometry[]; bezel: BufferGeometry } {
   const bottomM = centerYM - FIT.lampHeightM / 2;
   const topM = centerYM + FIT.lampHeightM / 2;
@@ -410,12 +412,12 @@ function createLampClusters(
       createFaceSlab(front, centerYM, [side * fromXM, side * toXM], y, proudM, depthM, segments);
 
     housing.push(
-      slab(FIT.lampInnerXM, FIT.lampOuterXM, [bottomM, topM], FIT.lampProudM, FIT.lampDepthM, 6),
+      slab(FIT.lampInnerXM, FIT.lampOuterXM, [bottomM, topM], FIT.lampProudM, FIT.lampDepthM, curveSegments),
     );
     // 鍍鉻框：上下兩條橫的跟著端面彎，左右兩條直的。
     bezel.push(
-      slab(FIT.lampInnerXM, FIT.lampOuterXM, [topM - FIT.lampBezelM, topM], bezelProudM, bezelDepthM, 6),
-      slab(FIT.lampInnerXM, FIT.lampOuterXM, [bottomM, bottomM + FIT.lampBezelM], bezelProudM, bezelDepthM, 6),
+      slab(FIT.lampInnerXM, FIT.lampOuterXM, [topM - FIT.lampBezelM, topM], bezelProudM, bezelDepthM, curveSegments),
+      slab(FIT.lampInnerXM, FIT.lampOuterXM, [bottomM, bottomM + FIT.lampBezelM], bezelProudM, bezelDepthM, curveSegments),
       slab(
         FIT.lampInnerXM,
         FIT.lampInnerXM + FIT.lampBezelM,
@@ -442,14 +444,14 @@ function createLampClusters(
           [centerYM - 0.003, centerYM + 0.003],
           bezelProudM,
           bezelDepthM,
-          6,
+          curveSegments,
         ),
       );
     }
     let fromXM = FIT.lampInnerXM + FIT.lampRimM;
     shares.forEach((share, index) => {
       const toXM = fromXM + lensWidthM * share;
-      lenses[index]?.push(slab(fromXM, toXM, lensY, FIT.lampProudM + FIT.lensProudM, 0.02, 3));
+      lenses[index]?.push(slab(fromXM, toXM, lensY, FIT.lampProudM + FIT.lensProudM, 0.02, Math.ceil(curveSegments / 2)));
       fromXM = toXM + FIT.lampDividerM;
     });
   }
@@ -499,13 +501,13 @@ function createArchLips(segments: number): BufferGeometry {
   return builder.build();
 }
 
-/** 天窗：車頂上一圈黑色的接縫，裡面一片跟著車頂弧度的深色玻璃。 */
-function createSunroof(): { seam: BufferGeometry; glass: BufferGeometry } {
+/** 天窗：車頂上一圈黑色的接縫，裡面一片跟著車頂弧度的深色玻璃。across、along：橫向、縱向各分幾段。 */
+function createSunroof(across: number, along: number): { seam: BufferGeometry; glass: BufferGeometry } {
   const roof = FIT.sunroofM;
   const fromZM = L.windshieldTopZM + roof.behindHeader;
   const toZM = fromZM + roof.length;
-  const xs = steps(-roof.halfWidth, roof.halfWidth, 8);
-  const zs = steps(fromZM, toZM, 4);
+  const xs = steps(-roof.halfWidth, roof.halfWidth, across);
+  const zs = steps(fromZM, toZM, along);
   const onRoof = (xM: number, zM: number, liftM: number): Point3 => [
     xM,
     bodyTopHeightM(zM, xM) + liftM,
@@ -520,8 +522,8 @@ function createSunroof(): { seam: BufferGeometry; glass: BufferGeometry } {
   const insetM = FIT.seamWidthM;
   const glass = new FacetBuilder()
     .grid(
-      steps(fromZM + insetM, toZM - insetM, 4).map((zM) =>
-        steps(-roof.halfWidth + insetM, roof.halfWidth - insetM, 8).map((xM) =>
+      steps(fromZM + insetM, toZM - insetM, along).map((zM) =>
+        steps(-roof.halfWidth + insetM, roof.halfWidth - insetM, across).map((xM) =>
           onRoof(xM, zM, roof.lift),
         ),
       ),
@@ -732,13 +734,16 @@ export const MIRROR_FITTINGS: readonly string[] = ['mirror:shells', 'mirror:back
 
 /**
  * 建立全部的配件（還沒併進車殼）。每次呼叫都是新的幾何。
- * @param detail low：輪拱唇與窗台飾條的段數少一半（背景車與低畫質用）
+ * @param detail low：跟著曲面彎的配件（燈組、水箱罩、輪拱唇、窗台飾條、天窗）段數少一半、水箱罩少兩條橫條
+ *   （背景車與低畫質用；配件的種類與位置相同）
  */
 export function createCarFittings(detail: VehicleDetail = 'high'): CarFitting[] {
   const fittings: CarFitting[] = [];
   const add = (name: string, part: BodyPart, geometry: BufferGeometry): void => {
     fittings.push({ name, part, geometry });
   };
+  const high = detail === 'high';
+  const lampSegments = high ? 6 : 3;
 
   // 保險桿（烤漆）與下擾流（黑）。前保險桿的正面讓出車牌的厚度；後保險桿的正面就是車尾。
   const frontBumperZM = -HALF_LENGTH_M + FIT.plateThicknessM + FIT.plateTextProudM;
@@ -758,13 +763,13 @@ export function createCarFittings(detail: VehicleDetail = 'high'): CarFitting[] 
   add('valance:front', 'trim', valance(frontBumperZM));
   add('bumper:rear', 'paint', turnedToRear(bumper(-HALF_LENGTH_M)));
   add('valance:rear', 'trim', turnedToRear(valance(-HALF_LENGTH_M)));
-  add('arch:lips', 'paint', createArchLips(detail === 'high' ? 16 : 8));
+  add('arch:lips', 'paint', createArchLips(high ? 16 : 8));
 
   // 燈組：頭燈是兩格方燈（遠光、近光）；尾燈由內到外是倒車燈、尾燈、方向燈。
   const headlamps = createLampClusters(true, FIT.headlampCenterYM, [
     FIT.headlampInnerShare,
     1 - FIT.headlampInnerShare,
-  ]);
+  ], lampSegments);
   add('headlamp:housing', 'trim', headlamps.housing);
   add('headlamp:lens', 'headlight', merged(headlamps.lenses));
   add('headlamp:bezel', 'chrome', headlamps.bezel);
@@ -772,7 +777,7 @@ export function createCarFittings(detail: VehicleDetail = 'high'): CarFitting[] 
     FIT.taillampReverseShare,
     1 - FIT.taillampReverseShare - FIT.taillampIndicatorShare,
     FIT.taillampIndicatorShare,
-  ]);
+  ], lampSegments);
   const [reverseLens, tailLens, rearIndicatorLens] = taillamps.lenses;
   if (reverseLens === undefined || tailLens === undefined || rearIndicatorLens === undefined) {
     throw new Error('尾燈燈組少了一格燈罩');
@@ -833,16 +838,16 @@ export function createCarFittings(detail: VehicleDetail = 'high'): CarFitting[] 
     y: readonly [number, number],
     proudM: number,
     depthM: number,
-  ): BufferGeometry => createFaceSlab(true, FIT.headlampCenterYM, x, y, proudM, depthM, 8);
+  ): BufferGeometry => createFaceSlab(true, FIT.headlampCenterYM, x, y, proudM, depthM, high ? 8 : 4);
   add('grille', 'trim', grilleSlab(grilleX, [grilleBottomM, grilleTopM], 0.004, 0.04));
   const barInsetM = 0.012;
+  const grilleBars = high ? FIT.grilleBars : FIT.grilleBars - 2;
   add(
     'grille:bars',
     'chrome',
     merged([
-      ...Array.from({ length: FIT.grilleBars }, (_, index) => {
-        const yM =
-          grilleBottomM + ((index + 1) * grilleHeightM) / (FIT.grilleBars + 1);
+      ...Array.from({ length: grilleBars }, (_, index) => {
+        const yM = grilleBottomM + ((index + 1) * grilleHeightM) / (grilleBars + 1);
         return grilleSlab(
           [grilleX[0] + barInsetM, grilleX[1] - barInsetM],
           [yM - 0.004, yM + 0.004],
@@ -875,8 +880,8 @@ export function createCarFittings(detail: VehicleDetail = 'high'): CarFitting[] 
       [0, FIT.taillampCenterYM + FIT.lampHeightM / 2 - 0.012, garnishZM],
     ),
   );
-  add('trim:beltline', 'chrome', createBeltline(detail === 'high' ? 14 : 7));
-  const sunroof = createSunroof();
+  add('trim:beltline', 'chrome', createBeltline(high ? 14 : 7));
+  const sunroof = high ? createSunroof(8, 4) : createSunroof(4, 2);
   add('sunroof:seam', 'trim', sunroof.seam);
   add('sunroof:glass', 'glass', sunroof.glass);
   // 天線：後葉子板上一根直立的細桿，底下一個小座。
