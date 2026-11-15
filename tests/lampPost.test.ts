@@ -74,4 +74,34 @@ describe('路燈：桿、臂、燈頭一體', () => {
     expect(base.max.x - base.min.x).toBeGreaterThan(pole.max.x - pole.min.x);
     expect(neck.max.x - neck.min.x).toBeLessThan(housing.max.x - housing.min.x);
   });
+
+  test('braced：底座有一塊貼地的方形底板（比座套寬），燈殼上窄下寬、外框仍是 LOT.lampHeadSizeM', () => {
+    const parts = createLampPostParts('braced');
+    const base = parts[0];
+    const housing = parts[parts.length - 1];
+    if (base === undefined || housing === undefined) {
+      throw new Error('braced 路燈少了零件');
+    }
+    const baseBox = boundsOf(base);
+    expect(baseBox.max.x - baseBox.min.x).toBeGreaterThan(4.5 * LOT.lampPoleRadiusM);
+    expect(baseBox.max.x - baseBox.min.x).toBeCloseTo(baseBox.max.z - baseBox.min.z, 5);
+    expect(baseBox.min.y).toBeCloseTo(0, 5);
+
+    const housingBox = boundsOf(housing);
+    expect(housingBox.max.x - housingBox.min.x).toBeCloseTo(LOT.lampHeadSizeM.x, 5);
+    expect(housingBox.max.y - housingBox.min.y).toBeCloseTo(LOT.lampHeadSizeM.y, 5);
+    expect(housingBox.max.z - housingBox.min.z).toBeCloseTo(LOT.lampHeadSizeM.z, 5);
+    const positions = housing.getAttribute('position');
+    let topWidth = 0;
+    let bottomWidth = 0;
+    for (let index = 0; index < positions.count; index += 1) {
+      const width = Math.abs(positions.getX(index));
+      if (positions.getY(index) > (housingBox.min.y + housingBox.max.y) / 2) {
+        topWidth = Math.max(topWidth, width);
+      } else {
+        bottomWidth = Math.max(bottomWidth, width);
+      }
+    }
+    expect(topWidth).toBeLessThan(0.8 * bottomWidth);
+  });
 });

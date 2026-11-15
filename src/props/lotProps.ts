@@ -233,18 +233,44 @@ export function createLampPostParts(style: LampStyle): BufferGeometry[] {
     heightM,
     -armM + head.z / 2 + neckLengthM / 2 - ftToM(0.1),
   );
-  return [
+  // 底座：錐形的座套、底下一塊鎖在地上的方形底板、四角各一顆螺帽，併成一件。
+  const plateM = { side: LOT.lampPoleRadiusM * 5.2, height: ftToM(0.12) };
+  const boltM = { radius: ftToM(0.09), height: ftToM(0.16), offset: plateM.side / 2 - ftToM(0.2) };
+  const base = mergeGeometries([
     new CylinderGeometry(LOT.lampPoleRadiusM * 1.5, LOT.lampPoleRadiusM * 1.9, baseHeightM, 10).translate(
       0,
       baseHeightM / 2,
       0,
     ),
+    new BoxGeometry(plateM.side, plateM.height, plateM.side).translate(0, plateM.height / 2, 0),
+    ...[-1, 1].flatMap((cornerX) =>
+      [-1, 1].map((cornerZ) =>
+        new CylinderGeometry(boltM.radius, boltM.radius, boltM.height, 6).translate(
+          cornerX * boltM.offset,
+          plateM.height + boltM.height / 2,
+          cornerZ * boltM.offset,
+        ),
+      ),
+    ),
+  ]);
+  // 燈殼：上窄下寬的梯形盒（頂面往內收），發光面在底下；外框與原本的方盒相同。
+  const taperedHousing = housing.clone();
+  const housingPositions = taperedHousing.getAttribute('position');
+  for (let index = 0; index < housingPositions.count; index += 1) {
+    if (housingPositions.getY(index) > heightM) {
+      housingPositions.setX(index, housingPositions.getX(index) * 0.72);
+      housingPositions.setZ(index, -armM + (housingPositions.getZ(index) + armM) * 0.86);
+    }
+  }
+  taperedHousing.computeVertexNormals();
+  return [
+    base,
     pole,
     new BoxGeometry(jointM.x, jointM.y, jointM.z).translate(0, heightM - jointM.y / 2 + head.y / 2, 0),
     new BoxGeometry(armM3.x, armM3.y, armReachM).translate(0, heightM, -armReachM / 2),
     brace,
     neck,
-    housing,
+    taperedHousing,
   ];
 }
 
