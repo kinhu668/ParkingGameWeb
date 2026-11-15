@@ -12,7 +12,7 @@ import { VEHICLE_CONFIG_SI } from './vehicleConfig';
 
 /**
  * 整台車身的材質分區。車殼曲面只用到烤漆、玻璃、黑飾條與兩個車艙內襯（頂篷、門板地板）；
- * 燈殼、鍍鉻、車牌來自配件（carFittings.ts）。
+ * 燈殼、方向燈（琥珀色）、鍍鉻、車牌來自配件（carFittings.ts）。
  */
 export const BODY_PARTS = [
   'paint',
@@ -21,6 +21,7 @@ export const BODY_PARTS = [
   'headlight',
   'taillight',
   'reverseLight',
+  'indicator',
   'chrome',
   'plate',
   'headliner',

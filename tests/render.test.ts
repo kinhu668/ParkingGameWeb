@@ -26,7 +26,13 @@ import {
 import { SHOWCASE_IDS, createShowcaseObject } from '../src/render/showcase';
 import type { DriveInput } from '../src/vehicle/bicycleModel';
 import { BODY_LAYOUT, bodyTopHeightM } from '../src/vehicle/carBody';
-import { createBodyGeometries, createCarFittings, plateText } from '../src/vehicle/carFittings';
+import {
+  DOOR_MIRROR_SIZE_M,
+  createBodyGeometries,
+  createCarFittings,
+  createDoorMirrorShellGeometry,
+  plateText,
+} from '../src/vehicle/carFittings';
 import {
   carLightsFor,
   createCarMesh,
@@ -228,7 +234,8 @@ describe('車輛模型 carMesh', () => {
       return normal;
     };
     expect(normalAtExtreme((v) => v.y).y).toBeGreaterThan(0.9);
-    expect(normalAtExtreme((v) => v.x).x).toBeGreaterThan(0.9);
+    // 最寬處取車門那一段（輪拱唇更凸，但它最外緣的頂點有一份是朝輪軸的折邊）。
+    expect(normalAtExtreme((v) => (Math.abs(v.z) < 0.5 ? v.x : -Infinity)).x).toBeGreaterThan(0.9);
     // 車頭、車尾的端點是收成一點的那一圈，取離端點一小段距離內最靠外側的點。
     expect(normalAtExtreme((v) => (v.z < -2 && Math.abs(v.x) < 0.3 ? -v.z : -Infinity)).z).toBeLessThan(-0.5);
     expect(normalAtExtreme((v) => (v.z > 2 && Math.abs(v.x) < 0.3 ? v.z : -Infinity)).z).toBeGreaterThan(0.5);
@@ -317,11 +324,13 @@ describe('車身配件 carFittings（燈組、車牌、門縫、保險桿、雨�
       return ((mesh as Mesh).geometry.userData.fittings ?? []) as string[];
     };
     expect(fittingsOf('plate')).toEqual(['plate:front', 'plate:rear']);
-    expect(fittingsOf('paint')).toEqual(['bumper:front', 'bumper:rear']);
+    // 玩家車的車外後視鏡是另外的網格，不併進車身。
+    expect(fittingsOf('paint')).toEqual(['bumper:front', 'bumper:rear', 'arch:lips']);
     expect(fittingsOf('trim')).toEqual(expect.arrayContaining(['seam:doors', 'seam:hood', 'seam:trunk']));
     expect(fittingsOf('headlight')).toEqual(['headlamp:lens']);
-    expect(fittingsOf('taillight')).toEqual(['taillamp:lens']);
+    expect(fittingsOf('taillight')).toEqual(['taillamp:lens', 'stoplamp:highmount']);
     expect(fittingsOf('reverseLight')).toEqual(['reverselamp:lens']);
+    expect(fittingsOf('indicator')).toEqual(['turnsignal:lens']);
     // 低細分（背景車用）也有同一批配件。
     const low = createBodyGeometries('low');
     expect(low.get('plate')?.userData.fittings).toEqual(['plate:front', 'plate:rear']);
@@ -407,6 +416,135 @@ describe('車身配件 carFittings（燈組、車牌、門縫、保險桿、雨�
     expect(fittingBounds('seam:hood').max.z).toBeLessThan(BODY_LAYOUT.windshieldBaseZM);
     expect(fittingBounds('seam:trunk').min.z).toBeGreaterThan(BODY_LAYOUT.rearWindowBaseZM);
     expect(fittingBounds('seam:hood').min.y).toBeGreaterThan(0.6);
+  });
+
+  test('燈組跟著端面包向車角：燈罩外緣比內緣靠後；尾燈由內到外是倒車燈、尾燈、方向燈', () => {
+    const lens = createCarFittings().find((fitting) => fitting.name === 'headlamp:lens');
+    const positions = lens?.geometry.getAttribute('position');
+    expect(positions).toBeDefined();
+    let innerZ = 0;
+    let outerZ = 0;
+    let innerX = Infinity;
+    let outerX = -Infinity;
+    const vertex = new Vector3();
+    for (let index = 0; index < (positions?.count ?? 0); index += 1) {
+      vertex.fromBufferAttribute(positions as NonNullable<typeof positions>, index);
+      // 只看右側燈罩的正面（最前面那一層）。
+      if (vertex.x <= 0) {
+        continue;
+      }
+      if (vertex.x < innerX || (vertex.x === innerX && vertex.z < innerZ)) {
+        innerX = vertex.x;
+        innerZ = vertex.z;
+      }
+      if (vertex.x > outerX || (vertex.x === outerX && vertex.z < outerZ)) {
+        outerX = vertex.x;
+        outerZ = vertex.z;
+      }
+    }
+    // 車頭朝 −Z：外緣的 Z 比內緣大（靠後）至少 1 公分。
+    expect(outerZ - innerZ).toBeGreaterThan(0.01);
+
+    // 方向燈（琥珀色）：後面的在尾燈外側，前面的嵌在保險桿正面、不超出車長。
+    const signals = fittingBounds('turnsignal:lens');
+    expect(signals.min.z).toBeGreaterThanOrEqual(-VEHICLE_CONFIG_SI.lengthM / 2);
+    expect(signals.min.z).toBeLessThan(fittingBounds('bumper:front').min.z);
+    expect(signals.max.z).toBeGreaterThan(BODY_LAYOUT.tailStartZM);
+    expect(signals.max.x).toBeGreaterThan(fittingBounds('taillamp:lens').max.x);
+    expect(signals.max.x).toBeLessThan(fittingBounds('taillamp:housing').max.x);
+    expect(fittingBounds('reverselamp:lens').max.x).toBeLessThan(fittingBounds('taillamp:lens').max.x);
+    // 鍍鉻框比燈罩凸出一點，圍在燈殼的外圈。
+    expect(fittingBounds('taillamp:bezel').max.x).toBeCloseTo(fittingBounds('taillamp:housing').max.x, 6);
+    expect(fittingBounds('headlamp:bezel').min.z).toBeLessThan(fittingBounds('headlamp:lens').min.z);
+  });
+
+  test('第三煞車燈在行李廂蓋後緣的中線上；排氣尾管在車尾下方、不超出車長', () => {
+    const stop = fittingBounds('stoplamp:highmount');
+    expect(stop.getCenter(new Vector3()).x).toBeCloseTo(0, 6);
+    expect(stop.min.z).toBeGreaterThan(BODY_LAYOUT.rearWindowBaseZM);
+    expect(stop.max.z).toBeLessThan(BODY_LAYOUT.tailStartZM);
+    // 貼著行李廂蓋：底面在蓋面上方不到 1 公分，整條高不到 3 公分。
+    const lidYM = bodyTopHeightM(stop.getCenter(new Vector3()).z, 0);
+    expect(stop.min.y).toBeGreaterThan(lidYM - 0.03);
+    expect(stop.max.y).toBeLessThan(lidYM + 0.03);
+    expect(stop.max.y).toBeLessThan(VEHICLE_CONFIG_SI.heightM);
+
+    const exhaust = fittingBounds('exhaust:tip');
+    expect(exhaust.max.z).toBeLessThan(VEHICLE_CONFIG_SI.lengthM / 2);
+    expect(exhaust.max.z).toBeGreaterThan(BODY_LAYOUT.tailTipZM);
+    expect(exhaust.max.y).toBeLessThan(0.25);
+    expect(exhaust.min.y).toBeGreaterThan(0.1);
+  });
+
+  test.each(['low', 'high'] as const)(
+    '%s 細分的輪拱唇：四個輪拱各一圈，貼著鈑金凸出一點、不超出車寬，頂端高過輪拱',
+    (detail) => {
+      const fitting = createCarFittings(detail).find((candidate) => candidate.name === 'arch:lips');
+      expect(fitting).toBeDefined();
+      fitting?.geometry.computeBoundingBox();
+      const lips = fitting?.geometry.boundingBox ?? new Box3();
+      // 車身在輪拱那裡比中段略窄（俯視的梭形）：唇面比那裡的鈑金凸出，但仍在車身最寬處附近、不超出車寬。
+      expect(lips.max.x).toBeGreaterThan(0.97 * BODY_LAYOUT.halfWidthM);
+      expect(lips.max.x - BODY_LAYOUT.halfWidthM).toBeLessThan(0.015);
+      expect(lips.max.x).toBeLessThan(VEHICLE_CONFIG_SI.widthM / 2);
+      expect(lips.min.x).toBeCloseTo(-lips.max.x, 6);
+      expect(lips.max.y).toBeGreaterThan(CAR_VISUAL_CONFIG.wheelRadiusM + BODY_LAYOUT.archRadiusM);
+      expect(lips.max.y).toBeLessThan(CAR_VISUAL_CONFIG.wheelRadiusM + BODY_LAYOUT.archRadiusM + 0.06);
+      // 下端停在門檻（黑色）上緣附近，不垂到車底下面。
+      expect(lips.min.y).toBeGreaterThan(CAR_VISUAL_CONFIG.groundClearanceM + 0.05);
+      // 前後輪拱都有，而且不碰到保險桿包到側面的那一段。
+      expect(lips.min.z).toBeGreaterThan(fittingBounds('bumper:front').max.z);
+      expect(lips.max.z).toBeLessThan(fittingBounds('bumper:rear').min.z);
+      // 法線沒有壞掉的（每個頂點都有長度 1 的法線）。
+      const normals = fitting?.geometry.getAttribute('normal');
+      const normal = new Vector3();
+      for (let index = 0; index < (normals?.count ?? 0); index += 1) {
+        normal.fromBufferAttribute(normals as NonNullable<typeof normals>, index);
+        expect(normal.length()).toBeCloseTo(1, 3);
+      }
+    },
+  );
+
+  test('窗台的鍍鉻飾條沿側窗下緣走：左右對稱，在車艙那一段、腰線的高度', () => {
+    const belt = fittingBounds('trim:beltline');
+    expect(belt.min.x).toBeCloseTo(-belt.max.x, 6);
+    expect(belt.min.z).toBeGreaterThan(BODY_LAYOUT.windshieldBaseZM);
+    expect(belt.max.z).toBeLessThan(BODY_LAYOUT.rearWindowBaseZM);
+    expect(belt.min.y).toBeGreaterThan(BODY_LAYOUT.cowlHeightM - 0.02);
+    expect(belt.max.y).toBeLessThan(BODY_LAYOUT.cowlHeightM + 0.12);
+    expect(belt.max.x).toBeLessThan(BODY_LAYOUT.halfWidthM);
+    expect(belt.max.x).toBeGreaterThan(BODY_LAYOUT.cabinHalfWidthM - 0.01);
+  });
+
+  test('車外後視鏡的鏡殼往前收小；背景車把後視鏡併進車身，外框剛好是車寬', () => {
+    const shell = createDoorMirrorShellGeometry(1);
+    shell.computeBoundingBox();
+    const bounds = shell.boundingBox ?? new Box3();
+    expect(bounds.max.x).toBeCloseTo(DOOR_MIRROR_SIZE_M.shell.x / 2, 6);
+    expect(bounds.min.x).toBeCloseTo(-DOOR_MIRROR_SIZE_M.shell.x / 2, 6);
+    expect(bounds.max.y - bounds.min.y).toBeCloseTo(DOOR_MIRROR_SIZE_M.shell.y, 6);
+    // 前端（−Z）那一圈比後端小：最前面那些頂點的寬度不到後端的七成。
+    const positions = shell.getAttribute('position');
+    const vertex = new Vector3();
+    let frontWidth = 0;
+    for (let index = 0; index < positions.count; index += 1) {
+      vertex.fromBufferAttribute(positions, index);
+      if (vertex.z < bounds.min.z + 0.006) {
+        frontWidth = Math.max(frontWidth, Math.abs(vertex.x + 0.026));
+      }
+    }
+    expect(frontWidth).toBeGreaterThan(0);
+    expect(2 * frontWidth).toBeLessThan(0.7 * DOOR_MIRROR_SIZE_M.shell.x);
+
+    // 玩家車的車身不含後視鏡（另外的網格）；背景車的含。
+    expect(createBodyGeometries('low').get('paint')?.userData.fittings).not.toContain('mirror:shells');
+    const parked = createBodyGeometries('low', { plateText: false, mirrors: true });
+    const paint = parked.get('paint');
+    expect(paint?.userData.fittings).toContain('mirror:shells');
+    expect(parked.get('trim')?.userData.fittings).toContain('mirror:backs');
+    paint?.computeBoundingBox();
+    expect(paint?.boundingBox?.max.x).toBeCloseTo(VEHICLE_CONFIG_SI.widthM / 2, 6);
+    expect(paint?.boundingBox?.min.x).toBeCloseTo(-VEHICLE_CONFIG_SI.widthM / 2, 6);
   });
 
   test('保險桿是另一件：比車殼的端面凸出，後保險桿的正面就是車尾', () => {

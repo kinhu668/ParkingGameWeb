@@ -1,5 +1,5 @@
 // 程序化的轎車模型：放樣的曲面車殼（carBody.ts）與併進去的配件（carFittings.ts：保險桿、燈組、車牌、門縫）、
-// 內裝（carInterior.ts）、輪子（carWheel.ts）、後視鏡、雨刷、輪拱內襯，以及頭燈／尾燈／倒車燈的材質。
+// 內裝（carInterior.ts）、輪子（carWheel.ts）、後視鏡、雨刷、輪拱內襯，以及頭燈／尾燈／倒車燈／方向燈的材質。
 // 建模約定：車頭朝本地 −Z、右側是本地 +X、輪胎著地點在 y = 0、原點在車身中心的地面投影。
 // 外框（含後視鏡與輪胎）剛好是 VehicleConfig 的長寬高；碰撞與停車判定用的矩形不受外觀影響。
 import {
@@ -20,7 +20,13 @@ import type { VehicleDetail } from '../render/quality';
 import { CAR_DETAIL_CONFIG, CAR_VISUAL_CONFIG as VISUAL } from '../render/renderConfig';
 import type { DriveInput, VehiclePose } from './bicycleModel';
 import { BODY_LAYOUT, bodyTopHeightM, type BodyPart } from './carBody';
-import { createBeamGeometry, createBodyGeometries } from './carFittings';
+import {
+  DOOR_MIRROR_SIZE_M,
+  createBeamGeometry,
+  createBodyGeometries,
+  createDoorMirrorShellGeometry,
+  doorMirrorCenter,
+} from './carFittings';
 import { createCarInterior } from './carInterior';
 import { createBrakeDiscGeometry, createRimGeometry, createTireGeometry } from './carWheel';
 import type { Gear } from './gearbox';
@@ -58,7 +64,6 @@ export interface CarMesh {
 
 /** 輪胎貼圖繞一圈重複幾次（一次有 4 道人字溝）。 */
 const TIRE_PATTERN_REPEATS = 6;
-const HALF_WIDTH_M = VEHICLE_CONFIG_SI.widthM / 2;
 const HALF_WHEELBASE_M = VEHICLE_CONFIG_SI.wheelbaseM / 2;
 
 function shadowMesh(geometry: BufferGeometry, material: Material): Mesh {
@@ -99,28 +104,24 @@ function lamp(color: number, glowColor: number, intensity: number): MeshStandard
 }
 
 /**
- * 車外後視鏡：方正的鏡殼（烤漆）、朝後的黑色鏡框與鏡面、接到車門的支臂。
+ * 車外後視鏡：往前收小的流線形鏡殼（烤漆）、朝後的黑色鏡框與鏡面、接到車門的支臂。
  * 從駕駛座看過去是「黑框裡一面鏡子」，不是一顆浮著的色塊。
  * 鏡殼最外側剛好在車寬的一半，所以整台車的外框寬度等於 VehicleConfig 的車寬。
  */
 function createMirror(side: number, paint: Material, trim: Material, mirrorGlass: Material): Group {
-  const shellM = { x: 0.19, y: 0.12, z: 0.07 };
+  const { shell: shellM, arm: armM } = DOOR_MIRROR_SIZE_M;
   const mirror = new Group();
   mirror.name = 'doorMirror';
-  mirror.position.set(
-    side * (HALF_WIDTH_M - shellM.x / 2),
-    BODY_LAYOUT.cowlHeightM + 0.09,
-    BODY_LAYOUT.windshieldBaseZM + 0.3,
-  );
-  mirror.add(shadowMesh(new BoxGeometry(shellM.x, shellM.y, shellM.z), paint));
-  // 鏡框比鏡殼略小、貼在朝後的那一面；鏡面再比鏡框小一圈。
-  const frame = shadowMesh(new BoxGeometry(shellM.x - 0.012, shellM.y - 0.012, 0.012), trim);
+  mirror.position.set(...doorMirrorCenter(side));
+  mirror.add(shadowMesh(createDoorMirrorShellGeometry(side), paint));
+  // 鏡框比鏡殼小一圈（讓出鏡殼的圓角）、貼在朝後的那一面；鏡面再比鏡框小一圈。
+  const frame = shadowMesh(new BoxGeometry(shellM.x - 0.028, shellM.y - 0.028, 0.012), trim);
   frame.name = 'doorMirror:frame';
   frame.position.z = shellM.z / 2;
-  const face = new Mesh(new PlaneGeometry(shellM.x - 0.04, shellM.y - 0.04), mirrorGlass);
+  const face = new Mesh(new PlaneGeometry(shellM.x - 0.05, shellM.y - 0.05), mirrorGlass);
   face.name = 'doorMirror:glass';
   face.position.z = shellM.z / 2 + 0.007;
-  const arm = shadowMesh(new BoxGeometry(0.12, 0.035, 0.05), trim);
+  const arm = shadowMesh(new BoxGeometry(armM.x, armM.y, armM.z), trim);
   arm.position.set(-side * 0.12, -0.035, 0);
   mirror.add(frame, face, arm);
   return mirror;
@@ -228,6 +229,7 @@ export function createCarMesh(detail: VehicleDetail = 'high'): CarMesh {
     headlight: lamp(VISUAL.headlightColor, VISUAL.headlightColor, VISUAL.headlightEmissiveIntensity),
     taillight: taillightMaterial,
     reverseLight: reverseLightMaterial,
+    indicator: lamp(VISUAL.indicatorColor, VISUAL.indicatorColor, VISUAL.indicatorEmissiveIntensity),
     chrome,
     plate,
     headliner,

@@ -45,6 +45,7 @@ export const PARKED_CAR_BODY_PARTS: readonly BodyPart[] = [
   'headlight',
   'taillight',
   'reverseLight',
+  'indicator',
   'chrome',
   'plate',
 ];
@@ -149,6 +150,7 @@ export function createParkedCars(
     headlight: lampOff(VISUAL.headlightColor),
     taillight: lampOff(VISUAL.taillightColor),
     reverseLight: lampOff(VISUAL.reverseLightOffColor),
+    indicator: lampOff(VISUAL.indicatorColor),
     chrome: createSurfaceMaterial('chrome', {
       space: 'local',
       color: VISUAL.chromeColor,
@@ -161,8 +163,8 @@ export function createParkedCars(
   };
 
   const carMatrices = placements.map(carMatrix);
-  // 車牌上的字不併進共用的車殼：每台車的號碼不同，另外畫。
-  const bodyGeometries = createBodyGeometries('low', { plateText: false });
+  // 車牌上的字不併進共用的車殼：每台車的號碼不同，另外畫。車外後視鏡併進車殼（背景車沒有會反光的鏡面）。
+  const bodyGeometries = createBodyGeometries('low', { plateText: false, mirrors: true });
   /** 畫出車身的每一個 InstancedMesh（遮擋半透明要整台一起淡）。 */
   const bodyMeshes: InstancedMesh[] = [];
   for (const part of PARKED_CAR_BODY_PARTS) {

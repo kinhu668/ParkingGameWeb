@@ -1,4 +1,5 @@
-// 車身配件：保險桿與下擾流、頭燈與尾燈的燈組（燈殼 + 分格的燈罩）、水箱罩、前後車牌、門縫與引擎蓋／行李廂蓋的接縫、門把。
+// 車身配件：保險桿與下擾流、頭燈與尾燈的燈組（燈殼 + 分格的燈罩 + 鍍鉻框）、方向燈、第三煞車燈、水箱罩、前後車牌、
+// 門縫與引擎蓋／行李廂蓋的接縫、門把、輪拱唇、窗台的鍍鉻飾條、排氣尾管；背景車另外併入車外後視鏡。
 // 每個配件是一小塊獨立的幾何，貼著車殼曲面（carBody.ts）放；最後依材質分區併進車殼，
 // 所以玩家車與背景車都是「每個材質一個網格」，配件不多花 draw call。
 // 建模約定：車頭朝本地 −Z、右側 +X、地面 y = 0。車長的兩端剛好是前車牌的字與後保險桿。
@@ -6,6 +7,7 @@ import {
   BoxGeometry,
   BufferAttribute,
   BufferGeometry,
+  CylinderGeometry,
   ExtrudeGeometry,
   Matrix4,
   Quaternion,
@@ -16,6 +18,8 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { DEFAULT_SEED } from '../core/gameConfig';
 import { createRng } from '../core/rng';
 import type { VehicleDetail } from '../render/quality';
+import { CAR_VISUAL_CONFIG as VISUAL } from '../render/renderConfig';
+import { FacetBuilder, type Point3 } from './facetBuilder';
 import {
   BODY_LAYOUT,
   bodyEndFaceZM,
@@ -33,8 +37,6 @@ export interface CarFitting {
   readonly geometry: BufferGeometry;
 }
 
-type Point3 = readonly [number, number, number];
-
 const L = BODY_LAYOUT;
 const HALF_LENGTH_M = VEHICLE_CONFIG_SI.lengthM / 2;
 
@@ -44,7 +46,7 @@ const FIT = {
   bumperBottomM: 0.3,
   bumperTopM: 0.47,
   bumperWrapM: 0.4,
-  bumperCornerM: 0.1,
+  bumperCornerM: 0.17,
   bumperBevelM: 0.012,
   bumperProudM: 0.012,
   /** 下擾流（黑色）：下緣高度、比保險桿正面內縮多少。 */
@@ -65,16 +67,25 @@ const FIT = {
   lampDepthM: 0.1,
   lampProudM: 0.01,
   lensProudM: 0.004,
-  /** 燈殼邊框的寬度，以及主燈與內側小燈之間的分隔。 */
+  /** 燈殼邊框的寬度（外圈是鍍鉻框，內圈露出黑色燈殼），以及相鄰兩格燈罩之間的分隔。 */
   lampRimM: 0.012,
-  lampDividerM: 0.014,
-  /** 內側小燈（頭燈的位置燈、尾燈的倒車燈）佔燈罩寬度的比例。 */
-  lampInnerShare: 0.3,
+  lampBezelM: 0.007,
+  lampBezelProudM: 0.006,
+  lampDividerM: 0.012,
+  /** 頭燈：內側那一格（遠光）佔燈罩寬度的比例；外側是近光，兩格都是方燈。 */
+  headlampInnerShare: 0.5,
+  /** 尾燈：由內到外是倒車燈、尾燈（紅）、方向燈（琥珀）；這是倒車燈與方向燈各佔燈罩寬度的比例。 */
+  taillampReverseShare: 0.23,
+  taillampIndicatorShare: 0.19,
+  /** 前方向燈：嵌在前保險桿正面，左右各一格（內緣、外緣的 x，下緣、上緣的高度，凸出保險桿多少）。 */
+  frontIndicatorM: { innerX: 0.4, outerX: 0.62, bottom: 0.362, top: 0.408, proud: 0.003 },
+  /** 第三煞車燈：行李廂蓋後緣上的一條（寬、高、前後深度、離車尾接縫多遠）。 */
+  highMountM: { width: 0.34, height: 0.014, depth: 0.03, aheadOfTailM: 0.075 },
   headlampCenterYM: 0.585,
   taillampCenterYM: 0.685,
   /** 水箱罩：半寬、橫條數。 */
   grilleHalfWidthM: 0.26,
-  grilleBars: 3,
+  grilleBars: 5,
   /** 接縫（門縫、引擎蓋、行李廂蓋）的線寬。 */
   seamWidthM: 0.007,
   /** 前門前緣在前擋下緣後方多遠、後門後緣的 Z 在後輪拱前緣之前多遠。 */
@@ -86,6 +97,25 @@ const FIT = {
   handleSizeM: { length: 0.11, height: 0.022, depth: 0.02 },
   handleBelowBeltM: 0.085,
   handleFromDoorRearM: 0.14,
+  /**
+   * 輪拱唇：沿輪拱一圈凸出來的折邊（烤漆）。凸出鈑金多少、唇面的寬度、唇面外緣到鈑金的斜面寬度、
+   * 往輪拱裡面折進去多深、兩端沿輪拱的直邊往下延伸到離地多高。
+   */
+  archLipM: { proud: 0.008, face: 0.02, chamfer: 0.016, returnDepth: 0.024, legBottom: 0.285 },
+  /** 窗台的鍍鉻飾條：斷面的邊長、比窗台往外、往上多少。 */
+  beltlineM: { thickness: 0.011, out: 0.003, up: 0.004 },
+  /** 排氣尾管：半徑、長度、中心的 x 與高度、管口比車尾內縮多少。 */
+  exhaustM: { radius: 0.026, length: 0.13, x: -0.4, y: 0.168, insetFromTail: 0.014 },
+  /**
+   * 車外後視鏡：鏡殼的寬、高、前後深度，中心比前擋下緣的腰線高多少、在前擋下緣後方多遠，
+   * 以及接到車門的支臂。鏡殼最外側剛好在車寬的一半。
+   */
+  mirrorM: {
+    shell: { x: 0.19, y: 0.12, z: 0.07 },
+    aboveCowl: 0.09,
+    behindCowl: 0.3,
+    arm: { x: 0.12, y: 0.035, z: 0.05 },
+  },
 } as const;
 
 /** 車牌的字：3×5 點陣（每列 3 個位元，由上到下）。 */
@@ -140,6 +170,56 @@ function normalized(geometry: BufferGeometry): BufferGeometry {
 
 function box(size: Point3, center: Point3): BufferGeometry {
   return normalized(new BoxGeometry(...size).translate(...center));
+}
+
+function steps(fromM: number, toM: number, count: number): number[] {
+  return Array.from({ length: count + 1 }, (_, index) => fromM + ((toM - fromM) * index) / count);
+}
+
+/**
+ * 貼著車頭或車尾端面的一塊弧形板：正面跟著端面的弧度走（每個 x 各取端面在 faceYM 那個高度的 Z）再凸出 proudM，
+ * 厚度往車內長 depthM。從正面看是矩形（上下緣水平）；背面埋在車殼裡，不畫。
+ * @param front true = 車頭、false = 車尾
+ */
+function createFaceSlab(
+  front: boolean,
+  faceYM: number,
+  x: readonly [number, number],
+  y: readonly [number, number],
+  proudM: number,
+  depthM: number,
+  segments = 6,
+): BufferGeometry {
+  const outwardZ = front ? -1 : 1;
+  const xs = steps(x[0], x[1], segments);
+  const faceZ = xs.map((xM) => bodyEndFaceZM(front, xM, faceYM) + outwardZ * proudM);
+  const row = (yM: number, back: boolean): Point3[] =>
+    xs.map((xM, index): Point3 => [xM, yM, (faceZ[index] ?? 0) - (back ? outwardZ * depthM : 0)]);
+  const builder = new FacetBuilder()
+    .grid([row(y[0], false), row(y[1], false)], [0, 0, outwardZ])
+    .grid([row(y[1], false), row(y[1], true)], [0, 1, 0])
+    .grid([row(y[0], false), row(y[0], true)], [0, -1, 0]);
+  for (const [index, other] of [
+    [0, segments],
+    [segments, 0],
+  ] as const) {
+    const xM = xs[index] ?? 0;
+    const zM = faceZ[index] ?? 0;
+    builder.grid(
+      [
+        [
+          [xM, y[0], zM],
+          [xM, y[1], zM],
+        ],
+        [
+          [xM, y[0], zM - outwardZ * depthM],
+          [xM, y[1], zM - outwardZ * depthM],
+        ],
+      ],
+      [Math.sign(xM - (xs[other] ?? 0)), 0, 0],
+    );
+  }
+  return builder.build();
 }
 
 /** 從 a 到 b 的一根方條（斷面是邊長 thicknessM 的正方形）。接縫與雨刷都用它。 */
@@ -214,7 +294,7 @@ function createWrapBar(
       // 倒角往內收：中段的輪廓就是畫的這一圈，最外緣剛好在 halfWidthM 與 frontZM。
       bevelOffset: -bevelM,
       bevelSegments: 1,
-      curveSegments: 5,
+      curveSegments: 8,
     })
       .rotateX(-Math.PI / 2)
       .translate(0, bottomM + bevelM, 0),
@@ -293,44 +373,213 @@ function createPlate(
 }
 
 /**
- * 一端的左右兩個燈組：黑色燈殼裡嵌兩格燈罩（外側的主燈、內側的小燈），貼著端面、略凸出來。
+ * 一端的左右兩個燈組：黑色燈殼裡嵌幾格燈罩，外圈一圈鍍鉻框，整組跟著端面的弧度包向車角。
  * @param front true = 頭燈、false = 尾燈
+ * @param shares 由內到外每一格燈罩佔的寬度比例（加起來是 1）
+ * @returns housing：燈殼；lenses：由內到外每一格燈罩（左右併在一起）；bezel：鍍鉻框（尾燈另有一條橫過燈罩的飾條）
  */
 function createLampClusters(
   front: boolean,
   centerYM: number,
-): { housing: BufferGeometry; main: BufferGeometry; inner: BufferGeometry } {
-  const outwardZ = front ? -1 : 1;
-  const widthM = FIT.lampOuterXM - FIT.lampInnerXM;
-  // 端面在燈組內緣最凸；燈殼的正面再凸出一點，後半埋進車殼裡（外緣端面往後收，燈殼的側面會露出來）。
-  const faceZM = bodyEndFaceZM(front, FIT.lampInnerXM, centerYM) + outwardZ * FIT.lampProudM;
-  const lensWidthM = widthM - 2 * FIT.lampRimM - FIT.lampDividerM;
-  const innerWidthM = lensWidthM * FIT.lampInnerShare;
-  const mainWidthM = lensWidthM - innerWidthM;
-  const lensHeightM = FIT.lampHeightM - 2 * FIT.lampRimM;
-  const lensDepthM = 0.02;
-  const lensZM = faceZM + outwardZ * (FIT.lensProudM - lensDepthM / 2);
+  shares: readonly number[],
+): { housing: BufferGeometry; lenses: BufferGeometry[]; bezel: BufferGeometry } {
+  const bottomM = centerYM - FIT.lampHeightM / 2;
+  const topM = centerYM + FIT.lampHeightM / 2;
+  const lensWidthM =
+    FIT.lampOuterXM - FIT.lampInnerXM - 2 * FIT.lampRimM - (shares.length - 1) * FIT.lampDividerM;
+  const lensY = [bottomM + FIT.lampRimM, topM - FIT.lampRimM] as const;
+  const bezelProudM = FIT.lampProudM + FIT.lampBezelProudM;
+  const bezelDepthM = FIT.lampBezelProudM + 0.004;
 
   const housing: BufferGeometry[] = [];
-  const main: BufferGeometry[] = [];
-  const inner: BufferGeometry[] = [];
+  const bezel: BufferGeometry[] = [];
+  const lenses: BufferGeometry[][] = shares.map(() => []);
   for (const side of [-1, 1]) {
+    const slab = (
+      fromXM: number,
+      toXM: number,
+      y: readonly [number, number],
+      proudM: number,
+      depthM: number,
+      segments: number,
+    ): BufferGeometry =>
+      createFaceSlab(front, centerYM, [side * fromXM, side * toXM], y, proudM, depthM, segments);
+
     housing.push(
-      box(
-        [widthM, FIT.lampHeightM, FIT.lampDepthM],
-        [
-          (side * (FIT.lampInnerXM + FIT.lampOuterXM)) / 2,
-          centerYM,
-          faceZM - (outwardZ * FIT.lampDepthM) / 2,
-        ],
+      slab(FIT.lampInnerXM, FIT.lampOuterXM, [bottomM, topM], FIT.lampProudM, FIT.lampDepthM, 6),
+    );
+    // 鍍鉻框：上下兩條橫的跟著端面彎，左右兩條直的。
+    bezel.push(
+      slab(FIT.lampInnerXM, FIT.lampOuterXM, [topM - FIT.lampBezelM, topM], bezelProudM, bezelDepthM, 6),
+      slab(FIT.lampInnerXM, FIT.lampOuterXM, [bottomM, bottomM + FIT.lampBezelM], bezelProudM, bezelDepthM, 6),
+      slab(
+        FIT.lampInnerXM,
+        FIT.lampInnerXM + FIT.lampBezelM,
+        [bottomM + FIT.lampBezelM, topM - FIT.lampBezelM],
+        bezelProudM,
+        bezelDepthM,
+        1,
+      ),
+      slab(
+        FIT.lampOuterXM - FIT.lampBezelM,
+        FIT.lampOuterXM,
+        [bottomM + FIT.lampBezelM, topM - FIT.lampBezelM],
+        bezelProudM,
+        bezelDepthM,
+        1,
       ),
     );
-    const innerCenterXM = FIT.lampInnerXM + FIT.lampRimM + innerWidthM / 2;
-    const mainCenterXM = FIT.lampOuterXM - FIT.lampRimM - mainWidthM / 2;
-    inner.push(box([innerWidthM, lensHeightM, lensDepthM], [side * innerCenterXM, centerYM, lensZM]));
-    main.push(box([mainWidthM, lensHeightM, lensDepthM], [side * mainCenterXM, centerYM, lensZM]));
+    if (!front) {
+      // 尾燈：一條細的鍍鉻飾條橫過整排燈罩，把燈分成上下兩列。
+      bezel.push(
+        slab(
+          FIT.lampInnerXM + FIT.lampBezelM,
+          FIT.lampOuterXM - FIT.lampBezelM,
+          [centerYM - 0.003, centerYM + 0.003],
+          bezelProudM,
+          bezelDepthM,
+          6,
+        ),
+      );
+    }
+    let fromXM = FIT.lampInnerXM + FIT.lampRimM;
+    shares.forEach((share, index) => {
+      const toXM = fromXM + lensWidthM * share;
+      lenses[index]?.push(slab(fromXM, toXM, lensY, FIT.lampProudM + FIT.lensProudM, 0.02, 3));
+      fromXM = toXM + FIT.lampDividerM;
+    });
   }
-  return { housing: merged(housing), main: merged(main), inner: merged(inner) };
+  return { housing: merged(housing), lenses: lenses.map(merged), bezel: merged(bezel) };
+}
+
+/** 輪拱唇：四個輪拱各一圈凸出鈑金的折邊（唇面朝外、內緣往輪拱裡折、外緣一道斜面接回鈑金）。 */
+function createArchLips(segments: number): BufferGeometry {
+  const lip = FIT.archLipM;
+  const radiusM = L.archRadiusM;
+  const axleYM = VISUAL.wheelRadiusM;
+  const builder = new FacetBuilder();
+  for (const axleZM of [-VEHICLE_CONFIG_SI.wheelbaseM / 2, VEHICLE_CONFIG_SI.wheelbaseM / 2]) {
+    /** 沿輪拱走的一串點：[輪拱邊緣上的 z, y, 往外（遠離輪軸）的方向 dz, dy]；兩端是往下的直邊。 */
+    const path: (readonly [number, number, number, number])[] = [
+      [axleZM - radiusM, lip.legBottom, -1, 0],
+      ...steps(0, Math.PI, segments).map(
+        (angleRad): readonly [number, number, number, number] => [
+          axleZM - radiusM * Math.cos(angleRad),
+          axleYM + radiusM * Math.sin(angleRad),
+          -Math.cos(angleRad),
+          Math.sin(angleRad),
+        ],
+      ),
+      [axleZM + radiusM, lip.legBottom, 1, 0],
+    ];
+    for (const side of [-1, 1]) {
+      /** 這一圈上、離輪拱邊緣 outM（往外為正）、比鈑金凸出 proudM 的點。 */
+      const row = (outM: number, proudM: number): Point3[] =>
+        path.map(([zM, yM, dz, dy]): Point3 => [
+          side * (sheetHalfWidthM(zM) - 0.004 + proudM),
+          yM + dy * outM,
+          zM + dz * outM,
+        ]);
+      const inner = row(-0.004, -lip.returnDepth);
+      const edge = row(-0.004, lip.proud);
+      const face = row(lip.face, lip.proud);
+      const foot = row(lip.face + lip.chamfer, 0);
+      const middle = path[Math.floor(path.length / 2)] ?? [0, 0, 0, 1];
+      builder
+        // 往輪拱裡折進去的那一面：朝向輪軸。
+        .grid([inner, edge], (center) => [0, axleYM - center.y, axleZM - center.z])
+        .grid([edge, face], [side, 0, 0])
+        .grid([face, foot], [side, middle[3], middle[2]]);
+    }
+  }
+  return builder.build();
+}
+
+/** 窗台的鍍鉻飾條：左右各一條，沿側窗下緣從 A 柱根部到 C 柱。 */
+function createBeltline(pieces: number): BufferGeometry {
+  const { thickness, out, up } = FIT.beltlineM;
+  const beams: BufferGeometry[] = [];
+  for (const side of [-1, 1]) {
+    beams.push(
+      ...polyline(
+        steps(L.windshieldBaseZM + 0.05, L.rearWindowBaseZM - 0.05, pieces).map((zM): Point3 => {
+          const [xM, yM] = bodySideProfile(zM).at(-1) ?? [0, 0];
+          return [side * (xM + out), yM + up, zM];
+        }),
+        thickness,
+      ),
+    );
+  }
+  return merged(beams);
+}
+
+/**
+ * 車外後視鏡的鏡殼（以鏡殼中心為原點）：後端是圓角矩形的開口（朝後，鏡框與鏡面貼在上面），
+ * 往前一路收小、往車身那一側靠，前端收成一個小圓面——流線形，不是一顆方塊。
+ * @param side −1 左、+1 右（決定往哪一側收）
+ */
+export function createDoorMirrorShellGeometry(side: number): BufferGeometry {
+  const { x, y, z } = FIT.mirrorM.shell;
+  /** 圓角矩形的一圈：半寬 a、半高 b、圓角半徑 c，中心往車身那一側偏 inM。 */
+  const ring = (zM: number, a: number, b: number, c: number, inM: number): Point3[] => {
+    const points: Point3[] = [];
+    for (const [cornerX, cornerY, startRad] of [
+      [1, 1, 0],
+      [-1, 1, Math.PI / 2],
+      [-1, -1, Math.PI],
+      [1, -1, (3 * Math.PI) / 2],
+    ] as const) {
+      for (let step = 0; step <= 3; step += 1) {
+        const angleRad = startRad + (step * Math.PI) / 6;
+        points.push([
+          cornerX * (a - c) + c * Math.cos(angleRad) - side * inM,
+          cornerY * (b - c) + c * Math.sin(angleRad),
+          zM,
+        ]);
+      }
+    }
+    return points;
+  };
+  const rear = ring(z / 2, x / 2, y / 2, 0.024, 0);
+  const nose = ring(-z / 2, 0.3 * x, 0.3 * y, 0.02, 0.026);
+  return new FacetBuilder()
+    .loop([
+      rear,
+      ring(0.1 * z, x / 2, y / 2, 0.024, 0),
+      ring(-0.3 * z, 0.43 * x, 0.42 * y, 0.024, 0.012),
+      nose,
+    ])
+    .fan(nose, [-side * 0.026, 0, -z / 2 - 0.004], [0, 0, -1])
+    .fan(rear, [0, 0, z / 2], [0, 0, 1])
+    .build();
+}
+
+/** 車外後視鏡在車上的位置（鏡殼中心）。 */
+export function doorMirrorCenter(side: number): Point3 {
+  return [
+    side * (VEHICLE_CONFIG_SI.widthM / 2 - FIT.mirrorM.shell.x / 2),
+    L.cowlHeightM + FIT.mirrorM.aboveCowl,
+    L.windshieldBaseZM + FIT.mirrorM.behindCowl,
+  ];
+}
+
+/** 車外後視鏡的尺寸：鏡殼與支臂（carMesh.ts 的玩家車也用這一份）。 */
+export const DOOR_MIRROR_SIZE_M = FIT.mirrorM;
+
+/** 背景車用的車外後視鏡（併進車身）：鏡殼（烤漆），以及朝後的黑色鏡面與支臂。 */
+function createDoorMirrors(): { shells: BufferGeometry; backs: BufferGeometry } {
+  const { shell, arm } = FIT.mirrorM;
+  const shells: BufferGeometry[] = [];
+  const backs: BufferGeometry[] = [];
+  for (const side of [-1, 1]) {
+    const center = doorMirrorCenter(side);
+    shells.push(createDoorMirrorShellGeometry(side).translate(...center));
+    backs.push(
+      box([shell.x - 0.03, shell.y - 0.03, 0.008], [center[0], center[1], center[2] + shell.z / 2]),
+      box([arm.x, arm.y, arm.z], [center[0] - side * 0.12, center[1] - 0.035, center[2]]),
+    );
+  }
+  return { shells: merged(shells), backs: merged(backs) };
 }
 
 /** 門縫、引擎蓋與行李廂蓋的接縫：貼著車殼的細黑線。 */
@@ -339,9 +588,6 @@ function createSeams(): { doors: BufferGeometry; hood: BufferGeometry; trunk: Bu
   const frontDoorZM = L.windshieldBaseZM + FIT.frontDoorBehindCowlM;
   const rearDoorZM =
     VEHICLE_CONFIG_SI.wheelbaseM / 2 - L.archRadiusM - FIT.rearDoorAheadOfArchM;
-  const steps = (fromM: number, toM: number, count: number): number[] =>
-    Array.from({ length: count + 1 }, (_, index) => fromM + ((toM - fromM) * index) / count);
-
   const doors: BufferGeometry[] = [];
   for (const side of [-1, 1]) {
     // 三條直的門縫：前門前緣、B 柱（前後門之間）、後門後緣，從門檻上緣到窗台。
@@ -445,8 +691,14 @@ export function createPlateTextGeometry(text: string): BufferGeometry {
   return merged([plates.front.text, plates.rear.text]);
 }
 
-/** 建立全部的配件（還沒併進車殼）。每次呼叫都是新的幾何。 */
-export function createCarFittings(): CarFitting[] {
+/** 配件名稱：背景車才併進車身的車外後視鏡（玩家車的後視鏡是另外的網格，鏡面會反光）。 */
+export const MIRROR_FITTINGS: readonly string[] = ['mirror:shells', 'mirror:backs'];
+
+/**
+ * 建立全部的配件（還沒併進車殼）。每次呼叫都是新的幾何。
+ * @param detail low：輪拱唇與窗台飾條的段數少一半（背景車與低畫質用）
+ */
+export function createCarFittings(detail: VehicleDetail = 'high'): CarFitting[] {
   const fittings: CarFitting[] = [];
   const add = (name: string, part: BodyPart, geometry: BufferGeometry): void => {
     fittings.push({ name, part, geometry });
@@ -470,42 +722,113 @@ export function createCarFittings(): CarFitting[] {
   add('valance:front', 'trim', valance(frontBumperZM));
   add('bumper:rear', 'paint', turnedToRear(bumper(-HALF_LENGTH_M)));
   add('valance:rear', 'trim', turnedToRear(valance(-HALF_LENGTH_M)));
+  add('arch:lips', 'paint', createArchLips(detail === 'high' ? 16 : 8));
 
-  // 燈組：頭燈（主燈 + 位置燈都是頭燈的光色）、尾燈（主燈是尾燈、內側是倒車燈）。
-  const headlamps = createLampClusters(true, FIT.headlampCenterYM);
+  // 燈組：頭燈是兩格方燈（遠光、近光）；尾燈由內到外是倒車燈、尾燈、方向燈。
+  const headlamps = createLampClusters(true, FIT.headlampCenterYM, [
+    FIT.headlampInnerShare,
+    1 - FIT.headlampInnerShare,
+  ]);
   add('headlamp:housing', 'trim', headlamps.housing);
-  add('headlamp:lens', 'headlight', merged([headlamps.main, headlamps.inner]));
-  const taillamps = createLampClusters(false, FIT.taillampCenterYM);
+  add('headlamp:lens', 'headlight', merged(headlamps.lenses));
+  add('headlamp:bezel', 'chrome', headlamps.bezel);
+  const taillamps = createLampClusters(false, FIT.taillampCenterYM, [
+    FIT.taillampReverseShare,
+    1 - FIT.taillampReverseShare - FIT.taillampIndicatorShare,
+    FIT.taillampIndicatorShare,
+  ]);
+  const [reverseLens, tailLens, rearIndicatorLens] = taillamps.lenses;
+  if (reverseLens === undefined || tailLens === undefined || rearIndicatorLens === undefined) {
+    throw new Error('尾燈燈組少了一格燈罩');
+  }
   add('taillamp:housing', 'trim', taillamps.housing);
-  add('taillamp:lens', 'taillight', taillamps.main);
-  add('reverselamp:lens', 'reverseLight', taillamps.inner);
+  add('taillamp:lens', 'taillight', tailLens);
+  add('reverselamp:lens', 'reverseLight', reverseLens);
+  add('taillamp:bezel', 'chrome', taillamps.bezel);
 
-  // 水箱罩：兩個頭燈之間的黑色格柵與鍍鉻橫條；車尾對應的位置是車牌上方的一條鍍鉻飾條。
-  const grilleZM = bodyEndFaceZM(true, FIT.grilleHalfWidthM, FIT.headlampCenterYM);
-  const grilleHeightM = FIT.lampHeightM - 0.02;
+  // 方向燈（琥珀色）：前面的嵌在保險桿正面，後面的是尾燈最外側那一格。
+  const indicator = FIT.frontIndicatorM;
   add(
-    'grille',
-    'trim',
-    box(
-      [2 * FIT.grilleHalfWidthM, grilleHeightM, 0.04],
-      [0, FIT.headlampCenterYM, grilleZM + 0.02 - 0.006],
-    ),
-  );
-  add(
-    'grille:bars',
-    'chrome',
-    merged(
-      Array.from({ length: FIT.grilleBars }, (_, index) =>
+    'turnsignal:lens',
+    'indicator',
+    merged([
+      rearIndicatorLens,
+      ...[-1, 1].map((side) =>
         box(
-          [2 * FIT.grilleHalfWidthM - 0.02, 0.012, 0.012],
+          [indicator.outerX - indicator.innerX, indicator.top - indicator.bottom, 0.012],
           [
-            0,
-            FIT.headlampCenterYM + ((index - (FIT.grilleBars - 1) / 2) * grilleHeightM) / FIT.grilleBars,
-            grilleZM - 0.006,
+            (side * (indicator.innerX + indicator.outerX)) / 2,
+            (indicator.bottom + indicator.top) / 2,
+            frontBumperZM - indicator.proud + 0.006,
           ],
         ),
       ),
+    ]),
+  );
+
+  // 第三煞車燈：行李廂蓋後緣上的一條，與尾燈同一個材質（煞車時一起加亮）；底下一條黑色的座。
+  const highMount = FIT.highMountM;
+  const highMountZM = L.tailStartZM - highMount.aheadOfTailM;
+  const highMountYM = bodyTopHeightM(highMountZM, highMount.width / 2);
+  add(
+    'stoplamp:highmount',
+    'taillight',
+    box(
+      [highMount.width, highMount.height, highMount.depth],
+      [0, highMountYM + highMount.height / 2 + 0.004, highMountZM],
     ),
+  );
+  add(
+    'stoplamp:base',
+    'trim',
+    box(
+      [highMount.width + 0.03, 0.012, highMount.depth + 0.02],
+      [0, highMountYM, highMountZM - 0.004],
+    ),
+  );
+
+  // 水箱罩：兩個頭燈之間跟著端面彎的黑色格柵、鍍鉻橫條與外框；車尾對應的位置是車牌上方的一條鍍鉻飾條。
+  const grilleHeightM = FIT.lampHeightM - 0.02;
+  const grilleX = [-FIT.grilleHalfWidthM, FIT.grilleHalfWidthM] as const;
+  const grilleBottomM = FIT.headlampCenterYM - grilleHeightM / 2;
+  const grilleTopM = FIT.headlampCenterYM + grilleHeightM / 2;
+  const grilleSlab = (
+    x: readonly [number, number],
+    y: readonly [number, number],
+    proudM: number,
+    depthM: number,
+  ): BufferGeometry => createFaceSlab(true, FIT.headlampCenterYM, x, y, proudM, depthM, 8);
+  add('grille', 'trim', grilleSlab(grilleX, [grilleBottomM, grilleTopM], 0.004, 0.04));
+  const barInsetM = 0.012;
+  add(
+    'grille:bars',
+    'chrome',
+    merged([
+      ...Array.from({ length: FIT.grilleBars }, (_, index) => {
+        const yM =
+          grilleBottomM + ((index + 1) * grilleHeightM) / (FIT.grilleBars + 1);
+        return grilleSlab(
+          [grilleX[0] + barInsetM, grilleX[1] - barInsetM],
+          [yM - 0.004, yM + 0.004],
+          0.009,
+          0.01,
+        );
+      }),
+      // 外框：上下兩條橫的、左右兩條直的。
+      grilleSlab(grilleX, [grilleTopM - 0.007, grilleTopM], 0.011, 0.012),
+      grilleSlab(grilleX, [grilleBottomM, grilleBottomM + 0.007], 0.011, 0.012),
+      ...[-1, 1].map((side) =>
+        createFaceSlab(
+          true,
+          FIT.headlampCenterYM,
+          [side * (FIT.grilleHalfWidthM - 0.007), side * FIT.grilleHalfWidthM],
+          [grilleBottomM + 0.007, grilleTopM - 0.007],
+          0.011,
+          0.012,
+          1,
+        ),
+      ),
+    ]),
   );
   const garnishZM = bodyEndFaceZM(false, FIT.lampInnerXM, FIT.taillampCenterYM);
   add(
@@ -514,6 +837,17 @@ export function createCarFittings(): CarFitting[] {
     box(
       [2 * FIT.lampInnerXM - 0.02, 0.016, 0.014],
       [0, FIT.taillampCenterYM + FIT.lampHeightM / 2 - 0.012, garnishZM],
+    ),
+  );
+  add('trim:beltline', 'chrome', createBeltline(detail === 'high' ? 14 : 7));
+  const exhaust = FIT.exhaustM;
+  add(
+    'exhaust:tip',
+    'chrome',
+    normalized(
+      new CylinderGeometry(exhaust.radius, exhaust.radius, exhaust.length, 10)
+        .rotateX(Math.PI / 2)
+        .translate(exhaust.x, exhaust.y, HALF_LENGTH_M - exhaust.insetFromTail - exhaust.length / 2),
     ),
   );
 
@@ -529,22 +863,30 @@ export function createCarFittings(): CarFitting[] {
   add('seam:hood', 'trim', seams.hood);
   add('seam:trunk', 'trim', seams.trunk);
   add('handle:doors', 'chrome', createDoorHandles());
+
+  const mirrors = createDoorMirrors();
+  add('mirror:shells', 'paint', mirrors.shells);
+  add('mirror:backs', 'trim', mirrors.backs);
   return fittings;
 }
 
 /**
  * 整台車身各材質分區的幾何：車殼曲面（carBody.ts）加上併進去的配件。
  * 每個分區的 `userData.fittings` 是併進這個分區的配件名稱。
- * @param options plateText: false = 不併入車牌上的字（背景車另外畫每台車自己的號碼）
+ * @param options plateText: false = 不併入車牌上的字（背景車另外畫每台車自己的號碼）；
+ *   mirrors: true = 併入車外後視鏡（背景車用；玩家車的後視鏡是另外的網格）
  */
 export function createBodyGeometries(
   detail: VehicleDetail,
-  options: { readonly plateText?: boolean } = {},
+  options: { readonly plateText?: boolean; readonly mirrors?: boolean } = {},
 ): Map<BodyPart, BufferGeometry> {
   const geometries = createShellGeometries(detail);
   const byPart = new Map<BodyPart, CarFitting[]>();
-  for (const fitting of createCarFittings()) {
+  for (const fitting of createCarFittings(detail)) {
     if (options.plateText === false && PLATE_TEXT_FITTINGS.includes(fitting.name)) {
+      continue;
+    }
+    if (options.mirrors !== true && MIRROR_FITTINGS.includes(fitting.name)) {
       continue;
     }
     byPart.set(fitting.part, [...(byPart.get(fitting.part) ?? []), fitting]);

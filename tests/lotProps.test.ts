@@ -374,7 +374,8 @@ describe('擺設的網格', () => {
     expect(counts.get('wheelStops')).toBe(layout.wheelStops.length);
     expect(counts.get('trafficCones')).toBe(layout.trafficCones.length);
     // 一類一個 draw call：網格數不隨實例數成長（背景車的車牌號碼全部併成一個網格，只佔其中一個）。
-    expect(meshes.length).toBeLessThanOrEqual(27);
+    // 背景車的琥珀色方向燈是一個材質分區，佔一個。
+    expect(meshes.length).toBeLessThanOrEqual(28);
     expect(meshes.filter((mesh) => !(mesh instanceof InstancedMesh)).length).toBeLessThanOrEqual(1);
   });
 

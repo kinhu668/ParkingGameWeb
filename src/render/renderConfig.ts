@@ -1003,6 +1003,9 @@ export const CAR_VISUAL_CONFIG = {
   /** 尾燈平常的亮度，以及踩煞車時的亮度。 */
   taillightEmissiveIntensity: 0.9,
   brakeLightEmissiveIntensity: 4,
+  /** 方向燈（琥珀色的燈罩，不閃）：顏色，以及讓它在陰影裡仍看得出是燈罩的一點自發光。 */
+  indicatorColor: 0xf0871a,
+  indicatorEmissiveIntensity: 0.35,
   /** 倒車燈：沒亮時的燈殼顏色、亮起來的顏色與亮度。 */
   reverseLightOffColor: 0x8d939c,
   reverseLightColor: 0xf4f6ff,
