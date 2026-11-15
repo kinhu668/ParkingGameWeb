@@ -28,7 +28,7 @@ import {
   plateText,
 } from '../vehicle/carFittings';
 import {
-  createBrakeDiscGeometry,
+  createHubcapGeometry,
   createRimGeometry,
   createTireGeometry,
 } from '../vehicle/carWheel';
@@ -49,8 +49,11 @@ export const PARKED_CAR_BODY_PARTS: readonly BodyPart[] = [
   'plate',
 ];
 
-/** 背景車輪胎一圈的段數（偶數）：比玩家車少，遠看沒有差別。 */
-const PARKED_WHEEL_SEGMENTS = 12;
+/**
+ * 背景車輪胎與輪圈一圈的段數（偶數），依擺設的細分。輪胎是沒有胎紋的光面（橫截面的點數少四成），
+ * 所以 high 的 20 段比原本有胎紋的 12 段面數還少一點，輪廓卻圓得多。
+ */
+const PARKED_WHEEL_SEGMENTS = { low: 12, high: 20 } as const;
 
 const UNIT_SCALE = new Vector3(1, 1, 1);
 
@@ -108,7 +111,7 @@ function instanced(
 /**
  * 建立全部的背景車。回傳的群組用車位本地座標，要加進車位的座標框裡。
  * 每個車殼分區、輪胎、輪圈各一個 InstancedMesh，加上一個裝全部車牌號碼的網格；只有烤漆車殼投影。
- * @param detail low：輪圈只是一片圓盤；high：有輪輻的輪圈。
+ * @param detail low：輪圈只是一片輪蓋、輪胎 12 段；high：有輪輻的輪圈、輪胎 20 段。
  */
 export function createParkedCars(
   placements: readonly PropPlacement[],
@@ -233,15 +236,15 @@ export function createParkedCars(
       }
     }
   }
-  const segments = PARKED_WHEEL_SEGMENTS;
+  const segments = PARKED_WHEEL_SEGMENTS[detail];
   const tires = instanced(
-    createTireGeometry(segments),
+    createTireGeometry(segments, false),
     createTireMaterial(),
     wheelMatrices,
   );
   tires.name = 'parkedCars:tire';
   const rims = instanced(
-    detail === 'high' ? createRimGeometry(segments) : createBrakeDiscGeometry(segments),
+    detail === 'high' ? createRimGeometry(segments) : createHubcapGeometry(segments),
     createRimMaterial(),
     wheelMatrices,
   );
