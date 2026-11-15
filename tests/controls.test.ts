@@ -1,11 +1,13 @@
-// 按鍵綁定：預設鍵位、重綁規則（同一個鍵不能綁兩個動作）、鍵帽文字、存檔（壞檔丟掉回到預設）。
+// 按鍵綁定：預設鍵位、重綁規則（同一個鍵不能綁兩個動作）、鍵帽文字、存檔（壞檔丟掉回到預設、舊版預設的存檔改走新預設）。
 import { describe, expect, test } from 'vitest';
 import {
   CONTROL_ACTIONS,
   CONTROLS_STORAGE_KEY,
   CONTROLS_VERSION,
+  DEFAULTS_REVISION,
   DEFAULT_BINDINGS,
   MAX_KEYS_PER_ACTION,
+  PREVIOUS_DEFAULT_BINDINGS,
   actionBoundTo,
   bindingsEqual,
   clearExtraKey,
@@ -70,15 +72,32 @@ function rebound(
 describe('DEFAULT_BINDINGS：人類指定的預設鍵位', () => {
   test('完整的預設表', () => {
     expect(DEFAULT_BINDINGS).toEqual({
-      throttle: ['KeyW', 'ArrowUp'],
+      throttle: ['Slash', 'KeyW', 'ArrowUp'],
       steerLeft: ['KeyA', 'ArrowLeft'],
       steerRight: ['KeyD', 'ArrowRight'],
-      brake: ['KeyS', 'ArrowDown', 'Comma'],
-      gearToggle: ['KeyR'],
+      brake: ['Period', 'KeyS', 'ArrowDown'],
+      gearToggle: ['Space', 'KeyR'],
       restart: ['Backspace', 'KeyT'],
       toggleCamera: ['KeyV'],
       pause: ['Escape'],
     });
+  });
+
+  test('主要鍵（第一個）：油門 /、剎車 .、切換檔位是空白鍵', () => {
+    expect(DEFAULT_BINDINGS.throttle[0]).toBe('Slash');
+    expect(DEFAULT_BINDINGS.brake[0]).toBe('Period');
+    expect(DEFAULT_BINDINGS.gearToggle[0]).toBe('Space');
+  });
+
+  test('/、. 與空白鍵沒有搶到別的動作：轉向、重來、鏡頭、暫停的鍵照舊', () => {
+    expect(actionBoundTo(DEFAULT_BINDINGS, 'Slash')).toBe('throttle');
+    expect(actionBoundTo(DEFAULT_BINDINGS, 'Period')).toBe('brake');
+    expect(actionBoundTo(DEFAULT_BINDINGS, 'Space')).toBe('gearToggle');
+    expect(DEFAULT_BINDINGS.steerLeft).toEqual(['KeyA', 'ArrowLeft']);
+    expect(DEFAULT_BINDINGS.steerRight).toEqual(['KeyD', 'ArrowRight']);
+    expect(DEFAULT_BINDINGS.restart).toEqual(['Backspace', 'KeyT']);
+    expect(DEFAULT_BINDINGS.toggleCamera).toEqual(['KeyV']);
+    expect(DEFAULT_BINDINGS.pause).toEqual(['Escape']);
   });
 
   test('R 是切換 D／R 檔而不是重來；D 是右轉；Q 沒有動作', () => {
@@ -96,11 +115,27 @@ describe('DEFAULT_BINDINGS：人類指定的預設鍵位', () => {
     }
   });
 
-  test('S、↓ 與逗號都是剎車；一個動作最多三個鍵', () => {
-    for (const code of ['KeyS', 'ArrowDown', 'Comma']) {
+  test('.、S 與 ↓ 都是剎車；一個動作最多三個鍵，所以逗號不再是預設的剎車鍵', () => {
+    for (const code of ['Period', 'KeyS', 'ArrowDown']) {
       expect(actionBoundTo(DEFAULT_BINDINGS, code), code).toBe('brake');
     }
     expect(MAX_KEYS_PER_ACTION).toBe(3);
+    expect(DEFAULT_BINDINGS.brake).toHaveLength(MAX_KEYS_PER_ACTION);
+    expect(actionBoundTo(DEFAULT_BINDINGS, 'Comma')).toBeUndefined();
+  });
+
+  test('上一版的官方預設留著給舊存檔比對：W／↑、S／↓／逗號、只有 R', () => {
+    expect(PREVIOUS_DEFAULT_BINDINGS).toEqual({
+      throttle: ['KeyW', 'ArrowUp'],
+      steerLeft: ['KeyA', 'ArrowLeft'],
+      steerRight: ['KeyD', 'ArrowRight'],
+      brake: ['KeyS', 'ArrowDown', 'Comma'],
+      gearToggle: ['KeyR'],
+      restart: ['Backspace', 'KeyT'],
+      toggleCamera: ['KeyV'],
+      pause: ['Escape'],
+    });
+    expect(bindingsEqual(PREVIOUS_DEFAULT_BINDINGS, DEFAULT_BINDINGS)).toBe(false);
   });
 
   test('每個動作都有鍵、不超過上限、每個鍵都能綁，而且同一個鍵不會綁到兩個動作', () => {
@@ -136,22 +171,23 @@ describe('isBindableCode', () => {
 });
 
 describe('rebind：重綁', () => {
-  test('把剎車的逗號改成 B；其他動作不變，原本的物件也沒被改到', () => {
+  test('把剎車的 ↓ 改成 B；其他動作不變，原本的物件也沒被改到', () => {
     const next = rebound(DEFAULT_BINDINGS, 'brake', 2, 'KeyB');
-    expect(next.brake).toEqual(['KeyS', 'ArrowDown', 'KeyB']);
+    expect(next.brake).toEqual(['Period', 'KeyS', 'KeyB']);
     expect(next.restart).toEqual(DEFAULT_BINDINGS.restart);
-    expect(DEFAULT_BINDINGS.brake).toEqual(['KeyS', 'ArrowDown', 'Comma']);
-    expect(actionBoundTo(next, 'Comma')).toBeUndefined();
+    expect(DEFAULT_BINDINGS.brake).toEqual(['Period', 'KeyS', 'ArrowDown']);
+    expect(actionBoundTo(next, 'ArrowDown')).toBeUndefined();
   });
 
   test('第二格：換掉備用鍵，或在只有一個鍵時多加一個', () => {
     expect(rebound(DEFAULT_BINDINGS, 'restart', 1, 'KeyY').restart).toEqual(['Backspace', 'KeyY']);
-    expect(rebound(DEFAULT_BINDINGS, 'gearToggle', 1, 'Period').gearToggle).toEqual(['KeyR', 'Period']);
+    expect(rebound(DEFAULT_BINDINGS, 'gearToggle', 1, 'KeyG').gearToggle).toEqual(['Space', 'KeyG']);
+    expect(rebound(DEFAULT_BINDINGS, 'toggleCamera', 1, 'KeyC').toggleCamera).toEqual(['KeyV', 'KeyC']);
   });
 
   test('第三格：已經有兩個鍵時再加一個，或換掉第三個鍵', () => {
     expect(rebound(DEFAULT_BINDINGS, 'restart', 2, 'KeyY').restart).toEqual(['Backspace', 'KeyT', 'KeyY']);
-    expect(rebound(DEFAULT_BINDINGS, 'brake', 2, 'Space').brake).toEqual(['KeyS', 'ArrowDown', 'Space']);
+    expect(rebound(DEFAULT_BINDINGS, 'brake', 2, 'Comma').brake).toEqual(['Period', 'KeyS', 'Comma']);
   });
 
   test('同一個鍵不能綁兩個動作：擋下來並回報是誰的', () => {
@@ -169,6 +205,19 @@ describe('rebind：重綁', () => {
       kind: 'conflict',
       action: 'brake',
     });
+    // 新的主要鍵也一樣：空白鍵是切換檔位、/ 是油門、. 是剎車。
+    expect(rebind(DEFAULT_BINDINGS, 'pause', 1, 'Space')).toEqual({
+      kind: 'conflict',
+      action: 'gearToggle',
+    });
+    expect(rebind(DEFAULT_BINDINGS, 'brake', 0, 'Slash')).toEqual({
+      kind: 'conflict',
+      action: 'throttle',
+    });
+    expect(rebind(DEFAULT_BINDINGS, 'restart', 0, 'Period')).toEqual({
+      kind: 'conflict',
+      action: 'brake',
+    });
     // 備用鍵也算。
     expect(rebind(DEFAULT_BINDINGS, 'brake', 0, 'KeyT')).toEqual({
       kind: 'conflict',
@@ -182,14 +231,14 @@ describe('rebind：重綁', () => {
   });
 
   test('先把佔用的動作改掉，原本衝突的鍵就能綁了', () => {
-    const freed = rebound(DEFAULT_BINDINGS, 'gearToggle', 0, 'KeyE');
+    const freed = rebound(DEFAULT_BINDINGS, 'gearToggle', 1, 'KeyE');
     const next = rebound(freed, 'restart', 0, 'KeyR');
     expect(next.restart).toEqual(['KeyR', 'KeyT']);
-    expect(next.gearToggle).toEqual(['KeyE']);
+    expect(next.gearToggle).toEqual(['Space', 'KeyE']);
   });
 
   test('換成原本的鍵算成功，綁定是同一份', () => {
-    expect(rebind(DEFAULT_BINDINGS, 'brake', 2, 'Comma')).toEqual({
+    expect(rebind(DEFAULT_BINDINGS, 'brake', 2, 'ArrowDown')).toEqual({
       kind: 'ok',
       bindings: DEFAULT_BINDINGS,
     });
@@ -234,9 +283,9 @@ describe('clearExtraKey', () => {
 
   test('三個鍵：一次拿掉最後一個，拿到剩一個為止', () => {
     const two = clearExtraKey(DEFAULT_BINDINGS, 'brake');
-    expect(two.brake).toEqual(['KeyS', 'ArrowDown']);
+    expect(two.brake).toEqual(['Period', 'KeyS']);
     const one = clearExtraKey(two, 'brake');
-    expect(one.brake).toEqual(['KeyS']);
+    expect(one.brake).toEqual(['Period']);
     expect(clearExtraKey(one, 'brake')).toBe(one);
   });
 });
@@ -244,7 +293,7 @@ describe('clearExtraKey', () => {
 describe('bindingsEqual', () => {
   test('內容相同就相等；鍵不同、順序不同、數目不同都不相等', () => {
     expect(
-      bindingsEqual(DEFAULT_BINDINGS, { ...DEFAULT_BINDINGS, brake: ['KeyS', 'ArrowDown', 'Comma'] }),
+      bindingsEqual(DEFAULT_BINDINGS, { ...DEFAULT_BINDINGS, brake: ['Period', 'KeyS', 'ArrowDown'] }),
     ).toBe(true);
     expect(bindingsEqual(DEFAULT_BINDINGS, { ...DEFAULT_BINDINGS, brake: ['KeyB'] })).toBe(false);
     expect(bindingsEqual(DEFAULT_BINDINGS, { ...DEFAULT_BINDINGS, restart: ['KeyT', 'Backspace'] })).toBe(false);
@@ -326,16 +375,14 @@ describe('loadBindings／saveBindings', () => {
 });
 
 describe('舊存檔遷移：已移除的動作 handbrake', () => {
-  /** 舊版的預設表：多一個 handbrake，佔著 / 與空白鍵。 */
-  const LEGACY_DEFAULTS = { ...DEFAULT_BINDINGS, handbrake: ['Slash', 'Space'] };
+  /** 舊版的預設表：上一版的預設再多一個 handbrake，佔著 / 與空白鍵。 */
+  const LEGACY_DEFAULTS = { ...PREVIOUS_DEFAULT_BINDINGS, handbrake: ['Slash', 'Space'] };
 
-  test('現在沒有這個動作；空白鍵與 / 預設沒有動作，可以拿去綁', () => {
+  test('現在沒有這個動作；它原本的 / 與空白鍵現在是油門與切換檔位的預設鍵', () => {
     expect(CONTROL_ACTIONS).not.toContain('handbrake');
     expect(DEFAULT_BINDINGS).not.toHaveProperty('handbrake');
-    for (const code of ['Space', 'Slash']) {
-      expect(actionBoundTo(DEFAULT_BINDINGS, code), code).toBeUndefined();
-      expect(rebound(DEFAULT_BINDINGS, 'pause', 1, code).pause).toEqual(['Escape', code]);
-    }
+    expect(actionBoundTo(DEFAULT_BINDINGS, 'Slash')).toBe('throttle');
+    expect(actionBoundTo(DEFAULT_BINDINGS, 'Space')).toBe('gearToggle');
   });
 
   test('含 handbrake 的舊存檔讀得進來：那一項丟掉，其他鍵照舊，存檔沒被當成壞檔刪掉', () => {
@@ -343,15 +390,17 @@ describe('舊存檔遷移：已移除的動作 handbrake', () => {
     const storage = memoryStorage({ [CONTROLS_STORAGE_KEY]: stored(legacy) });
     const loaded = loadBindings(storage);
     expect(loaded).not.toHaveProperty('handbrake');
-    expect(loaded).toEqual({ ...DEFAULT_BINDINGS, brake: ['KeyB'], restart: ['Enter', 'KeyT'] });
+    // 玩家改過鍵的存檔：其他動作維持當時的鍵，不會被換成新的預設。
+    expect(loaded).toEqual({ ...PREVIOUS_DEFAULT_BINDINGS, brake: ['KeyB'], restart: ['Enter', 'KeyT'] });
     expect(storage.items.has(CONTROLS_STORAGE_KEY)).toBe(true);
   });
 
-  test('舊存檔只改過 handbrake：讀回來就是預設', () => {
+  test('舊存檔只改過 handbrake：等於沒自訂，讀回來是現在的預設，那一筆刪掉', () => {
     const storage = memoryStorage({
       [CONTROLS_STORAGE_KEY]: stored({ ...LEGACY_DEFAULTS, handbrake: ['KeyH'] }),
     });
-    expect(loadBindings(storage)).toEqual(DEFAULT_BINDINGS);
+    expect(loadBindings(storage)).toBe(DEFAULT_BINDINGS);
+    expect(storage.items.has(CONTROLS_STORAGE_KEY)).toBe(false);
   });
 
   test.each<[string, unknown]>([
@@ -361,12 +410,12 @@ describe('舊存檔遷移：已移除的動作 handbrake', () => {
     ['null', null],
   ])('handbrake 那一項的內容不看（%s）：其他綁定照樣讀進來', (_name, handbrake) => {
     const raw = { version: CONTROLS_VERSION, bindings: { ...LEGACY_DEFAULTS, brake: ['KeyB'], handbrake } };
-    expect(parseBindings(raw)).toEqual({ ...DEFAULT_BINDINGS, brake: ['KeyB'] });
+    expect(parseBindings(raw)).toEqual({ ...PREVIOUS_DEFAULT_BINDINGS, brake: ['KeyB'] });
   });
 
   test('handbrake 原本佔的鍵空出來了：可以綁給別的動作', () => {
     const loaded = parseBindings({ version: CONTROLS_VERSION, bindings: LEGACY_DEFAULTS });
-    expect(loaded).toEqual(DEFAULT_BINDINGS);
+    expect(loaded).toEqual(PREVIOUS_DEFAULT_BINDINGS);
     const next = rebound(rebound(loaded ?? DEFAULT_BINDINGS, 'gearToggle', 1, 'Space'), 'pause', 1, 'Slash');
     expect(next.gearToggle).toEqual(['KeyR', 'Space']);
     expect(next.pause).toEqual(['Escape', 'Slash']);
@@ -380,15 +429,19 @@ describe('舊存檔遷移：已移除的動作 handbrake', () => {
     const saved: unknown = JSON.parse(storage.items.get(CONTROLS_STORAGE_KEY) ?? 'null');
     expect(saved).toEqual({
       version: CONTROLS_VERSION,
-      bindings: { ...DEFAULT_BINDINGS, brake: ['KeyB'] },
+      defaultsRevision: DEFAULTS_REVISION,
+      bindings: { ...PREVIOUS_DEFAULT_BINDINGS, brake: ['KeyB'] },
     });
     expect(JSON.stringify(saved)).not.toContain('handbrake');
     expect(loadBindings(storage)).toEqual(loaded);
   });
 
-  test('舊存檔讀進來是預設、再存：那一筆刪掉，不留 handbrake', () => {
+  test('舊存檔讀進來是預設：讀的時候那一筆就刪掉了，再存也不留 handbrake', () => {
     const storage = memoryStorage({ [CONTROLS_STORAGE_KEY]: stored(LEGACY_DEFAULTS) });
-    saveBindings(storage, loadBindings(storage));
+    const loaded = loadBindings(storage);
+    expect(loaded).toBe(DEFAULT_BINDINGS);
+    expect(storage.items.has(CONTROLS_STORAGE_KEY)).toBe(false);
+    saveBindings(storage, loaded);
     expect(storage.items.has(CONTROLS_STORAGE_KEY)).toBe(false);
   });
 });
@@ -413,17 +466,21 @@ describe('舊存檔遷移：倒車油門、掛 D、掛 R 改成一個切換檔�
     return parseBindings({ version: CONTROLS_VERSION, bindings: { ...OLD_DEFAULTS, ...overrides } });
   }
 
-  test('舊的預設表：每個鍵做的事與新的預設相同（S／↓ 併進剎車、R 切換檔位、Q 空出來）', () => {
+  test('舊的預設表：每個鍵做的事與上一版的預設相同（S／↓ 併進剎車、R 切換檔位、Q 空出來）', () => {
     const loaded = parseOld();
     expect(loaded).toEqual({
-      ...DEFAULT_BINDINGS,
+      ...PREVIOUS_DEFAULT_BINDINGS,
       // 玩家原本的剎車鍵（逗號）仍是主要鍵，倒車油門的鍵接在後面。
       brake: ['Comma', 'KeyS', 'ArrowDown'],
       gearToggle: ['KeyR'],
     });
     const migrated = loaded ?? DEFAULT_BINDINGS;
-    for (const code of CONTROL_ACTIONS.flatMap((action) => DEFAULT_BINDINGS[action])) {
-      expect(actionBoundTo(migrated, code), code).toBe(actionBoundTo(DEFAULT_BINDINGS, code));
+    for (const code of CONTROL_ACTIONS.flatMap((action) => PREVIOUS_DEFAULT_BINDINGS[action])) {
+      expect(actionBoundTo(migrated, code), code).toBe(actionBoundTo(PREVIOUS_DEFAULT_BINDINGS, code));
+    }
+    // 補上去的切換檔位是當時的 R，不是現在預設的空白鍵；/、. 與空白鍵沒有被塞進來。
+    for (const code of ['Slash', 'Period', 'Space']) {
+      expect(actionBoundTo(migrated, code), code).toBeUndefined();
     }
     expect(actionBoundTo(migrated, 'KeyQ')).toBeUndefined();
     for (const removed of REMOVED) {
@@ -454,7 +511,7 @@ describe('舊存檔遷移：倒車油門、掛 D、掛 R 改成一個切換檔�
     expect(actionBoundTo(custom ?? DEFAULT_BINDINGS, 'KeyS')).toBeUndefined();
   });
 
-  test('R 沒人用：切換檔位補上預設的 R（即使掛 R 檔原本改綁到別的鍵）', () => {
+  test('R 沒人用：切換檔位補上那一版預設的 R（即使掛 R 檔原本改綁到別的鍵）', () => {
     const loaded = parseOld({ gearReverse: ['KeyE'], gearDrive: ['KeyG'] });
     expect(loaded?.gearToggle).toEqual(['KeyR']);
     expect(actionBoundTo(loaded ?? DEFAULT_BINDINGS, 'KeyE')).toBeUndefined();
@@ -497,7 +554,7 @@ describe('舊存檔遷移：倒車油門、掛 D、掛 R 改成一個切換檔�
     ['沒有這一項', undefined],
   ])('已移除動作那幾項的內容壞了（%s）：不算壞檔，只是沒有鍵可以帶過來', (_name, value) => {
     const loaded = parseOld({ reverse: value, gearDrive: value, gearReverse: value });
-    expect(loaded).toEqual({ ...DEFAULT_BINDINGS, brake: ['Comma'], gearToggle: ['KeyR'] });
+    expect(loaded).toEqual({ ...PREVIOUS_DEFAULT_BINDINGS, brake: ['Comma'], gearToggle: ['KeyR'] });
   });
 
   test('倒車油門的鍵與留下來的鍵重複（手改過的存檔）：那個鍵不帶過來，不算壞檔', () => {
@@ -518,7 +575,7 @@ describe('舊存檔遷移：倒車油門、掛 D、掛 R 改成一個切換檔�
   test('更舊的存檔同時還有 handbrake：一樣讀得進來', () => {
     const loaded = parseOld({ handbrake: ['Slash', 'Space'], brake: ['KeyB'] });
     expect(loaded).toEqual({
-      ...DEFAULT_BINDINGS,
+      ...PREVIOUS_DEFAULT_BINDINGS,
       brake: ['KeyB', 'KeyS', 'ArrowDown'],
       gearToggle: ['KeyR'],
     });
@@ -547,6 +604,108 @@ describe('舊存檔遷移：倒車油門、掛 D、掛 R 改成一個切換檔�
   });
 });
 
+describe('舊存檔遷移：內容正好是上一版官方預設', () => {
+  test('上一版官方預設（W／↑、S／↓／逗號、R）→ 現在的預設，那一筆刪掉，別的鍵不動', () => {
+    const storage = memoryStorage({
+      [CONTROLS_STORAGE_KEY]: stored(PREVIOUS_DEFAULT_BINDINGS),
+      other: 'keep',
+    });
+    const loaded = loadBindings(storage);
+    expect(loaded).toBe(DEFAULT_BINDINGS);
+    expect(loaded.throttle).toEqual(['Slash', 'KeyW', 'ArrowUp']);
+    expect(loaded.brake).toEqual(['Period', 'KeyS', 'ArrowDown']);
+    expect(loaded.gearToggle).toEqual(['Space', 'KeyR']);
+    expect(storage.items.has(CONTROLS_STORAGE_KEY)).toBe(false);
+    expect(storage.items.get('other')).toBe('keep');
+    // 之後跟著預設走：再讀還是預設，存預設也不會留檔。
+    expect(loadBindings(storage)).toBe(DEFAULT_BINDINGS);
+    saveBindings(storage, loaded);
+    expect(storage.items.has(CONTROLS_STORAGE_KEY)).toBe(false);
+  });
+
+  test('只改過油門的舊存檔：原樣保留，其他動作不會被換成新的預設，存檔還在', () => {
+    const custom = { ...PREVIOUS_DEFAULT_BINDINGS, throttle: ['KeyI', 'ArrowUp'] };
+    const text = stored(custom);
+    const storage = memoryStorage({ [CONTROLS_STORAGE_KEY]: text });
+    const loaded = loadBindings(storage);
+    expect(loaded).toEqual(custom);
+    expect(loaded.brake).toEqual(['KeyS', 'ArrowDown', 'Comma']);
+    expect(loaded.gearToggle).toEqual(['KeyR']);
+    for (const code of ['Slash', 'Period', 'Space']) {
+      expect(actionBoundTo(loaded, code), code).toBeUndefined();
+    }
+    expect(storage.items.get(CONTROLS_STORAGE_KEY)).toBe(text);
+  });
+
+  test.each<[string, Partial<Record<keyof ControlBindings, readonly string[]>>]>([
+    ['少一個備用鍵', { brake: ['KeyS', 'ArrowDown'] }],
+    ['順序不同', { brake: ['Comma', 'KeyS', 'ArrowDown'] }],
+    ['多一個備用鍵', { gearToggle: ['KeyR', 'KeyG'] }],
+    ['改了與這次無關的動作', { toggleCamera: ['KeyC'] }],
+    ['自己先把空白鍵綁成切換檔位', { gearToggle: ['Space'] }],
+  ])('與上一版預設只差一點（%s）也是自訂：原樣保留', (_name, change) => {
+    const custom = { ...PREVIOUS_DEFAULT_BINDINGS, ...change };
+    const storage = memoryStorage({ [CONTROLS_STORAGE_KEY]: stored(custom) });
+    expect(loadBindings(storage)).toEqual(custom);
+    expect(storage.items.has(CONTROLS_STORAGE_KEY)).toBe(true);
+  });
+
+  test('存檔會記下是在哪一版預設底下改的；上一版寫的存檔沒有這一欄', () => {
+    const storage = memoryStorage();
+    saveBindings(storage, { ...DEFAULT_BINDINGS, brake: ['KeyB'] });
+    const saved: unknown = JSON.parse(storage.items.get(CONTROLS_STORAGE_KEY) ?? 'null');
+    expect(saved).toEqual({
+      version: CONTROLS_VERSION,
+      defaultsRevision: DEFAULTS_REVISION,
+      bindings: { ...DEFAULT_BINDINGS, brake: ['KeyB'] },
+    });
+    expect(DEFAULTS_REVISION).toBe(2);
+    expect(stored(PREVIOUS_DEFAULT_BINDINGS)).not.toContain('defaultsRevision');
+  });
+
+  test('在現在的預設底下自己改回上一版的鍵位：那是玩家的選擇，重新載入後還在', () => {
+    const storage = memoryStorage();
+    saveBindings(storage, PREVIOUS_DEFAULT_BINDINGS);
+    expect(storage.items.has(CONTROLS_STORAGE_KEY)).toBe(true);
+    expect(loadBindings(storage)).toEqual(PREVIOUS_DEFAULT_BINDINGS);
+    expect(storage.items.has(CONTROLS_STORAGE_KEY)).toBe(true);
+  });
+
+  test.each<[string, unknown]>([
+    ['比現在舊的版號', 1],
+    ['不是數字', '2'],
+    ['null', null],
+  ])('defaultsRevision 是%s：當成舊存檔，上一版預設照樣改走新預設', (_name, defaultsRevision) => {
+    const storage = memoryStorage({
+      [CONTROLS_STORAGE_KEY]: JSON.stringify({
+        version: CONTROLS_VERSION,
+        defaultsRevision,
+        bindings: PREVIOUS_DEFAULT_BINDINGS,
+      }),
+    });
+    expect(loadBindings(storage)).toBe(DEFAULT_BINDINGS);
+    expect(storage.items.has(CONTROLS_STORAGE_KEY)).toBe(false);
+  });
+
+  test('改走新預設之後玩家再改鍵：存的是以新預設為底的綁定', () => {
+    const storage = memoryStorage({ [CONTROLS_STORAGE_KEY]: stored(PREVIOUS_DEFAULT_BINDINGS) });
+    const next = rebound(loadBindings(storage), 'toggleCamera', 0, 'KeyC');
+    saveBindings(storage, next);
+    expect(loadBindings(storage)).toEqual({ ...DEFAULT_BINDINGS, toggleCamera: ['KeyC'] });
+  });
+
+  test('storage 刪不掉（丟例外）：照樣用新的預設，不會壞', () => {
+    const storage: ControlsStorage = {
+      getItem: () => stored(PREVIOUS_DEFAULT_BINDINGS),
+      setItem: () => undefined,
+      removeItem: () => {
+        throw new Error('denied');
+      },
+    };
+    expect(loadBindings(storage)).toBe(DEFAULT_BINDINGS);
+  });
+});
+
 describe('keyLabel：鍵帽上的字', () => {
   test('字母與數字直接寫；方向鍵是箭頭；符號鍵寫符號', () => {
     expect(keyLabel('KeyW')).toEqual({ text: 'W' });
@@ -554,6 +713,7 @@ describe('keyLabel：鍵帽上的字', () => {
     expect(keyLabel('ArrowLeft')).toEqual({ text: '←' });
     expect(keyLabel('Comma')).toEqual({ text: ',' });
     expect(keyLabel('Slash')).toEqual({ text: '/' });
+    expect(keyLabel('Period')).toEqual({ text: '.' });
     expect(keyLabel('Escape')).toEqual({ text: 'Esc' });
     expect(keyLabel('Backspace')).toEqual({ text: 'Backspace' });
     expect(keyLabel('Numpad5')).toEqual({ text: 'Num 5' });

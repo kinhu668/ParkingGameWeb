@@ -235,18 +235,21 @@ describe('controlRowKeys：HUD 操作說明要畫的鍵帽', () => {
       'Backspace',
       'KeyT',
     ]);
+    // 油門有三個鍵，主要鍵 / 在最前面。
     expect(controlRowKeys(DEFAULT_BINDINGS, ['throttle']).map((cap) => cap.code)).toEqual([
+      'Slash',
       'KeyW',
       'ArrowUp',
     ]);
-    // 剎車有三個鍵：S、↓ 與逗號。
+    // 剎車有三個鍵：.、S 與 ↓（逗號不再是預設）。
     expect(controlRowKeys(DEFAULT_BINDINGS, ['brake']).map((cap) => cap.code)).toEqual([
+      'Period',
       'KeyS',
       'ArrowDown',
-      'Comma',
     ]);
-    // 切換 D／R 檔只有一個鍵：R。
+    // 切換 D／R 檔：空白鍵與 R。
     expect(controlRowKeys(DEFAULT_BINDINGS, ['gearToggle'])).toEqual([
+      { action: 'gearToggle', code: 'Space' },
       { action: 'gearToggle', code: 'KeyR' },
     ]);
   });

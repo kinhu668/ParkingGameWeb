@@ -24,10 +24,26 @@ export type ControlBindings = Readonly<Record<ControlAction, readonly string[]>>
 export const MAX_KEYS_PER_ACTION = 3;
 
 /**
- * 預設鍵位。油門是 W／↑，往哪邊走看檔位；S／↓ 與逗號都是剎車。
- * R 是切換 D／R 檔，所以重來是 Backspace／T。Q、空白鍵與 `/ ?` 那一顆預設不綁任何動作，玩家可以自己拿去綁。
+ * 預設鍵位，主要鍵在前（螢幕鍵帽顯示的是主要鍵）。右手的 `/`、`.` 是油門、剎車，空白鍵切換 D／R 檔；
+ * 左手的 W、S、R 與方向鍵 ↑、↓ 照舊可用。油門往哪邊走看檔位。R 是切換檔位，所以重來是 Backspace／T。
+ * 每個動作最多 MAX_KEYS_PER_ACTION 個鍵，所以逗號不再是預設的剎車鍵；Q 與逗號預設不綁任何動作，玩家可以自己拿去綁。
  */
 export const DEFAULT_BINDINGS: ControlBindings = {
+  throttle: ['Slash', 'KeyW', 'ArrowUp'],
+  steerLeft: ['KeyA', 'ArrowLeft'],
+  steerRight: ['KeyD', 'ArrowRight'],
+  brake: ['Period', 'KeyS', 'ArrowDown'],
+  gearToggle: ['Space', 'KeyR'],
+  restart: ['Backspace', 'KeyT'],
+  toggleCamera: ['KeyV'],
+  pause: ['Escape'],
+};
+
+/**
+ * 上一版的官方預設（油門 W／↑、剎車 S／↓／逗號、切換檔位只有 R）。
+ * 舊存檔的內容正好是這一份，就當作沒自訂過，改走現在的預設（見 loadBindings）。
+ */
+export const PREVIOUS_DEFAULT_BINDINGS: ControlBindings = {
   throttle: ['KeyW', 'ArrowUp'],
   steerLeft: ['KeyA', 'ArrowLeft'],
   steerRight: ['KeyD', 'ArrowRight'],
@@ -43,6 +59,13 @@ export const CONTROLS_STORAGE_KEY = 'parkinggame.controls.v1';
 
 /** 存檔內容的版本；讀到別的版本當作壞檔。 */
 export const CONTROLS_VERSION = 1;
+
+/**
+ * 預設鍵位是第幾版；每次存檔都寫進 `defaultsRevision`。上一版（W／S／逗號／R）的程式不寫這一欄，
+ * 所以沒有這一欄的就是舊存檔。有這一欄的存檔是玩家在現在的預設底下自己改出來的，
+ * 即使內容與上一版預設一樣也照他的意思留著。
+ */
+export const DEFAULTS_REVISION = 2;
 
 /** 讀、寫、刪；測試可以注入同樣形狀的物件。 */
 export type ControlsStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
@@ -156,14 +179,15 @@ const LETTER_CODES: readonly string[] = Array.from(
 
 /**
  * 舊存檔（沒有 `gearToggle`）補上「切換檔位」的鍵，不能與已經讀進來的鍵衝突。依序挑第一個沒人用的：
- * 預設的 R → 玩家原本掛 R 檔的鍵 → 原本掛 D 檔的鍵 → G → 字母鍵 A–Z。
+ * 那一版預設的 R → 玩家原本掛 R 檔的鍵 → 原本掛 D 檔的鍵 → G → 字母鍵 A–Z。
+ * 不跟著現在的預設改成空白鍵：這些存檔是玩家自訂過的，補上去的鍵維持當時的樣子。
  */
 function legacyGearToggleCode(
   saved: Readonly<Record<string, unknown>>,
   used: ReadonlySet<string>,
 ): string | undefined {
   const candidates = [
-    ...DEFAULT_BINDINGS.gearToggle,
+    ...PREVIOUS_DEFAULT_BINDINGS.gearToggle,
     ...legacyCodes(saved.gearReverse),
     ...legacyCodes(saved.gearDrive),
     'KeyG',
@@ -226,7 +250,20 @@ export function parseBindings(raw: unknown): ControlBindings | undefined {
   return parsed as ControlBindings;
 }
 
-/** 讀綁定；沒存過、沒有 storage → 預設。壞檔 → 刪掉那一筆並回到預設。 */
+/** 這份存檔是不是上一版預設那時候寫的（沒有 `defaultsRevision`，或比現在舊）。 */
+function savedUnderOlderDefaults(raw: unknown): boolean {
+  if (!isPlainObject(raw)) {
+    return true;
+  }
+  const revision: unknown = raw.defaultsRevision;
+  return typeof revision !== 'number' || revision < DEFAULTS_REVISION;
+}
+
+/**
+ * 讀綁定；沒存過、沒有 storage → 預設。壞檔 → 刪掉那一筆並回到預設。
+ * 舊存檔讀進來（含已移除動作的遷移之後）正好是上一版的官方預設：玩家沒有自訂過，
+ * 刪掉那一筆並改走現在的預設，之後跟著預設走。只要有一個鍵不一樣就是玩家改過的，原樣保留。
+ */
 export function loadBindings(storage: ControlsStorage | undefined): ControlBindings {
   try {
     const text = storage?.getItem(CONTROLS_STORAGE_KEY) ?? null;
@@ -234,13 +271,18 @@ export function loadBindings(storage: ControlsStorage | undefined): ControlBindi
       return DEFAULT_BINDINGS;
     }
     let parsed: ControlBindings | undefined;
+    let outdatedDefaults = false;
     try {
       const raw: unknown = JSON.parse(text);
       parsed = parseBindings(raw);
+      outdatedDefaults =
+        parsed !== undefined &&
+        savedUnderOlderDefaults(raw) &&
+        bindingsEqual(parsed, PREVIOUS_DEFAULT_BINDINGS);
     } catch {
       parsed = undefined;
     }
-    if (parsed === undefined) {
+    if (parsed === undefined || outdatedDefaults) {
       storage?.removeItem(CONTROLS_STORAGE_KEY);
       return DEFAULT_BINDINGS;
     }
@@ -251,7 +293,10 @@ export function loadBindings(storage: ControlsStorage | undefined): ControlBindi
   }
 }
 
-/** 存綁定。與預設完全相同就不留存檔（之後預設若調整，沒改過鍵的玩家會跟著走）。 */
+/**
+ * 存綁定。與預設完全相同就不留存檔（之後預設若調整，沒改過鍵的玩家會跟著走）。
+ * 寫進去的 `defaultsRevision` 記下「這是在哪一版預設底下改的」，見 DEFAULTS_REVISION。
+ */
 export function saveBindings(storage: ControlsStorage | undefined, bindings: ControlBindings): void {
   try {
     if (bindingsEqual(bindings, DEFAULT_BINDINGS)) {
@@ -260,7 +305,7 @@ export function saveBindings(storage: ControlsStorage | undefined, bindings: Con
     }
     storage?.setItem(
       CONTROLS_STORAGE_KEY,
-      JSON.stringify({ version: CONTROLS_VERSION, bindings }),
+      JSON.stringify({ version: CONTROLS_VERSION, defaultsRevision: DEFAULTS_REVISION, bindings }),
     );
   } catch {
     // 存不進去（停用儲存、空間滿了）：這一次的綁定仍然有效，只是重新整理後會回到舊的。

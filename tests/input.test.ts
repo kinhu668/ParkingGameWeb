@@ -15,14 +15,15 @@ describe('pedalInputFromHeldCodes', () => {
     expect(pedalInputFromHeldCodes(held())).toEqual({ gas: false, steer: 0, brake: false });
   });
 
-  test('W 與 ↑ 都是油門（沒有方向，往哪邊走看檔位）', () => {
-    expect(pedalInputFromHeldCodes(held('KeyW'))).toEqual({ gas: true, steer: 0, brake: false });
-    expect(pedalInputFromHeldCodes(held('ArrowUp'))).toEqual({ gas: true, steer: 0, brake: false });
+  test('/、W 與 ↑ 都是油門（沒有方向，往哪邊走看檔位）', () => {
+    for (const code of ['Slash', 'KeyW', 'ArrowUp']) {
+      expect(pedalInputFromHeldCodes(held(code)), code).toEqual({ gas: true, steer: 0, brake: false });
+    }
   });
 
-  test('S、↓ 與逗號都是剎車，不是倒車油門', () => {
-    for (const code of ['KeyS', 'ArrowDown', 'Comma']) {
-      expect(pedalInputFromHeldCodes(held(code))).toEqual({ gas: false, steer: 0, brake: true });
+  test('.、S 與 ↓ 都是剎車，不是倒車油門', () => {
+    for (const code of ['Period', 'KeyS', 'ArrowDown']) {
+      expect(pedalInputFromHeldCodes(held(code)), code).toEqual({ gas: false, steer: 0, brake: true });
     }
   });
 
@@ -33,17 +34,17 @@ describe('pedalInputFromHeldCodes', () => {
     expect(pedalInputFromHeldCodes(held('ArrowRight')).steer).toBe(1);
   });
 
-  test('Q、空白鍵與 / 預設沒有綁任何動作：按住不影響踏板與方向盤', () => {
-    expect(pedalInputFromHeldCodes(held('KeyQ', 'Space', 'Slash'))).toEqual({
+  test('Q 與逗號預設沒有綁任何動作，空白鍵是切換檔位：按住不影響踏板與方向盤', () => {
+    expect(pedalInputFromHeldCodes(held('KeyQ', 'Comma', 'Space'))).toEqual({
       gas: false,
       steer: 0,
       brake: false,
     });
   });
 
-  test('空白鍵可以改綁成剎車', () => {
-    const custom: ControlBindings = { ...DEFAULT_BINDINGS, brake: ['Comma', 'Space'] };
-    expect(pedalInputFromHeldCodes(held('Space'), custom).brake).toBe(true);
+  test('逗號可以綁回去當剎車', () => {
+    const custom: ControlBindings = { ...DEFAULT_BINDINGS, brake: ['Period', 'KeyS', 'Comma'] };
+    expect(pedalInputFromHeldCodes(held('Comma'), custom).brake).toBe(true);
   });
 
   test('照傳入的綁定算：改綁之後舊的鍵不再有作用', () => {
@@ -54,7 +55,7 @@ describe('pedalInputFromHeldCodes', () => {
     };
     expect(pedalInputFromHeldCodes(held('KeyI'), custom).gas).toBe(true);
     expect(pedalInputFromHeldCodes(held('KeyB'), custom).brake).toBe(true);
-    expect(pedalInputFromHeldCodes(held('KeyW', 'ArrowDown', 'Comma'), custom)).toEqual({
+    expect(pedalInputFromHeldCodes(held('Slash', 'KeyW', 'Period', 'ArrowDown'), custom)).toEqual({
       gas: false,
       steer: 0,
       brake: false,
@@ -67,6 +68,11 @@ describe('pedalInputFromHeldCodes', () => {
       steer: 0,
       brake: true,
     });
+    expect(pedalInputFromHeldCodes(held('Slash', 'Period'))).toEqual({
+      gas: true,
+      steer: 0,
+      brake: true,
+    });
   });
 
   test('左右同時按住互相抵銷為 0（跨 WASD 與方向鍵也一樣）', () => {
@@ -75,22 +81,22 @@ describe('pedalInputFromHeldCodes', () => {
   });
 
   test('同一個動作的兩個鍵一起按，結果與按一個相同', () => {
-    expect(pedalInputFromHeldCodes(held('KeyW', 'ArrowUp')).gas).toBe(true);
+    expect(pedalInputFromHeldCodes(held('Slash', 'KeyW', 'ArrowUp')).gas).toBe(true);
     expect(pedalInputFromHeldCodes(held('KeyD', 'ArrowRight')).steer).toBe(1);
   });
 
   test('可以同時油門、轉向、剎車', () => {
-    expect(pedalInputFromHeldCodes(held('KeyW', 'KeyD', 'Comma'))).toEqual({
+    expect(pedalInputFromHeldCodes(held('Slash', 'KeyD', 'Period'))).toEqual({
       gas: true,
       steer: 1,
       brake: true,
     });
   });
 
-  test('切換檔位（R）、重來（Backspace、T）、V、Esc 與沒綁定的鍵不影響踏板與方向盤', () => {
+  test('切換檔位（空白鍵、R）、重來（Backspace、T）、V、Esc 與沒綁定的鍵不影響踏板與方向盤', () => {
     expect(
       pedalInputFromHeldCodes(
-        held('KeyR', 'KeyQ', 'Backspace', 'KeyT', 'KeyV', 'Escape', 'KeyC', 'Enter'),
+        held('Space', 'KeyR', 'KeyQ', 'Backspace', 'KeyT', 'KeyV', 'Escape', 'KeyC', 'Enter'),
       ),
     ).toEqual({ gas: false, steer: 0, brake: false });
   });
@@ -234,6 +240,38 @@ describe('attachKeyboardInput：切換檔位', () => {
     expect(input.consumeGearToggles()).toBe(0);
   });
 
+  test('空白鍵（主要鍵）也一樣：按一下算一下，按住不放只算一下；與 R 混著按各算各的', () => {
+    const { target, input } = attach();
+    key(target, 'keydown', 'Space');
+    key(target, 'keydown', 'Space', { repeat: true });
+    key(target, 'keydown', 'Space', { repeat: true });
+    expect(input.consumeGearToggles()).toBe(1);
+    expect(input.pedalInput()).toEqual({ gas: false, steer: 0, brake: false });
+
+    key(target, 'keyup', 'Space');
+    key(target, 'keydown', 'Space');
+    key(target, 'keydown', 'KeyR');
+    expect(input.consumeGearToggles()).toBe(2);
+    expect(input.consumeRestart()).toBe(false);
+    expect(input.consumePause()).toBe(false);
+  });
+
+  test('/ 與 . 是踏板：按住就踩著、放開就鬆開，不換檔、不重來、不暫停', () => {
+    const { target, input } = attach();
+    key(target, 'keydown', 'Slash');
+    expect(input.pedalInput()).toEqual({ gas: true, steer: 0, brake: false });
+    key(target, 'keydown', 'Period');
+    expect(input.pedalInput()).toEqual({ gas: true, steer: 0, brake: true });
+    key(target, 'keyup', 'Slash');
+    expect(input.pedalInput()).toEqual({ gas: false, steer: 0, brake: true });
+    key(target, 'keyup', 'Period');
+    expect(input.pedalInput()).toEqual({ gas: false, steer: 0, brake: false });
+    expect(input.consumeGearToggles()).toBe(0);
+    expect(input.consumeRestart()).toBe(false);
+    expect(input.consumePause()).toBe(false);
+    expect(input.consumeToggleCamera()).toBe(false);
+  });
+
   test('兩次讀取之間按了兩下：算兩下（D → R → D，等於沒換）', () => {
     const { target, input } = attach();
     key(target, 'keydown', 'KeyR');
@@ -261,6 +299,7 @@ describe('attachKeyboardInput：切換檔位', () => {
   test('改綁之後用新的鍵切換', () => {
     const { target, input } = attach(() => ({ ...DEFAULT_BINDINGS, gearToggle: ['KeyG'] }));
     key(target, 'keydown', 'KeyR');
+    key(target, 'keydown', 'Space');
     expect(input.consumeGearToggles()).toBe(0);
     key(target, 'keydown', 'KeyG');
     expect(input.consumeGearToggles()).toBe(1);

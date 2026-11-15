@@ -48,12 +48,13 @@ describe('控制項 ↔ 動作', () => {
 });
 
 describe('鍵帽上的字', () => {
-  test('預設綁定：A／D、W、S、R、Esc、Backspace、V', () => {
+  test('預設綁定的主要鍵：A／D、/、.、空白鍵、Esc、Backspace、V', () => {
     expect(capText(DEFAULT_BINDINGS, 'steerLeft')).toBe('A');
     expect(capText(DEFAULT_BINDINGS, 'steerRight')).toBe('D');
-    expect(capText(DEFAULT_BINDINGS, 'throttle')).toBe('W');
-    expect(capText(DEFAULT_BINDINGS, 'brake')).toBe('S');
-    expect(capText(DEFAULT_BINDINGS, 'gearToggle')).toBe('R');
+    expect(capText(DEFAULT_BINDINGS, 'throttle')).toBe('/');
+    expect(capText(DEFAULT_BINDINGS, 'brake')).toBe('.');
+    // 空白鍵的寫法走翻譯鍵（「空白鍵」／「Space」）。
+    expect(capText(DEFAULT_BINDINGS, 'gearToggle')).toBe('hud.keySpace');
     expect(capText(DEFAULT_BINDINGS, 'pause')).toBe('Esc');
     expect(capText(DEFAULT_BINDINGS, 'restart')).toBe('Backspace');
     expect(capText(DEFAULT_BINDINGS, 'toggleCamera')).toBe('V');
@@ -66,23 +67,29 @@ describe('鍵帽上的字', () => {
       return;
     }
     expect(capText(result.bindings, 'throttle')).toBe('I');
-    expect(result.bindings.throttle).toEqual(['KeyI', 'ArrowUp']);
+    expect(result.bindings.throttle).toEqual(['KeyI', 'KeyW', 'ArrowUp']);
     // 別的鍵帽不受影響。
-    expect(capText(result.bindings, 'brake')).toBe('S');
+    expect(capText(result.bindings, 'brake')).toBe('.');
     expect(capText(result.bindings, 'steerLeft')).toBe('A');
   });
 
   test('已經是別的動作的鍵：擋下來（與按鍵設定面板同一條規則），鍵帽不變', () => {
     const result = rebind(DEFAULT_BINDINGS, 'throttle', TOUCH_KEY_SLOT, 'KeyS');
     expect(result).toEqual({ kind: 'conflict', action: 'brake' });
-    expect(capText(DEFAULT_BINDINGS, 'throttle')).toBe('W');
+    expect(capText(DEFAULT_BINDINGS, 'throttle')).toBe('/');
+    // 空白鍵現在是切換檔位的：剎車的鍵帽不能搶。
+    expect(rebind(DEFAULT_BINDINGS, 'brake', TOUCH_KEY_SLOT, 'Space')).toEqual({
+      kind: 'conflict',
+      action: 'gearToggle',
+    });
   });
 
   test('空白鍵走翻譯鍵', () => {
-    const result = rebind(DEFAULT_BINDINGS, 'brake', TOUCH_KEY_SLOT, 'Space');
+    expect(capText(DEFAULT_BINDINGS, 'gearToggle')).toBe('hud.keySpace');
+    const result = rebind(DEFAULT_BINDINGS, 'gearToggle', TOUCH_KEY_SLOT, 'KeyG');
     expect(result.kind).toBe('ok');
     if (result.kind === 'ok') {
-      expect(capText(result.bindings, 'brake')).toBe('hud.keySpace');
+      expect(capText(result.bindings, 'gearToggle')).toBe('G');
     }
   });
 });
