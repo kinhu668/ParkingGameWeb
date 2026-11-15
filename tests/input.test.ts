@@ -103,7 +103,7 @@ describe('pedalInputFromHeldCodes', () => {
 });
 
 describe('shouldPreventDefault', () => {
-  test('方向鍵與空白鍵（捲動頁面）、/ 與 \'（頁內搜尋）、Backspace（回上一頁）要擋', () => {
+  test('方向鍵與空白鍵（捲動頁面、啟動按鈕）、/ 與 \'（頁內搜尋）、.（預設剎車鍵）、Backspace（回上一頁）要擋', () => {
     for (const code of [
       'ArrowUp',
       'ArrowDown',
@@ -111,10 +111,18 @@ describe('shouldPreventDefault', () => {
       'ArrowRight',
       'Space',
       'Slash',
+      'Period',
       'Quote',
       'Backspace',
     ]) {
       expect(shouldPreventDefault(code)).toBe(true);
+    }
+  });
+
+  test('預設的油門、剎車、切換檔位主要鍵（/、.、空白鍵）都要擋', () => {
+    for (const action of ['throttle', 'brake', 'gearToggle'] as const) {
+      const primary = DEFAULT_BINDINGS[action][0] ?? '';
+      expect(shouldPreventDefault(primary), `${action} ${primary}`).toBe(true);
     }
   });
 
@@ -152,6 +160,70 @@ function key(
   target.dispatchEvent(event);
   return event.defaultPrevented;
 }
+
+describe('attachKeyboardInput：擋掉瀏覽器預設行為', () => {
+  test('按下空白鍵、/、.：都被 preventDefault（不捲頁、不開頁內搜尋），而且照常是遊戲輸入', () => {
+    const { target, input } = attach();
+    expect(key(target, 'keydown', 'Space')).toBe(true);
+    expect(key(target, 'keydown', 'Slash')).toBe(true);
+    expect(key(target, 'keydown', 'Period')).toBe(true);
+    expect(input.consumeGearToggles()).toBe(1);
+    expect(input.pedalInput()).toEqual({ gas: true, steer: 0, brake: true });
+  });
+
+  test('放開空白鍵也被 preventDefault：有焦點的按鈕不會在放開時被啟動；/ 與 . 放開也一樣', () => {
+    const { target, input } = attach();
+    key(target, 'keydown', 'Space');
+    expect(key(target, 'keyup', 'Space')).toBe(true);
+    key(target, 'keydown', 'Slash');
+    key(target, 'keydown', 'Period');
+    expect(key(target, 'keyup', 'Slash')).toBe(true);
+    expect(key(target, 'keyup', 'Period')).toBe(true);
+    // 擋預設行為不影響放開鍵本身：踏板鬆開了。
+    expect(input.pedalInput()).toEqual({ gas: false, steer: 0, brake: false });
+  });
+
+  test('按住不放的重複事件也擋（按住空白鍵不會一直捲頁），但只算按一下', () => {
+    const { target, input } = attach();
+    expect(key(target, 'keydown', 'Space')).toBe(true);
+    expect(key(target, 'keydown', 'Space', { repeat: true })).toBe(true);
+    expect(key(target, 'keydown', 'Slash', { repeat: true })).toBe(true);
+    expect(input.consumeGearToggles()).toBe(1);
+  });
+
+  test('空白鍵沒綁任何動作、或改綁到別的動作：按下與放開照樣擋', () => {
+    const { target, input } = attach(() => ({ ...DEFAULT_BINDINGS, gearToggle: ['KeyR'] }));
+    expect(key(target, 'keydown', 'Space')).toBe(true);
+    expect(key(target, 'keyup', 'Space')).toBe(true);
+    expect(input.consumeGearToggles()).toBe(0);
+  });
+
+  test('字母鍵、Esc 的按下與放開都不擋', () => {
+    const { target } = attach();
+    for (const code of ['KeyW', 'KeyS', 'KeyR', 'KeyV', 'Escape', 'Comma']) {
+      expect(key(target, 'keydown', code), code).toBe(false);
+      expect(key(target, 'keyup', code), code).toBe(false);
+    }
+  });
+
+  test('帶修飾鍵按下（瀏覽器快捷鍵）不擋、也不是遊戲輸入', () => {
+    const { target, input } = attach();
+    expect(key(target, 'keydown', 'Space', { ctrlKey: true })).toBe(false);
+    expect(key(target, 'keydown', 'Slash', { ctrlKey: true })).toBe(false);
+    expect(input.consumeGearToggles()).toBe(0);
+    expect(input.pedalInput().gas).toBe(false);
+  });
+
+  test('按鍵設定攔到空白鍵：按下與放開都擋，不換檔，原本開始改鍵的那顆按鈕不會被再按一次', () => {
+    const { target, input } = attach();
+    const captured: string[] = [];
+    input.captureNextKey((code) => captured.push(code));
+    expect(key(target, 'keydown', 'Space')).toBe(true);
+    expect(key(target, 'keyup', 'Space')).toBe(true);
+    expect(captured).toEqual(['Space']);
+    expect(input.consumeGearToggles()).toBe(0);
+  });
+});
 
 describe('attachKeyboardInput：一次性的按鍵（重來、切換鏡頭）', () => {
 

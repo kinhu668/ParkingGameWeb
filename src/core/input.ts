@@ -5,8 +5,10 @@ import type { PedalInput } from '../vehicle/gearbox';
 import { DEFAULT_BINDINGS, type ControlBindings } from './controls';
 
 /**
- * 按下時要擋掉瀏覽器預設行為的鍵：方向鍵與空白鍵會捲動頁面，
+ * 要擋掉瀏覽器預設行為的鍵：方向鍵與空白鍵會捲動頁面，空白鍵還會啟動目前有焦點的按鈕，
  * `/` 與 `'` 在部分瀏覽器會開啟頁內搜尋，Backspace 在舊瀏覽器是回上一頁。
+ * `.` 是預設的剎車鍵，與旁邊的油門鍵 `/` 一起擋，兩個踏板鍵在各瀏覽器的行為才一致。
+ * 不看目前的綁定：玩家把這些鍵改綁到別的動作、或暫時沒綁，在遊戲畫面上一樣不該捲頁或按到按鈕。
  */
 const BROWSER_DEFAULT_CODES: readonly string[] = [
   'ArrowUp',
@@ -15,6 +17,7 @@ const BROWSER_DEFAULT_CODES: readonly string[] = [
   'ArrowRight',
   'Space',
   'Slash',
+  'Period',
   'Quote',
   'Backspace',
 ];
@@ -31,7 +34,7 @@ function axis(positive: boolean, negative: boolean): -1 | 0 | 1 {
   return positive ? 1 : -1;
 }
 
-/** 這個鍵按下時是否要擋掉瀏覽器預設行為。 */
+/** 這個鍵按下與放開時是否要擋掉瀏覽器預設行為。 */
 export function shouldPreventDefault(code: string): boolean {
   return BROWSER_DEFAULT_CODES.includes(code);
 }
@@ -73,6 +76,7 @@ export interface KeyboardInput {
 
 /**
  * 在 window 上掛鍵盤監聽。視窗失焦時清空按住狀態，避免放開鍵的事件漏掉後車子自己一直跑。
+ * 遊戲畫面上沒有文字輸入框，所以不必分辨焦點在哪裡：空白鍵等一律是遊戲按鍵（按鈕仍可用 Enter 啟動）。
  * @param bindings 每次按鍵都重新取目前的綁定，玩家改完立刻生效
  */
 export function attachKeyboardInput(
@@ -126,6 +130,12 @@ export function attachKeyboardInput(
   });
 
   target.addEventListener('keyup', (event) => {
+    // 空白鍵是在放開時啟動有焦點的按鈕的；部分瀏覽器只擋 keydown 不夠，放開也要擋，
+    // 否則切換檔位（或按鍵設定正在攔的那一下）會順便按到剛才點過的按鈕。
+    // 放開時不看修飾鍵：瀏覽器快捷鍵都在按下時觸發，這裡擋掉的只有按鈕的啟動。
+    if (shouldPreventDefault(event.code)) {
+      event.preventDefault();
+    }
     heldCodes.delete(event.code);
   });
 
