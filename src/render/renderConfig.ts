@@ -19,6 +19,9 @@ export const RENDERER_CONFIG = {
  * 車模（vehicleDetail）：low、medium 用較少的細分，high、ultra 用較多。
  * 材質庫（materials）：low 貼圖 128、沒有法線、只取樣最正對的一面；medium 256＋法線；high 512＋三面混合；ultra 1024。
  * 地面（ground）：low 的噪聲貼圖小、沒有潮濕反光；medium 加上潮濕反光；high、ultra 再加上法線（裂縫與顆粒的立體感）。
+ * 倒影（ground.reflection）：有積水的天氣（雨、雷雨、雨後）把場景對地面鏡像、多畫一遍縮小的，濕地與積水映出車、燈與建築。
+ * low 不畫（沒有潮濕著色器）；medium 畫得小、隔幀重畫、不拉長；high 半解析度、每幀；ultra 更大、取樣更多。
+ * 手機與平板自動選到的級別不畫這一遍（quality.ts 的 resolveQuality），積水只映出天空。
  * 頭燈（headlights）：low 只有發光的燈殼；medium 在車頭前方的地上加一片光斑；high、ultra 再加不投影的真光源。
  * 輪胎痕（tireMarks）與粒子（particles）：low 只有少量輪胎痕、沒有粒子；級別越高，痕留得越久、灰塵與落葉越多。
  * 擺設（props）：級別越高，背景車、路燈、樹、建築越多；只有 high、ultra 有幾盞真的會照亮場景的路燈，
@@ -45,7 +48,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = 
     bloom: null,
     lens: null,
     smaa: false,
-    ground: { textureSizePx: 512, maxAnisotropy: 2, normals: false, wetness: false },
+    ground: { textureSizePx: 512, maxAnisotropy: 2, normals: false, wetness: false, reflection: null },
     vehicleDetail: 'low',
     props: {
       parkedCars: 5,
@@ -78,7 +81,13 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = 
     bloom: null,
     lens: { vignette: 0.24, chromaticAberration: 0 },
     smaa: false,
-    ground: { textureSizePx: 1024, maxAnisotropy: 4, normals: false, wetness: true },
+    ground: {
+      textureSizePx: 1024,
+      maxAnisotropy: 4,
+      normals: false,
+      wetness: true,
+      reflection: { resolutionScale: 0.35, updateEveryFrames: 2, streakTaps: 1 },
+    },
     vehicleDetail: 'low',
     props: {
       parkedCars: 10,
@@ -111,7 +120,13 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = 
     bloom: { strength: 0.18, radius: 0.5, threshold: 1.8 },
     lens: { vignette: 0.4, chromaticAberration: 0.0012 },
     smaa: false,
-    ground: { textureSizePx: 1024, maxAnisotropy: 8, normals: true, wetness: true },
+    ground: {
+      textureSizePx: 1024,
+      maxAnisotropy: 8,
+      normals: true,
+      wetness: true,
+      reflection: { resolutionScale: 0.5, updateEveryFrames: 1, streakTaps: 5 },
+    },
     vehicleDetail: 'high',
     props: {
       parkedCars: 22,
@@ -144,7 +159,13 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = 
     bloom: { strength: 0.24, radius: 0.6, threshold: 1.6 },
     lens: { vignette: 0.4, chromaticAberration: 0.0012 },
     smaa: true,
-    ground: { textureSizePx: 2048, maxAnisotropy: 16, normals: true, wetness: true },
+    ground: {
+      textureSizePx: 2048,
+      maxAnisotropy: 16,
+      normals: true,
+      wetness: true,
+      reflection: { resolutionScale: 0.75, updateEveryFrames: 1, streakTaps: 9 },
+    },
     vehicleDetail: 'high',
     props: {
       parkedCars: 30,
@@ -624,6 +645,36 @@ export const GROUND_CONFIG = {
   /** 法線從這個距離開始淡出、到這個距離完全平坦（遠處的起伏小於一個像素，只會閃爍）。 */
   normalFadeStartM: ftToM(60),
   normalFadeEndM: ftToM(220),
+} as const;
+
+/**
+ * 濕地／積水的倒影（render/groundReflection.ts 畫貼圖，props/groundShader.ts 取樣）。
+ * 反射率是「美術用」的數值，比真的水（正視只有 2%）高得多：跟車鏡頭是從上往下看，照真實的數值幾乎看不到倒影。
+ * 哪幾種天氣要有、多強：WeatherPreset.ground.reflection。
+ */
+export const GROUND_REFLECTION_CONFIG = {
+  /** 鏡像鏡頭只畫離地這麼高以上的東西：貼地的標線、光斑、輪胎痕與埋進地面的底座不會畫進倒影。 */
+  clipHeightM: 0.02,
+  /** 積水（平的水面）正視時的反射率；視線越貼近地面越接近 1。 */
+  puddleReflectance: 0.34,
+  /** 濕柏油（一層水膜，底下是粗糙的顆粒）正視時的反射率，以及視線貼近地面時的上限。 */
+  wetReflectance: 0.045,
+  wetGrazingReflectance: 0.45,
+  /** 反射率隨視線角度上升的指數（越小，俯視時就越早看得到倒影）。 */
+  fresnelPower: 4,
+  /** 積水的底色再壓暗這個比例（水越深，底下的柏油越看不清楚）。 */
+  puddleDarken: 0.3,
+  /**
+   * 倒影有多糊：取倒影貼圖的第幾級 mip（0 = 最清楚）。濕柏油很糊；積水只糊一點點
+   * （雨中的水面不是完美的鏡子，也順便蓋掉縮小的倒影貼圖的鋸齒）。
+   */
+  wetBlurLod: 2.6,
+  puddleBlurLod: 0.7,
+  /** 濕柏油上倒影沿畫面上下方向拉長的長度（佔畫面高度的比例）。 */
+  wetStreakLength: 0.09,
+  /** 濕柏油的顆粒把倒影推開的量（貼圖座標；上下方向是左右方向的 streakSkew 倍）。積水是平的，不推。 */
+  grainDistortion: 0.012,
+  streakSkew: 3,
 } as const;
 
 /** 地面噪聲貼圖（CPU 產生，固定種子）各色版的參數。格數是「一張貼圖內」的格數，貼圖上下左右可無縫拼接。 */

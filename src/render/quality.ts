@@ -51,6 +51,19 @@ export interface LensSettings {
   readonly chromaticAberration: number;
 }
 
+/**
+ * 濕地／積水的倒影：把場景對地面鏡像後畫進一張縮小的貼圖（平面反射，render/groundReflection.ts），
+ * 地面著色器在濕與積水的地方取樣。只有有積水的天氣（雨、雷雨、雨後）才會多畫這一遍。
+ */
+export interface GroundReflectionSettings {
+  /** 倒影貼圖的大小 = 繪圖緩衝區 × 這個比例（每一邊）。 */
+  readonly resolutionScale: number;
+  /** 每幾幀重畫一次（1 = 每幀）。隔幀重畫時，貼圖與它的投影矩陣一起留著，靜止的東西不會錯位。 */
+  readonly updateEveryFrames: number;
+  /** 濕柏油上把倒影沿畫面的上下方向拉長（路燈在濕地上的長條反光）的取樣數；1 = 不拉長，只取一次。 */
+  readonly streakTaps: number;
+}
+
 /** 地面（柏油）的畫質開關。 */
 export interface GroundQualitySettings {
   /** 噪聲貼圖的邊長（像素）。 */
@@ -61,6 +74,11 @@ export interface GroundQualitySettings {
   readonly normals: boolean;
   /** 潮濕反光與小片積水。 */
   readonly wetness: boolean;
+  /**
+   * 濕地／積水裡看得到車、燈與建築的倒影（多畫一遍縮小的場景）；null = 不多畫，積水只映出天空（環境貼圖）。
+   * 要有潮濕著色器（wetness）才有意義。
+   */
+  readonly reflection: GroundReflectionSettings | null;
 }
 
 /**
@@ -181,6 +199,8 @@ export interface QualityHints {
   readonly deviceMemoryGb?: number | undefined;
   /** `navigator.hardwareConcurrency`（邏輯核心數）。 */
   readonly hardwareConcurrency?: number | undefined;
+  /** 主要指標是手指（`pointer: coarse`）：手機與平板。 */
+  readonly coarsePointer?: boolean | undefined;
 }
 
 /** 決議後的畫質：設定值，以及它是網址指定的還是自動選的。 */
@@ -248,12 +268,30 @@ export function qualitySettings(level: QualityLevel): QualitySettings {
   return QUALITY_PRESETS[level];
 }
 
-/** 決議畫質：有效的 `?quality=` > 自動選擇。 */
+/**
+ * 手機與平板（主要指標是手指）自動選到的級別不多畫倒影那一遍：螢幕的像素多、顯示卡的填充率低，
+ * 多畫一遍場景最容易掉幀。其餘的設定不變，積水仍然映出天空。
+ */
+export function withoutGroundReflection(settings: QualitySettings): QualitySettings {
+  return settings.ground.reflection === null
+    ? settings
+    : { ...settings, ground: { ...settings.ground, reflection: null } };
+}
+
+/**
+ * 決議畫質：有效的 `?quality=` > 自動選擇。
+ * 自動選擇時，手機與平板拿掉倒影那一遍（withoutGroundReflection）；`?quality=` 明確指定的級別照表給，不打折。
+ */
 export function resolveQuality(urlSearch: string, hints: QualityHints): ResolvedQuality {
   const requested = parseQualityParam(urlSearch);
-  return requested === undefined
-    ? { settings: qualitySettings(chooseAutoQuality(hints)), source: 'auto' }
-    : { settings: qualitySettings(requested), source: 'url' };
+  if (requested !== undefined) {
+    return { settings: qualitySettings(requested), source: 'url' };
+  }
+  const settings = qualitySettings(chooseAutoQuality(hints));
+  return {
+    settings: hints.coarsePointer === true ? withoutGroundReflection(settings) : settings,
+    source: 'auto',
+  };
 }
 
 /**

@@ -30,7 +30,7 @@ function detectRendererName(): string | undefined {
   return typeof name === 'string' ? name : undefined;
 }
 
-/** 蒐集自動選畫質的線索：顯示卡名稱、記憶體、核心數。瀏覽器沒提供的欄位就留空。 */
+/** 蒐集自動選畫質的線索：顯示卡名稱、記憶體、核心數、主要指標是不是手指。瀏覽器沒提供的欄位就留空。 */
 export function detectQualityHints(): QualityHints {
   // `navigator.deviceMemory` 只有 Chromium 有，TypeScript 的 DOM 型別裡沒有。
   const deviceMemory: unknown = Reflect.get(navigator, 'deviceMemory');
@@ -39,6 +39,8 @@ export function detectQualityHints(): QualityHints {
     rendererName: detectRendererName(),
     deviceMemoryGb: typeof deviceMemory === 'number' ? deviceMemory : undefined,
     hardwareConcurrency: typeof cores === 'number' ? cores : undefined,
+    // 與螢幕操作層判斷「要不要顯示鍵帽」用同一個條件：手機與平板。
+    coarsePointer: window.matchMedia('(pointer: coarse)').matches,
   };
 }
 

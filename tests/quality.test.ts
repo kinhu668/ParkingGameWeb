@@ -13,6 +13,7 @@ import {
   qualitySettings,
   resolveQuality,
   usesHdrChain,
+  withoutGroundReflection,
   type QualityHints,
   type QualityLevel,
 } from '../src/render/quality';
@@ -329,6 +330,66 @@ describe('地面（柏油）的畫質矩陣', () => {
       expect(higher.textureSizePx).toBeGreaterThanOrEqual(lower.textureSizePx);
       expect(higher.maxAnisotropy).toBeGreaterThanOrEqual(lower.maxAnisotropy);
     }
+  });
+});
+
+describe('濕地／積水的倒影（ground.reflection）的畫質矩陣', () => {
+  test('low 不多畫倒影那一遍；medium 畫得小、隔幀重畫、不拉長；high 每幀；ultra 更大、取樣更多', () => {
+    expect(QUALITY_PRESETS.low.ground.reflection).toBeNull();
+    const medium = QUALITY_PRESETS.medium.ground.reflection;
+    const high = QUALITY_PRESETS.high.ground.reflection;
+    const ultra = QUALITY_PRESETS.ultra.ground.reflection;
+    if (medium === null || high === null || ultra === null) {
+      throw new Error('medium 以上應該有倒影的設定');
+    }
+    expect(medium.updateEveryFrames).toBeGreaterThan(1);
+    expect(medium.streakTaps).toBe(1);
+    expect(high.updateEveryFrames).toBe(1);
+    expect(ultra.updateEveryFrames).toBe(1);
+    expect(medium.resolutionScale).toBeLessThan(high.resolutionScale);
+    expect(high.resolutionScale).toBeLessThan(ultra.resolutionScale);
+    expect(high.streakTaps).toBeLessThan(ultra.streakTaps);
+    // 沒有一個級別是全解析度的倒影：那等於整個場景畫兩遍。
+    for (const settings of [medium, high, ultra]) {
+      expect(settings.resolutionScale).toBeGreaterThan(0);
+      expect(settings.resolutionScale).toBeLessThan(1);
+    }
+    // 倒影要靠潮濕著色器取樣：沒有潮濕著色器的級別不能開。
+    for (const level of QUALITY_LEVELS) {
+      const ground = QUALITY_PRESETS[level].ground;
+      expect(ground.reflection === null || ground.wetness, level).toBe(true);
+    }
+  });
+
+  test('手機與平板（主要指標是手指）自動選到的級別不多畫倒影那一遍，其餘設定不變', () => {
+    const phone = resolveQuality('', { ...CAPABLE, coarsePointer: true });
+    expect(phone.source).toBe('auto');
+    expect(phone.settings.level).toBe('high');
+    expect(phone.settings.ground.reflection).toBeNull();
+    expect(phone.settings).toEqual(withoutGroundReflection(QUALITY_PRESETS.high));
+    expect({ ...phone.settings, ground: QUALITY_PRESETS.high.ground }).toEqual(QUALITY_PRESETS.high);
+    // 低階的手機（medium）也一樣。
+    const lowEnd = resolveQuality('', { ...CAPABLE, deviceMemoryGb: 4, coarsePointer: true });
+    expect(lowEnd.settings.level).toBe('medium');
+    expect(lowEnd.settings.ground.reflection).toBeNull();
+    expect(lowEnd.settings.ground.wetness).toBe(true);
+  });
+
+  test('桌面（或沒有這個線索）自動選到的級別照表給；?quality= 明確指定的在手機上也照表給', () => {
+    expect(resolveQuality('', CAPABLE).settings).toBe(QUALITY_PRESETS.high);
+    expect(resolveQuality('', { ...CAPABLE, coarsePointer: false }).settings).toBe(QUALITY_PRESETS.high);
+    for (const level of QUALITY_LEVELS) {
+      expect(
+        resolveQuality(`?quality=${level}`, { ...CAPABLE, coarsePointer: true }).settings,
+        level,
+      ).toBe(QUALITY_PRESETS[level]);
+    }
+  });
+
+  test('withoutGroundReflection：本來就沒有的級別原樣傳回，不複製', () => {
+    expect(withoutGroundReflection(QUALITY_PRESETS.low)).toBe(QUALITY_PRESETS.low);
+    expect(withoutGroundReflection(QUALITY_PRESETS.ultra)).not.toBe(QUALITY_PRESETS.ultra);
+    expect(QUALITY_PRESETS.ultra.ground.reflection).not.toBeNull();
   });
 });
 
