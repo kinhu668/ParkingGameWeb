@@ -15,11 +15,13 @@ const OVERSPEED_MPH = 1;
 /** 整段駕駛的真實時間上限；軟體算圖幀率低也綽綽有餘。 */
 const DRIVE_DEADLINE_MS = 90_000;
 
-/** 油門（往目前檔位的方向推）與剎車。 */
-const DRIVE_KEYS = ['KeyW', 'Comma'] as const;
+/** 油門（往目前檔位的方向推）與剎車：預設綁定的主要鍵 `/` 與 `.`。 */
+const THROTTLE_KEY = 'Slash';
+const BRAKE_KEY = 'Period';
+const DRIVE_KEYS = [THROTTLE_KEY, BRAKE_KEY] as const;
 type DriveKey = (typeof DRIVE_KEYS)[number];
-/** 切換 D／R 檔。 */
-const GEAR_TOGGLE_KEY = 'KeyR';
+/** 切換 D／R 檔：預設綁定的主要鍵（空白鍵）。 */
+const GEAR_TOGGLE_KEY = 'Space';
 
 /** 這一幀要掛的檔與要按住的鍵。 */
 interface DrivePlan {
@@ -52,7 +54,7 @@ function drivePlan(snapshot: SessionSnapshot, spotCenterZFt: number, reverse: bo
   // 車朝 −Z 開：正值 = 車位還在前方，負值 = 開過頭了。
   const aheadFt = snapshot.zFt - spotCenterZFt;
   if (Math.abs(aheadFt) <= STOP_BAND_FT) {
-    return { reverse, keys: ['Comma'] };
+    return { reverse, keys: [BRAKE_KEY] };
   }
 
   // 開過頭了要倒回去：先切到 R 檔，油門才會往後推。
@@ -65,10 +67,10 @@ function drivePlan(snapshot: SessionSnapshot, spotCenterZFt: number, reverse: bo
   );
 
   if (towardSpeedMph > targetSpeedMph + OVERSPEED_MPH) {
-    return { reverse: wantReverse, keys: ['Comma'] };
+    return { reverse: wantReverse, keys: [BRAKE_KEY] };
   }
   if (towardSpeedMph < targetSpeedMph) {
-    return { reverse: wantReverse, keys: ['KeyW'] };
+    return { reverse: wantReverse, keys: [THROTTLE_KEY] };
   }
   return { reverse: wantReverse, keys: [] };
 }

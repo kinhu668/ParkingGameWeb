@@ -108,13 +108,13 @@ test.describe('桌面：滑鼠與鍵盤', () => {
     for (const id of ['touch-wheel', 'touch-brake', 'touch-gas', 'touch-camera']) {
       await expect(page.locator(`#${id}`)).toBeVisible();
     }
-    // 鍵帽寫的是預設綁定：方向盤左右是 A／D，油門 W，剎車 S，切換檔位 R。
+    // 鍵帽寫的是預設綁定的主要鍵：方向盤左右是 A／D，油門 /，剎車 .，切換檔位是空白鍵。
     for (const [action, text] of [
       ['steerLeft', 'A'],
       ['steerRight', 'D'],
-      ['throttle', 'W'],
-      ['brake', 'S'],
-      ['gearToggle', 'R'],
+      ['throttle', '/'],
+      ['brake', '.'],
+      ['gearToggle', '空白鍵'],
       ['pause', 'Esc'],
       ['restart', 'Backspace'],
       ['toggleCamera', 'V'],
@@ -122,7 +122,7 @@ test.describe('桌面：滑鼠與鍵盤', () => {
       await expect(page.locator(`#touch-key-${action}`)).toBeVisible();
       await expect(page.locator(`#touch-key-${action}`)).toHaveText(text);
     }
-    // 鍵帽疊在自己的控制項上：左右轉在方向盤上，W 在油門上，S 在剎車上，R 在切換檔位鈕上。
+    // 鍵帽疊在自己的控制項上：左右轉在方向盤上，/ 在油門上，. 在剎車上，空白鍵在切換檔位鈕上。
     const wheelBox = await boxOf(page, 'touch-wheel');
     expect(overlaps(await boxOf(page, 'touch-key-steerLeft'), wheelBox)).toBe(true);
     expect(overlaps(await boxOf(page, 'touch-key-steerRight'), wheelBox)).toBe(true);
@@ -178,7 +178,7 @@ test.describe('桌面：滑鼠與鍵盤', () => {
     await page.mouse.up();
     await expect(wheel).toHaveAttribute('data-held', 'false');
     await expect.poll(async () => Number(await wheel.getAttribute('aria-valuenow'))).toBe(0);
-    await keyHoldUntil(page, 'Comma', '停住', (snapshot) => snapshot.speedMph === 0);
+    await keyHoldUntil(page, 'Period', '停住', (snapshot) => snapshot.speedMph === 0);
     expect((await nextSnapshot(page)).status).toBe('driving');
 
     // 滑鼠點「鏡頭」：與 V 同一個循環。
@@ -186,6 +186,15 @@ test.describe('桌面：滑鼠與鍵盤', () => {
     const first = await label.getAttribute('data-view');
     await page.locator('#touch-camera').click();
     await expect(label).not.toHaveAttribute('data-view', first ?? '');
+
+    // 剛用滑鼠點過「鏡頭」鈕，接著按空白鍵：是切換檔位，不會把鏡頭鈕再按一次。
+    const afterClick = (await label.getAttribute('data-view')) ?? '';
+    await page.keyboard.press('Space');
+    await expect(page.locator('#hud-gear')).toHaveAttribute('data-gear', 'reverse');
+    await page.keyboard.press('Space');
+    await expect(page.locator('#hud-gear')).toHaveAttribute('data-gear', 'forward');
+    await nextSnapshot(page);
+    await expect(label).toHaveAttribute('data-view', afterClick);
 
     // 桌面有鍵盤：暫停面板上「按 Esc 繼續」的提示照舊。
     await page.locator('#touch-pause').click();
@@ -211,7 +220,7 @@ test.describe('桌面：滑鼠與鍵盤', () => {
     await page.goto('/?level=w1_l01&lang=zh-TW');
     const cap = page.locator('#touch-key-throttle');
     const message = page.locator('#touch-key-message');
-    await expect(cap).toHaveText('W');
+    await expect(cap).toHaveText('/');
     await expect(message).toBeHidden();
     expect(await storedBindings(page)).toBeNull();
     const start = await nextSnapshot(page);
@@ -231,7 +240,7 @@ test.describe('桌面：滑鼠與鍵盤', () => {
     await expect(cap).toHaveAttribute('data-listening', 'false');
     await expect(message).toHaveAttribute('data-kind', 'warning');
     await expect(message).toContainText('剎車');
-    await expect(cap).toHaveText('W');
+    await expect(cap).toHaveText('/');
     expect(await storedBindings(page)).toBeNull();
     // 等按鍵時按下去的 S 不是遊戲輸入：車沒動、這一局還沒開始。
     expect((await nextSnapshot(page)).status).toBe('ready');
@@ -242,10 +251,10 @@ test.describe('桌面：滑鼠與鍵盤', () => {
     await page.keyboard.press('Escape');
     await expect(cap).toHaveAttribute('data-listening', 'false');
     await expect(message).toBeHidden();
-    await expect(cap).toHaveText('W');
+    await expect(cap).toHaveText('/');
     await expect(page.locator('#hud-pause')).toBeHidden();
 
-    // 再點一次，按 I：油門的主要鍵改成 I，備用鍵（↑）不動；寫進 parkinggame.controls.v1，鍵帽立刻是 I。
+    // 再點一次，按 I：油門的主要鍵改成 I，備用鍵（W、↑）不動；寫進 parkinggame.controls.v1，鍵帽立刻是 I。
     await cap.click();
     await page.keyboard.press('KeyI');
     await expect(cap).toHaveAttribute('data-listening', 'false');
@@ -254,19 +263,19 @@ test.describe('桌面：滑鼠與鍵盤', () => {
     await expect(message).toHaveAttribute('data-kind', 'info');
     await expect(message).toContainText('I');
     const stored = await storedBindings(page);
-    expect(stored?.throttle).toEqual(['KeyI', 'ArrowUp']);
-    expect(stored?.brake).toEqual(['KeyS', 'ArrowDown', 'Comma']);
-    expect(stored?.gearToggle).toEqual(['KeyR']);
+    expect(stored?.throttle).toEqual(['KeyI', 'KeyW', 'ArrowUp']);
+    expect(stored?.brake).toEqual(['Period', 'KeyS', 'ArrowDown']);
+    expect(stored?.gearToggle).toEqual(['Space', 'KeyR']);
     await page.screenshot({ path: `${OUTPUT_DIR}/screen-controls-rebound-zh-TW.png` });
 
-    // 舊的 W 不再是油門：按住幾幀車都不動。
-    await page.keyboard.down('KeyW');
+    // 舊的主要鍵 / 不再是油門：按住幾幀車都不動。
+    await page.keyboard.down('Slash');
     for (let frame = 0; frame < 10; frame += 1) {
       const snapshot = await nextSnapshot(page);
       expect(snapshot.speedMph).toBe(0);
       expect(snapshot.status).toBe('ready');
     }
-    await page.keyboard.up('KeyW');
+    await page.keyboard.up('Slash');
     // 新的 I 能開。
     const moving = await keyHoldUntil(page, 'KeyI', '用新鍵前進', (snapshot) => snapshot.speedMph > 1.5);
     expect(moving.zFt).toBeLessThan(start.zFt);
@@ -283,7 +292,8 @@ test.describe('桌面：滑鼠與鍵盤', () => {
     await page.locator('#pause-controls').click();
     await expect(page.locator('#controls-panel')).toBeVisible();
     await expect(page.locator('#bind-throttle-0')).toHaveText('I');
-    await expect(page.locator('#bind-throttle-1')).toHaveText('↑');
+    await expect(page.locator('#bind-throttle-1')).toHaveText('W');
+    await expect(page.locator('#bind-throttle-2')).toHaveText('↑');
     await page.locator('#bind-brake-0').click();
     await page.keyboard.press('KeyB');
     await expect(page.locator('#bind-brake-0')).toHaveText('B');
@@ -347,7 +357,7 @@ test.describe('桌面：滑鼠與鍵盤', () => {
     );
     await page.keyboard.up('KeyJ');
     expect(turned.xFt).toBeLessThan(before.xFt);
-    await keyHoldUntil(page, 'Comma', '停住', (snapshot) => snapshot.speedMph === 0);
+    await keyHoldUntil(page, 'Period', '停住', (snapshot) => snapshot.speedMph === 0);
     expect((await nextSnapshot(page)).status).toBe('driving');
   });
 });

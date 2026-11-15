@@ -8,9 +8,9 @@ const VIEW_IDS = ['assist-bird', 'assist-rear', 'assist-mirror-left', 'assist-mi
 
 /** 踩剎車到車完全停住；這一局必須還在進行（沒有撞到失敗）。 */
 async function stop(page: Page): Promise<void> {
-  await page.keyboard.down('Comma');
+  await page.keyboard.down('Period');
   await expect.poll(async () => (await nextSnapshot(page)).speedMph).toBe(0);
-  await page.keyboard.up('Comma');
+  await page.keyboard.up('Period');
   expect((await nextSnapshot(page)).status).toBe('driving');
 }
 

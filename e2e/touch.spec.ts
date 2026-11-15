@@ -168,14 +168,14 @@ test.describe('桌面（沒有觸控）', () => {
     // 左下角讓給方向盤：鍵盤的操作說明收起來。
     await expect(page.locator('.hud-controls')).toBeHidden();
 
-    // 鍵盤：W 前進，逗號剎車停住。
+    // 鍵盤：W 前進，. 剎車停住。
     const start = await nextSnapshot(page);
     await page.keyboard.down('KeyW');
     await waitFor(page, '鍵盤前進', (snapshot) => snapshot.speedMph > 1.5);
     await page.keyboard.up('KeyW');
-    await page.keyboard.down('Comma');
+    await page.keyboard.down('Period');
     const stopped = await waitFor(page, '停住', (snapshot) => snapshot.speedMph === 0);
-    await page.keyboard.up('Comma');
+    await page.keyboard.up('Period');
     expect(stopped.zFt).toBeLessThan(start.zFt);
 
     // 滑鼠點切換檔位鈕：D → R，鈕上的字跟著換；再點一次回到 D。
