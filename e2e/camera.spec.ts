@@ -1,8 +1,8 @@
 // 遊戲鏡頭的 e2e：用真實的 V 鍵切過五個鏡頭模式，每個模式都確認 HUD 顯示的名稱、
-// 畫布真的有畫出東西（不是空白、不是整片同一個顏色），並存一張截圖；另外驗證 ?view= 與記住上次的選擇，
+// 畫布真的有畫出東西（不是空白、不是整片同一個顏色），並存一張截圖；另外驗證 ?view=、記住上次的選擇、沒存過時的預設（遠距離跟車），
 // 以及巷子那一關（車尾後面就是牆）開場的跟車鏡頭留在巷子裡、畫面中央看得到車。
 import type { Page } from '@playwright/test';
-import { GAME_CAMERA_VIEWS, type GameCameraView } from '../src/core/cameraView';
+import { CAMERA_VIEW_STORAGE_KEY, GAME_CAMERA_VIEWS, type GameCameraView } from '../src/core/cameraView';
 import type { CameraSnapshot } from '../src/render/gameCamera';
 import {
   canvasStats,
@@ -28,6 +28,11 @@ const VIEW_NAMES_EN: Readonly<Record<GameCameraView, string>> = {
   cockpit: 'Cockpit',
   top: 'Top-Down',
 };
+
+/** localStorage 裡記住的鏡頭；沒存過是 null。 */
+async function storedView(page: Page): Promise<string | null> {
+  return page.evaluate((key) => window.localStorage.getItem(key), CAMERA_VIEW_STORAGE_KEY);
+}
 
 /** 等 HUD 換到這個鏡頭，確認畫布有內容，存截圖，回傳畫面的簽名。 */
 async function checkView(page: Page, view: GameCameraView): Promise<string> {
@@ -91,15 +96,16 @@ test('?view=cockpit 一進場就是駕駛座；切換語言時鏡頭名稱與操
 test('記住上次的鏡頭：重新進場沿用，?view= 優先，不認得的 ?view= 當作沒給', async ({ page }) => {
   const label = page.locator('#hud-camera');
 
-  // 全新的瀏覽器環境、沒有 ?view=：預設是近距離跟車。
+  // 全新的瀏覽器環境、沒有 ?view=：預設是遠距離跟車；還沒切換過，什麼都沒存。
   await page.goto('/?level=prototype&lang=zh-TW');
-  await expect(label).toHaveAttribute('data-view', 'chase_near');
-
-  // 切兩次到引擎蓋，重新整理後還是引擎蓋。
-  await page.keyboard.press('KeyV');
   await expect(label).toHaveAttribute('data-view', 'chase_far');
+  await expect(label).toHaveText(VIEW_NAMES_ZH.chase_far);
+  expect(await storedView(page)).toBeNull();
+
+  // 循環順序照舊：遠距離跟車的下一個是引擎蓋。切過去，重新整理後還是引擎蓋。
   await page.keyboard.press('KeyV');
   await expect(label).toHaveAttribute('data-view', 'hood');
+  expect(await storedView(page)).toBe('hood');
   await page.reload();
   await expect(label).toHaveAttribute('data-view', 'hood');
 
@@ -111,6 +117,21 @@ test('記住上次的鏡頭：重新進場沿用，?view= 優先，不認得的 
   await page.goto('/?level=prototype&view=nope&lang=zh-TW');
   await expect(page.locator('#game-canvas')).toBeVisible();
   await expect(label).toHaveAttribute('data-view', 'hood');
+
+  // 之前記住的是近距離跟車（舊的預設）：新預設不會把它改掉，存的值也沒被動到。
+  await page.evaluate((key) => {
+    window.localStorage.setItem(key, 'chase_near');
+  }, CAMERA_VIEW_STORAGE_KEY);
+  await page.goto('/?level=prototype&lang=zh-TW');
+  await expect(label).toHaveAttribute('data-view', 'chase_near');
+  expect(await storedView(page)).toBe('chase_near');
+
+  // 存的值不認得：當作沒存過，用預設的遠距離跟車。
+  await page.evaluate((key) => {
+    window.localStorage.setItem(key, 'nope');
+  }, CAMERA_VIEW_STORAGE_KEY);
+  await page.goto('/?level=prototype&lang=zh-TW');
+  await expect(label).toHaveAttribute('data-view', 'chase_far');
 });
 
 test('?cam 與 ?show 不受 ?view= 影響：沒有遊戲 HUD，也沒有鏡頭名稱', async ({ page }) => {

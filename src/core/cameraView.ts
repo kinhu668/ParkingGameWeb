@@ -7,8 +7,12 @@ export const GAME_CAMERA_VIEWS = ['chase_near', 'chase_far', 'hood', 'cockpit', 
 
 export type GameCameraView = (typeof GAME_CAMERA_VIEWS)[number];
 
-/** 網址沒指定、也沒存過時用的鏡頭。 */
-export const DEFAULT_GAME_CAMERA_VIEW: GameCameraView = 'chase_near';
+/**
+ * 網址沒指定、也沒存過時用的鏡頭：遠距離跟車。它不是循環順序的第一個；
+ * 按 V 的順序照舊（近 → 遠 → 引擎蓋 → 駕駛座 → 俯視 → 近），所以從預設按一下 V 是引擎蓋。
+ * 只影響沒存過鏡頭的玩家：存過的（含存的就是近距離跟車）照他上次的選擇。
+ */
+export const DEFAULT_GAME_CAMERA_VIEW: GameCameraView = 'chase_far';
 
 /** localStorage 裡記住鏡頭模式的鍵。 */
 export const CAMERA_VIEW_STORAGE_KEY = 'parkinggame.cameraView';

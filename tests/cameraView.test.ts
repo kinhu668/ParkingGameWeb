@@ -48,8 +48,10 @@ describe('鏡頭模式與循環順序', () => {
     expect(GAME_CAMERA_VIEWS).toEqual(['chase_near', 'chase_far', 'hood', 'cockpit', 'top']);
   });
 
-  test('預設是近距離跟車', () => {
-    expect(DEFAULT_GAME_CAMERA_VIEW).toBe('chase_near');
+  test('預設是遠距離跟車；循環順序不因此改變（第一個仍是近距離跟車）', () => {
+    expect(DEFAULT_GAME_CAMERA_VIEW).toBe('chase_far');
+    expect(GAME_CAMERA_VIEWS[0]).toBe('chase_near');
+    expect(nextGameCameraView(DEFAULT_GAME_CAMERA_VIEW)).toBe('hood');
   });
 
   test('每按一次換到下一個，最後一個之後回到第一個', () => {
@@ -165,9 +167,25 @@ describe('記住鏡頭：loadStoredView / storeView', () => {
 });
 
 describe('resolveInitialView：?view= > 上次存的 > 預設', () => {
-  test('什麼都沒有 → 預設', () => {
+  test('什麼都沒有 → 預設（遠距離跟車）', () => {
     expect(resolveInitialView('', fakeStorage().storage)).toBe(DEFAULT_GAME_CAMERA_VIEW);
     expect(resolveInitialView('?lang=en', undefined)).toBe(DEFAULT_GAME_CAMERA_VIEW);
+    expect(resolveInitialView('', fakeStorage().storage)).toBe('chase_far');
+  });
+
+  test('玩家記住的鏡頭不受新預設影響：存的是近距離跟車（舊的預設）就還是近距離跟車', () => {
+    for (const view of GAME_CAMERA_VIEWS) {
+      const { storage, entries } = fakeStorage({ [CAMERA_VIEW_STORAGE_KEY]: view });
+      expect(resolveInitialView('', storage), view).toBe(view);
+      // 進場只讀不寫：存的值原封不動。
+      expect(entries.get(CAMERA_VIEW_STORAGE_KEY), view).toBe(view);
+    }
+  });
+
+  test('?view=chase_near 蓋過新預設，也蓋過存的遠距離跟車', () => {
+    expect(resolveInitialView('?view=chase_near', fakeStorage().storage)).toBe('chase_near');
+    const { storage } = fakeStorage({ [CAMERA_VIEW_STORAGE_KEY]: 'chase_far' });
+    expect(resolveInitialView('?view=chase_near', storage)).toBe('chase_near');
   });
 
   test('只有存過 → 用存的', () => {
@@ -193,13 +211,14 @@ describe('resolveInitialView：?view= > 上次存的 > 預設', () => {
     const { storage } = fakeStorage({ [CAMERA_VIEW_STORAGE_KEY]: 'nope' });
     expect(resolveInitialView('', storage)).toBe(DEFAULT_GAME_CAMERA_VIEW);
     expect(resolveInitialView('', BROKEN_STORAGE)).toBe(DEFAULT_GAME_CAMERA_VIEW);
-    expect(resolveInitialView('?view=chase_far', BROKEN_STORAGE)).toBe('chase_far');
+    expect(resolveInitialView('?view=chase_near', BROKEN_STORAGE)).toBe('chase_near');
   });
 
   test('切換後存起來，下次進場（沒有 ?view=）就是那個模式', () => {
     const { storage } = fakeStorage();
     const switched = nextGameCameraView(resolveInitialView('', storage));
     storeView(storage, switched);
-    expect(resolveInitialView('', storage)).toBe('chase_far');
+    // 預設（遠距離跟車）的下一個是引擎蓋。
+    expect(resolveInitialView('', storage)).toBe('hood');
   });
 });
