@@ -1,7 +1,7 @@
 // 地面：噪聲貼圖的可重現性、各層疊起來沒有短周期、油漬的形狀（不規則、可重現）、畫質級別對著色器開關的矩陣、
-// 著色器片段插得進 three 的原始碼。
+// 著色器片段插得進 three 的原始碼、濕地／積水的倒影（做法的矩陣、反射率、著色器與 uniform）。
 // 不開 WebGL：只測純函式、字串與材質物件。
-import { ShaderLib, type DataTexture, type Vector4 } from 'three';
+import { Matrix4, ShaderLib, Texture, type DataTexture, type Vector4 } from 'three';
 import { describe, expect, test } from 'vitest';
 import { DEFAULT_SEED } from '../src/core/gameConfig';
 import { ftToM } from '../src/core/units';
@@ -12,6 +12,8 @@ import {
   groundEdgeShadows,
   groundLayerTransforms,
   groundLayerUv,
+  groundMirrorAmount,
+  groundMirrorMode,
   groundShaderDefines,
   groundStainAmount,
   groundStainSmear,
@@ -24,9 +26,12 @@ import { QUALITY_LEVELS } from '../src/render/quality';
 import {
   FOG_CONFIG,
   GROUND_CONFIG,
+  GROUND_REFLECTION_CONFIG,
   LOT_PROPS_CONFIG,
   QUALITY_PRESETS,
 } from '../src/render/renderConfig';
+import { WEATHER_IDS } from '../src/core/weather';
+import { weatherPreset } from '../src/render/weatherPresets';
 import { SUN_DIRECTION } from '../src/render/sky';
 
 /** 測試用的小貼圖邊長；產生器的行為與邊長無關，小一點測試才快。 */
@@ -586,5 +591,167 @@ describe('地面網格 createGround', () => {
     expect(limited.anisotropy).toBe(4);
     const none = uniformsFor('low', 0).uGroundNoise?.value as DataTexture;
     expect(none.anisotropy).toBe(1);
+  });
+});
+
+describe('濕地／積水的倒影', () => {
+  /** 把材質的 onBeforeCompile 跑一遍，拿到它送進著色器的 uniform 與改過的原始碼。 */
+  function compiled(material: ReturnType<typeof createGroundMaterial>): {
+    uniforms: Record<string, { value: unknown }>;
+    fragmentShader: string;
+  } {
+    const shader = {
+      uniforms: {} as Record<string, { value: unknown }>,
+      vertexShader: ShaderLib.standard.vertexShader,
+      fragmentShader: ShaderLib.standard.fragmentShader,
+    };
+    material.onBeforeCompile(shader as never, undefined as never);
+    return shader;
+  }
+  const planarUniforms = (): {
+    texture: { value: Texture };
+    matrix: { value: Matrix4 };
+    strength: { value: number };
+  } => ({ texture: { value: new Texture() }, matrix: { value: new Matrix4() }, strength: { value: 1 } });
+  const small = (level: (typeof QUALITY_LEVELS)[number]): (typeof QUALITY_PRESETS)['low']['ground'] => ({
+    ...QUALITY_PRESETS[level].ground,
+    textureSizePx: 32,
+  });
+
+  test('做法的矩陣：乾的天氣與 low 沒有；有積水的天氣 medium 以上是平面反射；級別沒開倒影那一遍就只映天空', () => {
+    for (const weather of WEATHER_IDS) {
+      const strength = weatherPreset(weather).ground.reflection;
+      const wet = weather === 'rain' || weather === 'storm' || weather === 'wet';
+      expect(strength > 0, weather).toBe(wet);
+      expect(groundMirrorMode(QUALITY_PRESETS.low.ground, strength), `${weather} low`).toBe('none');
+      for (const level of ['medium', 'high', 'ultra'] as const) {
+        expect(groundMirrorMode(QUALITY_PRESETS[level].ground, strength), `${weather} ${level}`).toBe(
+          wet ? 'planar' : 'none',
+        );
+        expect(
+          groundMirrorMode({ ...QUALITY_PRESETS[level].ground, reflection: null }, strength),
+          `${weather} ${level}（手機）`,
+        ).toBe(wet ? 'sky' : 'none');
+      }
+    }
+  });
+
+  test('著色器開關：只映天空是 GROUND_MIRROR；平面反射再加取樣數；沒有就一個都不加', () => {
+    const high = QUALITY_PRESETS.high.ground;
+    expect(groundShaderDefines(high, 0, 'none')).toEqual(groundShaderDefines(high));
+    expect(groundShaderDefines(high, 0, 'sky')).toEqual([
+      'GROUND_NORMALS',
+      'GROUND_WETNESS',
+      'GROUND_MIRROR',
+    ]);
+    expect(groundShaderDefines(high, 0, 'planar')).toEqual([
+      'GROUND_NORMALS',
+      'GROUND_WETNESS',
+      'GROUND_MIRROR',
+      `GROUND_PLANAR_TAPS ${high.reflection?.streakTaps}`,
+    ]);
+    // 取樣數由低到高不遞減，而且都是正整數（迴圈次數是編譯期常數）。
+    const taps = (['medium', 'high', 'ultra'] as const).map(
+      (level) => QUALITY_PRESETS[level].ground.reflection?.streakTaps ?? 0,
+    );
+    expect(taps).toEqual([...taps].sort((a, b) => a - b));
+    expect(taps.every((count) => Number.isInteger(count) && count >= 1)).toBe(true);
+    // 沒有潮濕著色器的級別不論天氣都沒有倒影的開關。
+    expect(groundShaderDefines(QUALITY_PRESETS.low.ground, 0, 'planar')).toEqual([]);
+  });
+
+  test('乾的天氣與基準的黃昏：著色器程式與沒有這個功能時是同一個（快取鍵不變、沒有倒影的 uniform）', () => {
+    for (const weather of ['dusk', 'clear', 'night'] as const) {
+      const material = createGroundMaterial(
+        DEFAULT_SEED,
+        small('high'),
+        16,
+        undefined,
+        weatherPreset(weather).ground,
+        planarUniforms(),
+      );
+      expect(material.customProgramCacheKey(), weather).toBe(
+        createGroundMaterial(DEFAULT_SEED, small('high'), 16).customProgramCacheKey(),
+      );
+      const { uniforms, fragmentShader } = compiled(material);
+      expect(uniforms.uGroundMirror, weather).toBeUndefined();
+      expect(uniforms.uGroundReflection, weather).toBeUndefined();
+      expect(fragmentShader, weather).not.toContain('#define GROUND_MIRROR');
+    }
+  });
+
+  test('雨天：給了倒影貼圖就是平面反射（uniform 是同一組物件，內容之後更新得到）；沒給只映天空', () => {
+    const rain = weatherPreset('rain').ground;
+    const reflection = planarUniforms();
+    const planar = compiled(
+      createGroundMaterial(DEFAULT_SEED, small('high'), 16, undefined, rain, reflection),
+    );
+    expect(planar.fragmentShader).toContain('#define GROUND_MIRROR');
+    expect(planar.fragmentShader).toContain(
+      `#define GROUND_PLANAR_TAPS ${QUALITY_PRESETS.high.ground.reflection?.streakTaps}`,
+    );
+    expect(planar.uniforms.uGroundReflection).toBe(reflection.texture);
+    expect(planar.uniforms.uGroundReflectionMatrix).toBe(reflection.matrix);
+    expect(planar.uniforms.uGroundReflectionStrength).toBe(reflection.strength);
+    expect(planar.uniforms.uGroundMirror).toBeDefined();
+
+    const sky = compiled(createGroundMaterial(DEFAULT_SEED, small('high'), 16, undefined, rain));
+    expect(sky.fragmentShader).toContain('#define GROUND_MIRROR');
+    expect(sky.fragmentShader).not.toContain('#define GROUND_PLANAR_TAPS');
+    expect(sky.uniforms.uGroundMirror).toBeDefined();
+    expect(sky.uniforms.uGroundReflection).toBeUndefined();
+
+    // low：沒有潮濕著色器，雨天仍是整片壓暗的替代做法，沒有倒影。
+    const low = compiled(
+      createGroundMaterial(DEFAULT_SEED, small('low'), 16, undefined, rain, reflection),
+    );
+    expect(low.fragmentShader).not.toContain('#define GROUND_MIRROR');
+    expect(low.uniforms.uGroundReflection).toBeUndefined();
+  });
+
+  test('著色器：倒影接在打光之後，取樣座標來自世界座標，強度是 0 時退回環境貼圖', () => {
+    const source = {
+      vertexShader: ShaderLib.standard.vertexShader,
+      fragmentShader: ShaderLib.standard.fragmentShader,
+    };
+    patchGroundShader(source, ['GROUND_WETNESS', 'GROUND_MIRROR', 'GROUND_PLANAR_TAPS 5']);
+    const fragment = source.fragmentShader;
+    expect(fragment.indexOf('groundMirrorAmount')).toBeGreaterThan(
+      fragment.indexOf('#include <lights_fragment_end>'),
+    );
+    expect(fragment).toContain(
+      'uGroundReflectionMatrix * vec4( vGroundXZ.x, 0.0, vGroundXZ.y, 1.0 )',
+    );
+    expect(fragment).toContain('groundMirror = mix( groundMirror, groundPlanar, uGroundReflectionStrength );');
+    // 取代的是間接鏡面反射（環境貼圖那一項），太陽與路燈的高光不動；被水面反射走的光不再照到柏油。
+    expect(fragment).toContain('reflectedLight.indirectSpecular = mix( reflectedLight.indirectSpecular');
+    expect(fragment).toContain('reflectedLight.directDiffuse *= 1.0 - groundMirrorAmount;');
+    expect(fragment).not.toContain('reflectedLight.directSpecular *=');
+  });
+
+  test('反射率 groundMirrorAmount：乾的地方是 0；積水比濕柏油亮；視線越貼地越亮；都在 0–1', () => {
+    const config = GROUND_REFLECTION_CONFIG;
+    expect(groundMirrorAmount(0.6, 0, 0)).toBe(0);
+    // 正上方往下看：就是設定裡的兩個「正視」反射率。
+    expect(groundMirrorAmount(1, 1, 0)).toBeCloseTo(config.wetReflectance, 9);
+    expect(groundMirrorAmount(1, 1, 1)).toBeCloseTo(config.puddleReflectance, 9);
+    // 貼著地面看：積水接近鏡子，濕柏油到上限為止。
+    expect(groundMirrorAmount(0, 1, 1)).toBeCloseTo(1, 9);
+    expect(groundMirrorAmount(0, 1, 0)).toBeCloseTo(config.wetGrazingReflectance, 9);
+    let previousWet = 0;
+    let previousPuddle = 0;
+    for (let step = 0; step <= 20; step += 1) {
+      const cosView = 1 - step / 20;
+      const wet = groundMirrorAmount(cosView, 1, 0);
+      const puddle = groundMirrorAmount(cosView, 1, 1);
+      expect(puddle).toBeGreaterThan(wet);
+      expect(wet).toBeGreaterThanOrEqual(previousWet);
+      expect(puddle).toBeGreaterThanOrEqual(previousPuddle);
+      expect(puddle).toBeLessThanOrEqual(1);
+      previousWet = wet;
+      previousPuddle = puddle;
+    }
+    // 跟車鏡頭俯視的角度（視線與地面法線夾 55° 左右）積水的倒影就看得出來，不必等到貼地。
+    expect(groundMirrorAmount(Math.cos((55 * Math.PI) / 180), 1, 1)).toBeGreaterThan(0.25);
   });
 });

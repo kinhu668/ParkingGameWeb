@@ -14,6 +14,7 @@ import {
   type BufferGeometry,
 } from 'three';
 import { SKIP_AMBIENT_OCCLUSION } from '../render/ambientOcclusionFlag';
+import { SKIP_GROUND_REFLECTION } from '../render/groundReflectionFlag';
 import {
   createShaftGeometry,
   createShaftMaterial,
@@ -113,6 +114,8 @@ function createPool(name: string, shape: BeamShape, color: number, brightness: n
   pool.name = name;
   pool.renderOrder = POOL_RENDER_ORDER;
   pool.userData[SKIP_AMBIENT_OCCLUSION] = true;
+  // 貼地的光斑：鏡像之後還在原地，不必畫進倒影。
+  pool.userData[SKIP_GROUND_REFLECTION] = true;
   return pool;
 }
 

@@ -29,6 +29,7 @@ import { createScenerySurface } from '../materials/surfaceMaterial';
 import type { SurfaceId } from '../materials/surfaces';
 import type { ParkingSpot } from '../level/parkingJudge';
 import { SKIP_AMBIENT_OCCLUSION } from '../render/ambientOcclusionFlag';
+import { SKIP_GROUND_REFLECTION } from '../render/groundReflectionFlag';
 import {
   DEFAULT_SHAFT_SETUP,
   createShaftGeometry,
@@ -405,6 +406,8 @@ function addLamps(
   );
   if (pools !== undefined) {
     pools.userData[SKIP_AMBIENT_OCCLUSION] = true;
+    // 貼地的光暈：鏡像之後還在原地，不必畫進倒影。
+    pools.userData[SKIP_GROUND_REFLECTION] = true;
     group.add(pools);
   }
 

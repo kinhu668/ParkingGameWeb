@@ -24,7 +24,7 @@ import {
 } from '../materials/surfaceLibrary';
 import { surfacesUsedIn } from '../materials/surfaceMaterial';
 import { createGround } from '../props/ground';
-import { groundEdgeShadows } from '../props/groundShader';
+import { groundEdgeShadows, groundMirrorMode, type GroundMirrorMode } from '../props/groundShader';
 import {
   createCurbs,
   createWheelStop,
@@ -85,6 +85,12 @@ import {
   SUN_CONFIG,
   WHEEL_STOP_CONFIG,
 } from './renderConfig';
+import {
+  collectReflectionSkips,
+  createGroundReflection,
+  registerGroundReflection,
+} from './groundReflection';
+import { SKIP_GROUND_REFLECTION } from './groundReflectionFlag';
 import { installHeightFog } from './heightFog';
 import type { ShaftSetup } from './lightShaft';
 import { collectCameraBlockers } from './cameraBlockers';
@@ -144,6 +150,7 @@ export interface GameScene {
    * - 沒有遮擋淡出：那些鏡頭不是跟車鏡頭，看到的鄰車與燈柱不該是半透明的（淡掉的擺設暫時放回不透明）。
    * - 沒有車輪揚起的灰塵：它就在後視鏡的視線上，會把整個小畫面蓋成一片白霧（見 SceneEffects.drawWithoutDust）。
    * - 沒有目標車位的發光標記：後視鏡、倒後鏡頭與鳥瞰是看路與看標線用的，不蓋一層光（見 SpotGlow.drawHidden）。
+   * - 濕地的倒影退回只映天空：倒影貼圖是照主鏡頭畫的，別的鏡頭取不到對的位置（見 GroundReflection.drawWithout）。
    * 倒車燈與車尾的光斑照常畫。
    */
   drawAssistViews(draw: () => void): void;
@@ -170,6 +177,11 @@ export interface GameScene {
   updateSpotGlow(parked: boolean, frameSeconds: number): void;
   /** 發光標記目前的位置、大小、顏色與不透明度（唯讀；e2e 與除錯用）。 */
   spotGlow(): SpotGlowSnapshot;
+  /**
+   * 這個場景的濕地／積水倒影怎麼做：none（乾的天氣、沒有潮濕著色器的級別）、sky（只映天空）、
+   * planar（多畫一遍鏡像的場景，映出車、燈與建築）。唯讀；e2e 與除錯用。
+   */
+  readonly groundMirror: GroundMirrorMode;
 }
 
 /** 場景的燈光：半球補光 + 會投影的太陽。 */
@@ -548,6 +560,12 @@ export function createGameScene(
     environmentLayout === undefined
       ? createLotLayout(spot, start, DEFAULT_SEED, quality.props)
       : undefined;
+  // 濕地／積水的倒影：有積水的天氣、而且這個級別有開，才多畫一遍鏡像的場景（平面反射）；否則積水只映天空。
+  const groundMirror = groundMirrorMode(quality.ground, preset.ground.reflection);
+  const reflection =
+    groundMirror === 'planar' && quality.ground.reflection !== null
+      ? createGroundReflection(renderer, quality.ground.reflection)
+      : undefined;
   const ground = createGround(
     DEFAULT_SEED,
     quality.ground,
@@ -566,10 +584,14 @@ export function createGameScene(
         )
       : groundEdgeShadows({ x: 0, z: 0 }, 0, sunDirection, boundsEdgeBoxes(bounds, level)),
     preset.ground,
+    reflection?.uniforms,
   );
   scene.add(ground);
 
-  scene.add(createSpotMarkings(spot));
+  // 標線貼在地面上：鏡像之後還在原地，不畫進倒影。
+  const spotMarkings = createSpotMarkings(spot);
+  spotMarkings.userData[SKIP_GROUND_REFLECTION] = true;
+  scene.add(spotMarkings);
   if (lotLayout !== undefined) {
     // 路緣石與車擋只是擺設：沒有碰撞，也不進停車判定。
     scene.add(createCurbs(spot), createWheelStop(spot));
@@ -640,6 +662,8 @@ export function createGameScene(
     leaves: ambientFx && !raining,
     dust: !raining,
   });
+  // 輪胎痕貼地，雨絲、灰塵、落葉很細：縮小畫進倒影只是雜訊，整組都不畫。
+  effects.root.userData[SKIP_GROUND_REFLECTION] = true;
   scene.add(effects.root);
 
   // 閃電：依固定的時間表，短暫提高補光、環境光與天空，霧色往閃光色靠；同時在場地外面的天空畫出電弧。
@@ -689,6 +713,13 @@ export function createGameScene(
   // 要在第一次畫之前；沒烘的表面維持中性貼圖，之後才出現的庫材質頂多是沒有紋路的底色。
   prepareSurfaceLibrary(renderer, quality.materials, surfacesUsedIn(scene));
 
+  // 倒影那一遍不畫地面自己，也不畫貼地的標記、光斑與細小的粒子（各自標了 SKIP_GROUND_REFLECTION）。
+  // 登記之後，framePipeline 每一幀畫主畫面之前會先畫倒影。
+  if (reflection !== undefined) {
+    reflection.exclude([ground, ...collectReflectionSkips(scene)]);
+    registerGroundReflection(scene, reflection);
+  }
+
   // 跟車鏡頭的擋塊：與遮擋半透明讀同一份登記，但 `?fx=off` 也要有（鏡頭不該因為關了特效就跑進牆裡）。
   const cameraBlockers = collectCameraBlockers(scene);
 
@@ -699,12 +730,20 @@ export function createGameScene(
       occlusion?.update(cameraPosition, pose, enabled, frameSeconds);
     },
     drawAssistViews(draw) {
+      // 小畫面用的是別的鏡頭：地面不取主鏡頭的倒影貼圖（退回只映天空）。
+      const drawViews = (): void => {
+        if (reflection === undefined) {
+          draw();
+        } else {
+          reflection.drawWithout(draw);
+        }
+      };
       glow.drawHidden(() => {
         effects.drawWithoutDust(() => {
           if (occlusion === undefined) {
-            draw();
+            drawViews();
           } else {
-            occlusion.drawUnfaded(draw);
+            occlusion.drawUnfaded(drawViews);
           }
         });
       });
@@ -724,6 +763,7 @@ export function createGameScene(
       glow.show(parked, frameSeconds);
     },
     spotGlow: () => glow.snapshot(),
+    groundMirror,
     update(pose, frameSeconds = 0) {
       updateCarMesh(car, pose);
       raisedPool?.update(pose, reversingLit);

@@ -75,6 +75,11 @@ export interface GroundWetnessPreset {
    * null = 不動（乾的天氣，以及基準的 dusk）。
    */
   readonly fallback: { readonly colorScale: number; readonly roughness: number } | null;
+  /**
+   * 濕地與積水的倒影強度（0–1）：0 = 沒有（乾的天氣與基準的 dusk：地面的著色器一個字都不變，也不多畫倒影那一遍）；
+   * 大於 0 = 濕與積水的地方依 GROUND_REFLECTION_CONFIG 的反射率映出天空，畫質夠的級別再映出車、燈與建築。
+   */
+  readonly reflection: number;
 }
 
 /**
@@ -133,7 +138,7 @@ const DUSK: WeatherPreset = {
   sun: SUN_CONFIG,
   fog: FOG_CONFIG,
   hemisphere: HEMISPHERE_LIGHT_CONFIG,
-  ground: { ...GROUND_CONFIG, fallback: null },
+  ground: { ...GROUND_CONFIG, fallback: null, reflection: 0 },
   rain: 0,
   lightning: false,
   lampsOn: true,
@@ -161,6 +166,7 @@ const RAINY_GROUND: GroundWetnessPreset = {
   puddleEnd: 0.56,
   puddleRoughness: 0.08,
   fallback: { colorScale: 0.62, roughness: 0.45 },
+  reflection: 1,
 };
 
 /** 陰雨的天空：整片灰雲，看不到太陽圓盤。 */
@@ -244,6 +250,7 @@ export const WEATHER_PRESETS: Readonly<Record<WeatherId, WeatherPreset>> = {
       puddleEnd: 0.6,
       puddleRoughness: 0.05,
       fallback: { colorScale: 0.74, roughness: 0.5 },
+      reflection: 1,
     },
     rain: 0,
     lightning: false,

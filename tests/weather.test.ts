@@ -99,6 +99,8 @@ describe('天氣預設值', () => {
       expect(dusk.ground[key], key).toBe(GROUND_CONFIG[key]);
     }
     expect(dusk.ground.fallback).toBeNull();
+    // 基準的黃昏沒有積水的倒影：地面的著色器與原本一模一樣，也不多畫倒影那一遍。
+    expect(dusk.ground.reflection).toBe(0);
     expect(dusk.rain).toBe(0);
     expect(dusk.lightning).toBe(false);
     expect(dusk.lampsOn).toBe(true);
@@ -161,6 +163,14 @@ describe('天氣預設值', () => {
       expect(ground.puddleEnd, weather).toBeLessThan(GROUND_CONFIG.puddleStart);
       expect(ground.fallback?.colorScale, weather).toBeLessThan(1);
       expect(ground.fallback?.roughness, weather).toBeLessThan(GROUND_CONFIG.roughness);
+    }
+    // 積水的倒影只出現在有積水的天氣；乾的天氣（晴天、黃昏、夜晚）不會無故多出水窪與倒影。
+    expect(WEATHER_IDS.filter((weather) => weatherPreset(weather).ground.reflection > 0)).toEqual(
+      WEATHER_IDS.filter((weather) => weather === 'rain' || weather === 'wet' || weather === 'storm'),
+    );
+    for (const weather of WEATHER_IDS) {
+      expect(weatherPreset(weather).ground.reflection, weather).toBeGreaterThanOrEqual(0);
+      expect(weatherPreset(weather).ground.reflection, weather).toBeLessThanOrEqual(1);
     }
   });
 

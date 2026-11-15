@@ -15,6 +15,7 @@ import {
 } from 'three';
 import { forward, right } from '../core/heading';
 import { SKIP_AMBIENT_OCCLUSION } from '../render/ambientOcclusionFlag';
+import { SKIP_GROUND_REFLECTION } from '../render/groundReflectionFlag';
 import type { HeadlightQualitySettings } from '../render/quality';
 import { HEADLIGHT_CONFIG as CONFIG } from '../render/renderConfig';
 import type { VehiclePose } from './bicycleModel';
@@ -333,6 +334,7 @@ export function createRaisedPoolLight(
   mesh.renderOrder = PATCH_RENDER_ORDER;
   mesh.frustumCulled = false;
   mesh.userData[SKIP_AMBIENT_OCCLUSION] = true;
+  mesh.userData[SKIP_GROUND_REFLECTION] = true;
 
   let shown: { x: number; z: number; headingRad: number; reversing: boolean } | undefined;
   return {

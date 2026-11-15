@@ -20,6 +20,7 @@ import { headingToRotationY } from '../core/heading';
 import { mToFt, radToDeg } from '../core/units';
 import type { ParkingSpot } from '../level/parkingJudge';
 import { SKIP_AMBIENT_OCCLUSION } from '../render/ambientOcclusionFlag';
+import { SKIP_GROUND_REFLECTION } from '../render/groundReflectionFlag';
 import { SPOT_GLOW_CONFIG as CONFIG } from '../render/renderConfig';
 
 /** 車位的大小與位置；標記只需要這些。 */
@@ -367,6 +368,8 @@ export function createSpotGlow(spot: GlowSpot, animate = true): SpotGlow {
   root.rotation.y = headingToRotationY(spot.headingRad);
   // 發光的標記沒有實體表面：不投影、不接影子，也不參與環境光遮蔽。
   root.userData[SKIP_AMBIENT_OCCLUSION] = true;
+  // 玩法標記不映在濕地上（水裡多一份光牆只會讓車位看不清楚）。
+  root.userData[SKIP_GROUND_REFLECTION] = true;
 
   const veilMaterial = new ShaderMaterial({
     name: 'SpotGlowVeilShader',
@@ -392,6 +395,7 @@ export function createSpotGlow(spot: GlowSpot, animate = true): SpotGlow {
   veil.position.copy(root.position);
   veil.rotation.copy(root.rotation);
   veil.userData[SKIP_AMBIENT_OCCLUSION] = true;
+  veil.userData[SKIP_GROUND_REFLECTION] = true;
   const veilColor: unknown = veilMaterial.uniforms['veilColor']?.value;
   const veilOpacity = veilMaterial.uniforms['veilOpacity'];
 

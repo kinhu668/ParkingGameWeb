@@ -140,6 +140,8 @@ function createLevelScene(
   );
   // 這一關烘了材質庫的哪些表面（只烘用到的）：寫在 <html data-surfaces>，方便除錯與 e2e 確認。
   document.documentElement.dataset.surfaces = bakedSurfaces(renderer).join(' ');
+  // 濕地／積水的倒影怎麼做（none／sky／planar）：寫在 <html data-ground-mirror>，方便除錯與 e2e 確認。
+  document.documentElement.dataset.groundMirror = gameScene.groundMirror;
   return gameScene;
 }
 

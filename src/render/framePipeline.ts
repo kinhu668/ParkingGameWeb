@@ -13,6 +13,9 @@
 //    4. SMAAPass          ultra
 //    5. 輸出 ShaderPass    色差 → 暈影 → 色調映射 + 轉成輸出色域（sRGB）→ 抖色
 //
+// 兩條路在畫場景之前，都先畫濕地的倒影（有積水的天氣、畫質級別有開才有；render/groundReflection.ts）：
+// 鏡像鏡頭把場景畫進一張縮小的貼圖，地面著色器再取樣。它的 draw calls 也算進這一幀。
+//
 // 兩條路的色調映射都只做一次，用的是同一個函式（AgX + 黃昏的色調分級，見 renderer.ts）：three 只有
 // 「畫到畫面上」才會幫材質做色調映射與色域轉換，畫到離屏緩衝區時不做。B 的最後一步用的是 three 內建的
 // <tonemapping_fragment>／<colorspace_fragment>，與 OutputPass 等價；自己寫是為了把鏡頭效果併進同一個
@@ -46,6 +49,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { DEFAULT_SEED } from '../core/gameConfig';
 import { createRng } from '../core/rng';
 import { SKIP_AMBIENT_OCCLUSION } from './ambientOcclusionFlag';
+import { groundReflectionOf } from './groundReflection';
 import {
   effectivePixelRatio,
   usesHdrChain,
@@ -349,6 +353,8 @@ export function createFramePipeline(
       render(scene, camera) {
         fitRenderer(camera);
         renderer.info.reset();
+        // 濕地的倒影（有的話）：先用鏡像鏡頭把場景畫進倒影貼圖，主畫面的地面才取樣得到。
+        groundReflectionOf(scene)?.render(renderer, scene, camera);
         renderer.render(scene, camera);
         if (overlay !== undefined && overlayMaterial !== undefined) {
           setUniform(overlayMaterial, 'aspect', camera.aspect);
@@ -444,6 +450,8 @@ export function createFramePipeline(
       composer.readBuffer = sceneBuffer;
       composer.writeBuffer = filterBuffer;
       renderer.info.reset();
+      // 濕地的倒影（有的話）：先用鏡像鏡頭把場景畫進倒影貼圖，主畫面的地面才取樣得到。
+      groundReflectionOf(scene)?.render(renderer, scene, camera);
       composer.render();
       drawCalls = renderer.info.render.calls;
     },

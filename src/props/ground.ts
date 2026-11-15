@@ -17,13 +17,15 @@ import {
   Vector3,
   Vector4,
 } from 'three';
+import type { GroundReflectionUniforms } from '../render/groundReflection';
 import type { GroundQualitySettings } from '../render/quality';
-import { GROUND_CONFIG } from '../render/renderConfig';
+import { GROUND_CONFIG, GROUND_REFLECTION_CONFIG } from '../render/renderConfig';
 import type { GroundWetnessPreset } from '../render/weatherPresets';
 import { generateAsphaltPixels } from './groundNoise';
 import {
   GROUND_EDGE_SHADOW_SOFTNESS,
   groundLayerTransforms,
+  groundMirrorMode,
   groundShaderDefines,
   groundStainSmear,
   patchGroundShader,
@@ -51,7 +53,7 @@ function createNoiseTexture(seed: number, sizePx: number, anisotropy: number): D
 }
 
 /** 沒有指定天氣時的潮濕設定：GROUND_CONFIG 原本的數值。 */
-const DEFAULT_WETNESS: GroundWetnessPreset = { ...GROUND_CONFIG, fallback: null };
+const DEFAULT_WETNESS: GroundWetnessPreset = { ...GROUND_CONFIG, fallback: null, reflection: 0 };
 
 /**
  * 柏油材質：MeshStandardMaterial 加上世界座標的程序化細節，仍然吃環境貼圖、陰影與霧。
@@ -60,6 +62,8 @@ const DEFAULT_WETNESS: GroundWetnessPreset = { ...GROUND_CONFIG, fallback: null 
  * @param maxAnisotropy 顯示卡支援的各向異性過濾上限
  * @param edgeShadows 路緣石、車擋的影子；不給就只有陰影貼圖的影子
  * @param wetness 這種天氣的潮濕與積水；不給 = GROUND_CONFIG（黃昏的少量潮濕斑）
+ * @param reflection 平面反射的貼圖與矩陣（render/groundReflection.ts）；不給 = 濕與積水的地方只映天空。
+ *   quality.reflection 是 null（這個級別不畫倒影那一遍）時不必給。
  */
 export function createGroundMaterial(
   seed: number,
@@ -67,6 +71,7 @@ export function createGroundMaterial(
   maxAnisotropy: number,
   edgeShadows?: GroundEdgeShadows,
   wetness: GroundWetnessPreset = DEFAULT_WETNESS,
+  reflection?: GroundReflectionUniforms,
 ): MeshStandardMaterial {
   const config = GROUND_CONFIG;
   // 沒有潮濕著色器的級別：雨天用整片壓暗＋降粗糙度代替。
@@ -78,7 +83,12 @@ export function createGroundMaterial(
       new Vector4(layer.cosOverPeriod, layer.sinOverPeriod, layer.offsetU, layer.offsetV),
   );
   const stainSmear = groundStainSmear();
-  const defines = groundShaderDefines(quality, edgeShadows?.boxes.length);
+  // 倒影：天氣有積水的倒影、級別有潮濕著色器才有；有給倒影貼圖才是平面反射，否則只映天空。
+  const mirror = groundMirrorMode(
+    reflection === undefined ? { ...quality, reflection: null } : quality,
+    wetness.reflection,
+  );
+  const defines = groundShaderDefines(quality, edgeShadows?.boxes.length, mirror);
   // 有限差分的步長：細顆粒層的一個貼圖像素。
   const normalEpsM = config.layers.fineGrain.periodM / quality.textureSizePx;
 
@@ -158,6 +168,32 @@ export function createGroundMaterial(
         value: new Vector2(config.normalFadeStartM, config.normalFadeEndM),
       },
     });
+    if (mirror !== 'none') {
+      const look = GROUND_REFLECTION_CONFIG;
+      Object.assign(shader.uniforms, {
+        uGroundMirror: {
+          value: new Vector4(
+            look.puddleReflectance,
+            look.wetReflectance,
+            look.wetGrazingReflectance,
+            look.fresnelPower,
+          ),
+        },
+        uGroundMirrorLook: { value: new Vector2(wetness.reflection, look.puddleDarken) },
+      });
+    }
+    if (mirror === 'planar' && reflection !== undefined) {
+      const look = GROUND_REFLECTION_CONFIG;
+      Object.assign(shader.uniforms, {
+        uGroundReflection: reflection.texture,
+        uGroundReflectionMatrix: reflection.matrix,
+        uGroundReflectionStrength: reflection.strength,
+        uGroundReflectionShape: {
+          value: new Vector3(look.wetStreakLength, look.grainDistortion, look.streakSkew),
+        },
+        uGroundReflectionBlur: { value: new Vector2(look.wetBlurLod, look.puddleBlurLod) },
+      });
+    }
     if (edgeShadows !== undefined && edgeShadows.boxes.length > 0) {
       Object.assign(shader.uniforms, {
         uGroundEdgeFrame: {
@@ -193,6 +229,7 @@ export function createGroundMaterial(
  * @param maxAnisotropy 顯示卡支援的各向異性過濾上限；斜看地面時遠處才不會糊成一片
  * @param edgeShadows 路緣石、車擋的影子（著色器裡直接算）；不給就只有陰影貼圖的影子
  * @param wetness 這種天氣的潮濕與積水；不給 = 黃昏
+ * @param reflection 平面反射的貼圖與矩陣；不給 = 濕與積水的地方只映天空
  */
 export function createGround(
   seed: number,
@@ -200,10 +237,11 @@ export function createGround(
   maxAnisotropy: number,
   edgeShadows?: GroundEdgeShadows,
   wetness?: GroundWetnessPreset,
+  reflection?: GroundReflectionUniforms,
 ): Mesh {
   const ground = new Mesh(
     new PlaneGeometry(GROUND_CONFIG.sizeM, GROUND_CONFIG.sizeM),
-    createGroundMaterial(seed, quality, maxAnisotropy, edgeShadows, wetness),
+    createGroundMaterial(seed, quality, maxAnisotropy, edgeShadows, wetness, reflection),
   );
   // PlaneGeometry 預設立在 XY 平面、面朝 +Z；繞 X 轉 −90° 讓它躺平、面朝 +Y。
   ground.rotation.x = -Math.PI / 2;

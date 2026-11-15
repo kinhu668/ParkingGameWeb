@@ -5,7 +5,7 @@ import { ShaderChunk } from 'three';
 import { createRng } from '../core/rng';
 import { degToRad } from '../core/units';
 import type { GroundQualitySettings } from '../render/quality';
-import { GROUND_CONFIG } from '../render/renderConfig';
+import { GROUND_CONFIG, GROUND_REFLECTION_CONFIG } from '../render/renderConfig';
 
 /** 噪聲層的順序；著色器裡 uGroundLayers 的索引就是這個順序。 */
 export const GROUND_LAYER_ORDER = [
@@ -237,13 +237,38 @@ export function groundEdgeLight(shadows: GroundEdgeShadows, x: number, z: number
   return lit;
 }
 
+/** 濕地與積水的倒影在這個場景裡怎麼做（看天氣、畫質級別與裝置；scene.ts 決定）。 */
+export type GroundMirrorMode =
+  /** 沒有：乾的天氣、基準的黃昏，或沒有潮濕著色器的級別。著色器與原本一模一樣。 */
+  | 'none'
+  /** 只映天空：濕與積水的地方用提高的反射率映出環境貼圖，不多畫一遍場景。 */
+  | 'sky'
+  /** 平面反射：另外映出車、燈與建築（倒影貼圖，render/groundReflection.ts）。 */
+  | 'planar';
+
+/**
+ * 這個場景的地面倒影做法：天氣沒有積水的倒影（reflection = 0）或沒有潮濕著色器 → none；
+ * 畫質級別有開倒影那一遍 → planar；其餘 → sky。
+ */
+export function groundMirrorMode(
+  quality: Pick<GroundQualitySettings, 'wetness' | 'reflection'>,
+  weatherReflection: number,
+): GroundMirrorMode {
+  if (!quality.wetness || weatherReflection <= 0) {
+    return 'none';
+  }
+  return quality.reflection === null ? 'sky' : 'planar';
+}
+
 /**
  * 這個畫質級別要打開的著色器開關（#define 的內容）。
  * @param edgeBoxCount 要在著色器裡算影子的箱子數（路緣石、車擋）；0 = 不算
+ * @param mirror 濕地與積水的倒影做法；不給 = 沒有
  */
 export function groundShaderDefines(
   quality: GroundQualitySettings,
   edgeBoxCount = 0,
+  mirror: GroundMirrorMode = 'none',
 ): readonly string[] {
   const defines: string[] = [];
   if (quality.normals) {
@@ -255,7 +280,28 @@ export function groundShaderDefines(
   if (edgeBoxCount > 0) {
     defines.push(`GROUND_EDGE_BOXES ${edgeBoxCount}`);
   }
+  if (quality.wetness && mirror !== 'none') {
+    defines.push('GROUND_MIRROR');
+    if (mirror === 'planar') {
+      // 取樣數寫進開關：迴圈的次數要是編譯期常數。
+      defines.push(`GROUND_PLANAR_TAPS ${Math.max(Math.round(quality.reflection?.streakTaps ?? 1), 1)}`);
+    }
+  }
   return defines;
+}
+
+/**
+ * 濕地／積水在某個視線角度的反射率（0–1），與著色器裡的 groundMirrorAmount 是同一條式子。
+ * @param cosView 視線與地面法線夾角的餘弦（1 = 從正上方往下看，0 = 貼著地面看）
+ * @param wet 這一點有多濕（0–1）
+ * @param puddle 這一點是不是積水（0–1）
+ */
+export function groundMirrorAmount(cosView: number, wet: number, puddle: number): number {
+  const config = GROUND_REFLECTION_CONFIG;
+  const grazing = (1 - Math.min(Math.max(cosView, 0), 1)) ** config.fresnelPower;
+  const film = config.wetReflectance + (config.wetGrazingReflectance - config.wetReflectance) * grazing;
+  const water = config.puddleReflectance + (1 - config.puddleReflectance) * grazing;
+  return Math.max(wet, puddle) * (film + (water - film) * puddle);
 }
 
 const VERTEX_PARS = /* glsl */ `
@@ -331,6 +377,24 @@ float groundEdgeLight( vec2 p ) {
 }
 #endif
 
+#ifdef GROUND_MIRROR
+// 濕地與積水的倒影：x 積水正視的反射率、y 濕柏油正視的反射率、z 濕柏油貼地看的上限、w 隨視線角度上升的指數。
+uniform vec4 uGroundMirror;
+// x 倒影的整體強度（天氣）、y 積水的底色再壓暗的比例。
+uniform vec2 uGroundMirrorLook;
+#endif
+#ifdef GROUND_PLANAR_TAPS
+// 平面反射的貼圖（場景對地面鏡像後畫的，線性亮度、有 mipmap）與「世界座標 → 貼圖座標」的矩陣。
+uniform sampler2D uGroundReflection;
+uniform mat4 uGroundReflectionMatrix;
+// 0 = 這一次不取倒影貼圖（用別的鏡頭畫同一個場景時），退回環境貼圖。
+uniform float uGroundReflectionStrength;
+// x 拉長的長度、y 顆粒把倒影推開的量、z 上下方向推開的倍數（都是貼圖座標）。
+uniform vec3 uGroundReflectionShape;
+// 取第幾級 mip（越大越糊）：x 濕柏油、y 積水。
+uniform vec2 uGroundReflectionBlur;
+#endif
+
 #ifdef GROUND_NORMALS
 // 表面高度（公尺）：細顆粒 + 粗顆粒 − 裂縫。
 float groundHeight( vec2 p, vec2 crackWarp, float crackMask ) {
@@ -392,6 +456,10 @@ float groundPuddle = 0.0;
 	groundPuddle = smoothstep( uGroundPuddle.x, uGroundPuddle.y, groundWetNoise );
 	// 濕的柏油比較深；積水處顆粒被水蓋住，對比降低。
 	groundColor *= 1.0 - uGroundWet.z * groundWet;
+	#ifdef GROUND_MIRROR
+		// 積水越深，底下的柏油越看不清楚：底色再暗一點，倒影才浮得出來。
+		groundColor *= 1.0 - uGroundMirrorLook.y * groundPuddle;
+	#endif
 #endif
 diffuseColor.rgb = groundColor;
 
@@ -428,6 +496,51 @@ const FRAGMENT_NORMAL = /* glsl */ `
 	groundSlope *= groundFade * ( 1.0 - groundPuddle );
 	vec3 groundNormal = normalize( vec3( - groundSlope.x, 1.0, - groundSlope.y ) );
 	normal = normalize( ( viewMatrix * vec4( groundNormal, 0.0 ) ).xyz );
+}
+#endif
+`;
+
+/**
+ * 接在 lights_fragment_end 之後：濕與積水的地方把「間接鏡面反射」換成倒影。
+ * 反射率隨視線角度上升（貼著地面看最亮），數值是美術用的（GROUND_REFLECTION_CONFIG）；映出來的東西
+ * 沒有倒影貼圖時是環境貼圖（只有天空），有的時候是平面反射（車、燈、建築）。被水面反射走的光不再照到底下的柏油。
+ * radiance 是 three 在這之前算好的環境貼圖取樣（lights_fragment_maps）。
+ */
+const FRAGMENT_MIRROR = /* glsl */ `
+#ifdef GROUND_MIRROR
+{
+	float groundMirrorMask = max( groundWet, groundPuddle );
+	// 地面是平的：視線與法線的夾角只看視線方向與世界的上方（視角座標）。
+	float groundCosView = saturate( dot( geometryViewDir, normalize( viewMatrix[ 1 ].xyz ) ) );
+	float groundGrazing = pow( 1.0 - groundCosView, uGroundMirror.w );
+	float groundFilm = mix( uGroundMirror.y, uGroundMirror.z, groundGrazing );
+	float groundWater = mix( uGroundMirror.x, 1.0, groundGrazing );
+	float groundMirrorAmount = uGroundMirrorLook.x * groundMirrorMask * mix( groundFilm, groundWater, groundPuddle );
+	vec3 groundMirror = radiance;
+	#ifdef GROUND_PLANAR_TAPS
+	{
+		vec4 groundPlanarCoord = uGroundReflectionMatrix * vec4( vGroundXZ.x, 0.0, vGroundXZ.y, 1.0 );
+		vec2 groundPlanarUv = groundPlanarCoord.xy / groundPlanarCoord.w;
+		// 濕柏油：顆粒把倒影打散、變糊，並沿畫面的上下方向拉長（路燈在濕地上的長條反光）。積水是平的：清楚、不拉長。
+		float groundPlanarRough = 1.0 - groundPuddle;
+		groundPlanarUv += ( vec2( groundFine, groundCoarse ) - 0.5 ) * uGroundReflectionShape.y * groundPlanarRough * vec2( 1.0, uGroundReflectionShape.z );
+		float groundPlanarLod = mix( uGroundReflectionBlur.y, uGroundReflectionBlur.x, groundPlanarRough );
+		#if GROUND_PLANAR_TAPS > 1
+			vec3 groundPlanar = vec3( 0.0 );
+			for ( int i = 0; i < GROUND_PLANAR_TAPS; i ++ ) {
+				float groundPlanarAlong = float( i ) / float( GROUND_PLANAR_TAPS - 1 ) - 0.5;
+				groundPlanar += textureLod( uGroundReflection, groundPlanarUv + vec2( 0.0, groundPlanarAlong * uGroundReflectionShape.x * groundPlanarRough ), groundPlanarLod ).rgb;
+			}
+			groundPlanar /= float( GROUND_PLANAR_TAPS );
+		#else
+			vec3 groundPlanar = textureLod( uGroundReflection, groundPlanarUv, groundPlanarLod ).rgb;
+		#endif
+		groundMirror = mix( groundMirror, groundPlanar, uGroundReflectionStrength );
+	}
+	#endif
+	reflectedLight.indirectSpecular = mix( reflectedLight.indirectSpecular, groundMirror * groundMirrorAmount, groundMirrorMask );
+	reflectedLight.directDiffuse *= 1.0 - groundMirrorAmount;
+	reflectedLight.indirectDiffuse *= 1.0 - groundMirrorAmount;
 }
 #endif
 `;
@@ -484,6 +597,11 @@ export function patchGroundShader(source: ShaderSource, defines: readonly string
     fragment,
     '#include <lights_fragment_begin>',
     replaceOnce(ShaderChunk.lights_fragment_begin, SUN_SHADOW_ANCHOR, SUN_SHADOW_WITH_EDGES),
+  );
+  fragment = replaceOnce(
+    fragment,
+    '#include <lights_fragment_end>',
+    `#include <lights_fragment_end>\n${FRAGMENT_MIRROR}`,
   );
   source.fragmentShader = fragment;
 }
