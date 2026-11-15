@@ -875,7 +875,11 @@ export const CAR_VISUAL_CONFIG = {
   /** 後視鏡凸出鈑金的量；鈑金半寬 = 車寬/2 − 這個值。 */
   mirrorOverhangM: ftToM(0.25),
   /** 車頭、車尾比車身中段收窄的比例（俯視的梭形）。 */
-  planTaper: 0.07,
+  planTaper: 0.09,
+  /** 兩個輪拱之間，車門下半部（腰線以下）往內收多少；輪拱那一段不收，葉子板因此比車門鼓出來。 */
+  sideTuckM: ftToM(0.11),
+  /** 車門下半部從輪拱邊緣開始，隔多長才收到底。 */
+  sideTuckBlendM: ftToM(1.1),
   /** 引擎蓋與後行李廂長度；兩者不等長，從上方看得出車頭車尾。 */
   hoodLengthM: ftToM(4.6),
   trunkLengthM: ftToM(2.3),
@@ -897,10 +901,10 @@ export const CAR_VISUAL_CONFIG = {
   /** B 柱前後寬度的一半，以及它在車頂前緣後方多遠。 */
   pillarHalfWidthM: ftToM(0.14),
   bPillarBehindHeaderM: ftToM(1.45),
-  /** 車頭、車尾端面收邊的深度，以及超橢圓指數（越大越方：端面幾乎是平的，只有邊緣收圓角）。 */
+  /** 車頭、車尾端面收邊的深度，以及超橢圓指數（越大越方；3–4 是圓角明顯的鈑金轉角，6 以上幾乎是平的端面）。 */
   noseDepthM: ftToM(0.75),
   tailDepthM: ftToM(0.65),
-  endExponent: 6.5,
+  endExponent: 3.6,
   /** 車殼的端面比車長每端內縮這麼多；凸出來補滿車長的是保險桿（與前車牌）。 */
   bodyEndInsetM: ftToM(0.11),
 

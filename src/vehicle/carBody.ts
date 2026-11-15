@@ -176,6 +176,18 @@ function floorHeightM(zM: number): number {
 }
 
 /**
+ * 車門下半部往內收的比例（0–1）：只在兩個輪拱之間；輪拱、車頭、車尾不收，葉子板比車門鼓出來。
+ */
+function doorTuck(zM: number): number {
+  const fromZM = -HALF_WHEELBASE_M + L.archRadiusM;
+  const toZM = HALF_WHEELBASE_M - L.archRadiusM;
+  return (
+    smoothstep((zM - fromZM) / VISUAL.sideTuckBlendM) *
+    smoothstep((toZM - zM) / VISUAL.sideTuckBlendM)
+  );
+}
+
+/**
  * 一站橫截面的右半圈（x ≥ 0），從車底中線到車頂中線，共 HALF_RING_POINTS 點，依序是 [x, y]。
  * 門檻上緣、腰線、肩線、窗台、車頂摺線各重複一次（摺線）。
  */
@@ -217,7 +229,9 @@ export function bodyHalfSection(zM: number): [number, number][] {
     topM + VISUAL.crownM * crownAt(t),
   ];
 
-  const rockerTop: [number, number] = [halfWidthM - 0.004, floorM + rockerM];
+  /** 這一站的門檻比腰線內縮多少（車門下半部往內收，側面才有上下的明暗變化）。 */
+  const tuckM = VISUAL.sideTuckM * doorTuck(zM);
+  const rockerTop: [number, number] = [halfWidthM - 0.004 - tuckM, floorM + rockerM];
   const characterLine: [number, number] = [halfWidthM, floorM + 0.64 * sideM];
   const shoulderEdge: [number, number] = [
     halfWidthM - 0.026,
@@ -229,11 +243,11 @@ export function bodyHalfSection(zM: number): [number, number][] {
   return [
     [0, floorM],
     [0.55 * halfWidthM, floorM],
-    [halfWidthM - 0.06, floorM],
-    [halfWidthM - 0.016, floorM + 0.4 * rockerM],
+    [halfWidthM - 0.06 - tuckM, floorM],
+    [halfWidthM - 0.016 - tuckM, floorM + 0.4 * rockerM],
     rockerTop,
     rockerTop,
-    [halfWidthM - 0.002, floorM + 0.38 * sideM],
+    [halfWidthM - 0.002 - 0.42 * tuckM, floorM + 0.38 * sideM],
     characterLine,
     characterLine,
     [halfWidthM - 0.014, floorM + 0.86 * sideM],
