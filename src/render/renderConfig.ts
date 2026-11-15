@@ -21,7 +21,7 @@ export const RENDERER_CONFIG = {
  * 地面（ground）：low 的噪聲貼圖小、沒有潮濕反光；medium 加上潮濕反光；high、ultra 再加上法線（裂縫與顆粒的立體感）。
  * 倒影（ground.reflection）：有積水的天氣（雨、雷雨、雨後）把場景對地面鏡像、多畫一遍縮小的，濕地與積水映出車、燈與建築。
  * low 不畫（沒有潮濕著色器）；medium 畫得小、隔幀重畫、不拉長；high 半解析度、每幀；ultra 更大、取樣更多。
- * 手機與平板自動選到的級別不畫這一遍（quality.ts 的 resolveQuality），積水只映出天空。
+ * 手機、平板與 CPU 軟體算圖自動選到的級別不畫這一遍（quality.ts 的 resolveQuality），積水只映出天空。
  * 頭燈（headlights）：low 只有發光的燈殼；medium 在車頭前方的地上加一片光斑；high、ultra 再加不投影的真光源。
  * 輪胎痕（tireMarks）與粒子（particles）：low 只有少量輪胎痕、沒有粒子；級別越高，痕留得越久、灰塵與落葉越多。
  * 擺設（props）：級別越高，背景車、路燈、樹、建築越多；只有 high、ultra 有幾盞真的會照亮場景的路燈，

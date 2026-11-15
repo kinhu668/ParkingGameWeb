@@ -12,6 +12,7 @@ import {
   parseQualityParam,
   qualitySettings,
   resolveQuality,
+  skipsGroundReflection,
   usesHdrChain,
   withoutGroundReflection,
   type QualityHints,
@@ -199,8 +200,9 @@ describe('resolveQuality：有效的 ?quality= > 自動選擇', () => {
         settings: QUALITY_PRESETS.high,
         source: 'auto',
       });
+      // 軟體算圖：medium，但不多畫倒影那一遍（其餘照表）。
       expect(resolveQuality(search, { rendererName: SWIFTSHADER })).toEqual({
-        settings: QUALITY_PRESETS.medium,
+        settings: withoutGroundReflection(QUALITY_PRESETS.medium),
         source: 'auto',
       });
     },
@@ -375,12 +377,30 @@ describe('濕地／積水的倒影（ground.reflection）的畫質矩陣', () =>
     expect(lowEnd.settings.ground.wetness).toBe(true);
   });
 
-  test('桌面（或沒有這個線索）自動選到的級別照表給；?quality= 明確指定的在手機上也照表給', () => {
+  test('CPU 軟體算圖自動選到的級別（medium）也不多畫倒影那一遍', () => {
+    const software = resolveQuality('', { rendererName: SWIFTSHADER });
+    expect(software.settings.level).toBe('medium');
+    expect(software.settings.ground.reflection).toBeNull();
+    expect(software.settings).toEqual(withoutGroundReflection(QUALITY_PRESETS.medium));
+    expect(skipsGroundReflection({ rendererName: SWIFTSHADER })).toBe(true);
+    expect(skipsGroundReflection({ coarsePointer: true })).toBe(true);
+    expect(skipsGroundReflection(CAPABLE)).toBe(false);
+    expect(skipsGroundReflection({})).toBe(false);
+    // 記憶體或核心數少、但有真的顯示卡的桌機（medium）照表畫小張的倒影。
+    const lowEndDesktop = resolveQuality('', { ...CAPABLE, hardwareConcurrency: 4 });
+    expect(lowEndDesktop.settings).toBe(QUALITY_PRESETS.medium);
+  });
+
+  test('桌面（或沒有這個線索）自動選到的級別照表給；?quality= 明確指定的在手機與軟體算圖上也照表給', () => {
     expect(resolveQuality('', CAPABLE).settings).toBe(QUALITY_PRESETS.high);
     expect(resolveQuality('', { ...CAPABLE, coarsePointer: false }).settings).toBe(QUALITY_PRESETS.high);
     for (const level of QUALITY_LEVELS) {
       expect(
         resolveQuality(`?quality=${level}`, { ...CAPABLE, coarsePointer: true }).settings,
+        level,
+      ).toBe(QUALITY_PRESETS[level]);
+      expect(
+        resolveQuality(`?quality=${level}`, { rendererName: SWIFTSHADER }).settings,
         level,
       ).toBe(QUALITY_PRESETS[level]);
     }

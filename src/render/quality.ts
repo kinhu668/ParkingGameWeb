@@ -269,8 +269,7 @@ export function qualitySettings(level: QualityLevel): QualitySettings {
 }
 
 /**
- * 手機與平板（主要指標是手指）自動選到的級別不多畫倒影那一遍：螢幕的像素多、顯示卡的填充率低，
- * 多畫一遍場景最容易掉幀。其餘的設定不變，積水仍然映出天空。
+ * 拿掉倒影那一遍，其餘的設定不變（積水仍然映出天空）。
  */
 export function withoutGroundReflection(settings: QualitySettings): QualitySettings {
   return settings.ground.reflection === null
@@ -279,8 +278,17 @@ export function withoutGroundReflection(settings: QualitySettings): QualitySetti
 }
 
 /**
+ * 自動選畫質時，這台裝置要不要省掉倒影那一遍（多畫一遍縮小的場景）：
+ * - 手機與平板（主要指標是手指）：螢幕的像素多、顯示卡的填充率低，多畫一遍場景最容易掉幀。
+ * - CPU 軟體算圖：每多一個 draw call 都是 CPU 在算，本來就只有個位數到二十幾幀。
+ */
+export function skipsGroundReflection(hints: QualityHints): boolean {
+  return hints.coarsePointer === true || isSoftwareRenderer(hints.rendererName);
+}
+
+/**
  * 決議畫質：有效的 `?quality=` > 自動選擇。
- * 自動選擇時，手機與平板拿掉倒影那一遍（withoutGroundReflection）；`?quality=` 明確指定的級別照表給，不打折。
+ * 自動選擇時，手機、平板與軟體算圖拿掉倒影那一遍（skipsGroundReflection）；`?quality=` 明確指定的級別照表給，不打折。
  */
 export function resolveQuality(urlSearch: string, hints: QualityHints): ResolvedQuality {
   const requested = parseQualityParam(urlSearch);
@@ -289,7 +297,7 @@ export function resolveQuality(urlSearch: string, hints: QualityHints): Resolved
   }
   const settings = qualitySettings(chooseAutoQuality(hints));
   return {
-    settings: hints.coarsePointer === true ? withoutGroundReflection(settings) : settings,
+    settings: skipsGroundReflection(hints) ? withoutGroundReflection(settings) : settings,
     source: 'auto',
   };
 }
