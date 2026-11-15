@@ -1,6 +1,15 @@
 // 場景擺設：佈局（數量跟著畫質級別、通路淨空、同種子可重現）、網格（全部 InstancedMesh、真光源數、光錐不進環境光遮蔽）、
 // 場地的固定陰影範圍，以及「純視覺」的保證（判定與物理的程式不認得它們）。不開 WebGL。
-import { InstancedMesh, Mesh, OrthographicCamera, SpotLight, Vector3, type Object3D } from 'three';
+import {
+  Color,
+  InstancedMesh,
+  Mesh,
+  OrthographicCamera,
+  SpotLight,
+  Vector3,
+  type BufferGeometry,
+  type Object3D,
+} from 'three';
 import { describe, expect, test } from 'vitest';
 import { DEFAULT_SEED } from '../src/core/gameConfig';
 import { ftToM } from '../src/core/units';
@@ -22,7 +31,14 @@ import {
   type LotLayout,
   type PropCategory,
 } from '../src/props/lotLayout';
-import { createLotProps, lampHeadPosition } from '../src/props/lotProps';
+import {
+  createBinGeometry,
+  createCanopyGeometry,
+  createLotProps,
+  createSignGeometry,
+  createTrunkGeometry,
+  lampHeadPosition,
+} from '../src/props/lotProps';
 import { PARKED_CAR_BODY_PARTS, createParkedCars, parkedCarPlates } from '../src/props/parkedCars';
 import { SKIP_AMBIENT_OCCLUSION } from '../src/render/ambientOcclusionFlag';
 import { QUALITY_LEVELS, usesHdrChain, type QualityLevel } from '../src/render/quality';
@@ -517,6 +533,116 @@ describe('擺設的網格', () => {
     expect(instances[0]).toBeLessThan(instances[1] ?? 0);
     expect(instances[1]).toBeLessThan(instances[2] ?? 0);
     expect(instances[2]).toBeLessThanOrEqual(instances[3] ?? 0);
+  });
+});
+
+describe('擺設的模型（樹、垃圾桶、標誌）', () => {
+  /** 幾何裡每個頂點的位置。 */
+  function verticesOf(geometry: BufferGeometry): Vector3[] {
+    const positions = geometry.getAttribute('position');
+    return Array.from({ length: positions.count }, (_, index) =>
+      new Vector3().fromBufferAttribute(positions, index),
+    );
+  }
+
+  /** 幾何裡頂點顏色等於 hex 的頂點。 */
+  function verticesColored(geometry: BufferGeometry, hex: number): Vector3[] {
+    const colors = geometry.getAttribute('color');
+    const wanted = new Color(hex);
+    return verticesOf(geometry).filter(
+      (_, index) =>
+        Math.abs(colors.getX(index) - wanted.r) < 1e-4 &&
+        Math.abs(colors.getY(index) - wanted.g) < 1e-4 &&
+        Math.abs(colors.getZ(index) - wanted.b) < 1e-4,
+    );
+  }
+
+  test('樹冠 high：一叢一叢的葉團，外接球半徑 1、法線平滑、頂點顏色上亮下暗', () => {
+    const canopy = createCanopyGeometry('high');
+    const vertices = verticesOf(canopy);
+    const reach = Math.max(...vertices.map((vertex) => vertex.length()));
+    expect(reach).toBeCloseTo(1, 5);
+    // 不是一顆球：最靠近中心的表面頂點比外接球小很多（葉團之間有凹處）。
+    expect(canopy.getIndex()).not.toBeNull();
+    const triangles = (canopy.getIndex()?.count ?? 0) / 3;
+    expect(triangles).toBeGreaterThan(600);
+    expect(triangles).toBeLessThan(2000);
+    const normals = canopy.getAttribute('normal');
+    for (let index = 0; index < normals.count; index += 1) {
+      expect(new Vector3().fromBufferAttribute(normals, index).length()).toBeCloseTo(1, 3);
+    }
+    // 頂點顏色：最高的那個頂點比最低的那個亮。
+    const colors = canopy.getAttribute('color');
+    const byHeight = vertices.map((vertex, index) => ({ y: vertex.y, green: colors.getY(index) }));
+    byHeight.sort((a, b) => a.y - b.y);
+    expect(byHeight.at(-1)?.green ?? 0).toBeGreaterThan((byHeight[0]?.green ?? 1) + 0.2);
+  });
+
+  test('樹冠 low：面數與原本的多面體相同（80 個三角形），不多出幾何', () => {
+    const canopy = createCanopyGeometry('low');
+    const index = canopy.getIndex();
+    const triangles = (index === null ? canopy.getAttribute('position').count : index.count) / 3;
+    expect(triangles).toBe(80);
+    expect(canopy.getAttribute('color')).toBeDefined();
+  });
+
+  test('樹幹：高 1、桿身半徑不超過 1，只有根部往外張開一點', () => {
+    const vertices = verticesOf(createTrunkGeometry());
+    const radius = (vertex: Vector3): number => Math.hypot(vertex.x, vertex.z);
+    expect(Math.min(...vertices.map((vertex) => vertex.y))).toBeCloseTo(0, 6);
+    expect(Math.max(...vertices.map((vertex) => vertex.y))).toBeCloseTo(1, 6);
+    const base = Math.max(...vertices.filter((vertex) => vertex.y < 1e-6).map(radius));
+    expect(base).toBeGreaterThan(1.1);
+    expect(base).toBeLessThan(1.3);
+    for (const vertex of vertices.filter((candidate) => candidate.y >= 0.2)) {
+      expect(radius(vertex)).toBeLessThanOrEqual(1 + 1e-6);
+    }
+  });
+
+  test('垃圾桶：圓形的佔地、桶身上有罩與圓頂，前後各一個黑色的投入口', () => {
+    const bin = createBinGeometry();
+    bin.computeBoundingBox();
+    const size = bin.boundingBox?.getSize(new Vector3()) ?? new Vector3();
+    expect(size.x).toBeCloseTo(size.z, 2);
+    expect(size.y).toBeGreaterThan(ftToM(3.5));
+    expect(size.y).toBeLessThan(ftToM(4.2));
+    expect(bin.boundingBox?.min.y).toBeCloseTo(0, 6);
+    const slots = verticesColored(bin, LOT_PROPS_CONFIG.binSlotColor);
+    expect(slots.some((vertex) => vertex.z > 0)).toBe(true);
+    expect(slots.some((vertex) => vertex.z < 0)).toBe(true);
+    for (const vertex of slots) {
+      expect(vertex.y).toBeGreaterThan(ftToM(3));
+    }
+  });
+
+  test('標誌：藍色的牌面上有白色的邊框與「P」，正反兩面都有，而且都在牌面範圍內', () => {
+    const sign = createSignGeometry();
+    const plate = verticesColored(sign, LOT_PROPS_CONFIG.signPlateColor);
+    const marks = verticesColored(sign, LOT_PROPS_CONFIG.signMarkColor);
+    expect(plate.length).toBe(24);
+    // 邊框 4 塊 + 「P」4 塊，正反兩面。
+    expect(marks.length).toBe(2 * 8 * 24);
+    const plateMaxZ = Math.max(...plate.map((vertex) => vertex.z));
+    expect(Math.max(...marks.map((vertex) => vertex.z))).toBeGreaterThan(plateMaxZ);
+    expect(Math.min(...marks.map((vertex) => vertex.z))).toBeLessThan(-plateMaxZ);
+    const plateMaxX = Math.max(...plate.map((vertex) => vertex.x));
+    const plateMinY = Math.min(...plate.map((vertex) => vertex.y));
+    const plateMaxY = Math.max(...plate.map((vertex) => vertex.y));
+    for (const vertex of marks) {
+      expect(Math.abs(vertex.x)).toBeLessThan(plateMaxX);
+      expect(vertex.y).toBeGreaterThan(plateMinY);
+      expect(vertex.y).toBeLessThan(plateMaxY);
+    }
+    // 「P」不是左右對稱的：從正面（−Z）看，豎的那一筆在左邊（+X），右邊是口字。
+    const front = marks.filter((vertex) => vertex.z < 0);
+    const middleY = (plateMinY + plateMaxY) / 2;
+    const lowerHalf = front.filter(
+      (vertex) => vertex.y < middleY - 0.05 && Math.abs(vertex.x) < 0.6 * plateMaxX && vertex.y > plateMinY + 0.1,
+    );
+    expect(lowerHalf.length).toBeGreaterThan(0);
+    for (const vertex of lowerHalf) {
+      expect(vertex.x).toBeGreaterThan(0);
+    }
   });
 });
 

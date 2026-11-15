@@ -17,12 +17,13 @@ import {
   MeshBasicMaterial,
   MeshStandardMaterial,
   Quaternion,
+  SphereGeometry,
   SpotLight,
   Vector3,
   type BufferGeometry,
   type Material,
 } from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { forward, headingToRotationY } from '../core/heading';
 import { degToRad, ftToM } from '../core/units';
 import { createScenerySurface } from '../materials/surfaceMaterial';
@@ -427,7 +428,88 @@ function addLamps(
   }
 }
 
-/** 樹：樹幹（圓柱）＋兩團樹冠；灌木是貼地的一團。樹冠與灌木共用一個 InstancedMesh。 */
+/** 樹冠的葉團：[中心 x, y, z, 半徑]，以整團樹冠的半徑為 1。第一團是主體，其餘繞著它、朝上與朝四周鼓出去。 */
+const CANOPY_LOBES: readonly (readonly [number, number, number, number])[] = [
+  [0, -0.05, 0, 0.74],
+  [0.52, 0.12, 0.14, 0.46],
+  [-0.48, 0.02, 0.3, 0.5],
+  [0.08, 0.1, -0.54, 0.47],
+  [-0.14, 0.44, 0.06, 0.48],
+  [0.24, -0.12, 0.5, 0.44],
+  [-0.36, 0.16, -0.36, 0.42],
+];
+
+/** 葉團表面的起伏（固定的幾道正弦波，不用亂數）：回傳 −1 到 1。 */
+function canopyRipple(x: number, y: number, z: number): number {
+  return (
+    0.6 * Math.sin(5.1 * x + 1.3) * Math.sin(4.3 * y + 0.7) * Math.sin(5.7 * z + 2.1) +
+    0.4 * Math.sin(9.7 * x + 3.1 * y + 0.4) * Math.sin(8.3 * z - 2.9 * y + 1.9)
+  );
+}
+
+/**
+ * 樹冠／灌木的單位幾何（外接球半徑 1，中心在原點）。
+ * - high：一團主體加幾團小葉團，表面有起伏、法線平滑，頂點顏色由下到上漸亮、凹處偏暗——看起來是一叢一叢的葉子。
+ * - low：一顆面數很少的多面體（與原本相同的面數），交給材質用平面著色。
+ */
+export function createCanopyGeometry(detail: VehicleDetail): BufferGeometry {
+  if (detail === 'low') {
+    return tinted(new IcosahedronGeometry(1, 1), 0xffffff);
+  }
+  const lobes = CANOPY_LOBES.map(([cx, cy, cz, radius], index) => {
+    const lobe = new IcosahedronGeometry(radius, index === 0 ? 3 : 2);
+    lobe.deleteAttribute('uv');
+    lobe.deleteAttribute('normal');
+    return lobe.translate(cx, cy, cz);
+  });
+  const canopy = mergeVertices(mergeGeometries(lobes), 1e-4);
+  const positions = canopy.getAttribute('position');
+  const vertex = new Vector3();
+  let reach = 0;
+  for (let index = 0; index < positions.count; index += 1) {
+    vertex.fromBufferAttribute(positions, index);
+    // 沿著從樹冠中心往外的方向推進推出，葉團之間的交界才不會裂開。
+    const ripple = canopyRipple(vertex.x, vertex.y, vertex.z);
+    vertex.multiplyScalar(1 + 0.11 * ripple);
+    positions.setXYZ(index, vertex.x, vertex.y, vertex.z);
+    reach = Math.max(reach, vertex.length());
+  }
+  canopy.scale(1 / reach, 1 / reach, 1 / reach);
+  canopy.computeVertexNormals();
+  // 頂點顏色：樹冠底部與凹進去的地方暗（葉子互相遮住），頂部與鼓出來的地方亮。
+  const colors = new Float32Array(positions.count * 3);
+  for (let index = 0; index < positions.count; index += 1) {
+    vertex.fromBufferAttribute(positions, index);
+    const height = Math.min(Math.max((vertex.y + 0.9) / 1.6, 0), 1);
+    const bulge = Math.min(Math.max((vertex.length() - 0.55) / 0.45, 0), 1);
+    const shade = 0.5 + 0.32 * height + 0.18 * bulge;
+    // 鼓出來的葉尖略偏黃綠。
+    colors[index * 3] = shade * (1 + 0.1 * bulge);
+    colors[index * 3 + 1] = shade;
+    colors[index * 3 + 2] = shade * (1 - 0.12 * bulge);
+  }
+  canopy.setAttribute('color', new BufferAttribute(colors, 3));
+  return canopy;
+}
+
+/**
+ * 樹幹的單位幾何（高 1、頂端半徑 0.7、桿身半徑 1）：根部往外張開一點，不是一根直直插進地面的圓柱。
+ */
+export function createTrunkGeometry(): BufferGeometry {
+  const trunk = new CylinderGeometry(0.7, 1, 1, 8, 5).translate(0, 0.5, 0);
+  const positions = trunk.getAttribute('position');
+  for (let index = 0; index < positions.count; index += 1) {
+    const y = positions.getY(index);
+    // 最底下五分之一往外張：地面處比桿身粗四分之一。
+    const flare = 1 + 0.25 * Math.max(1 - y / 0.2, 0) ** 2;
+    positions.setX(index, positions.getX(index) * flare);
+    positions.setZ(index, positions.getZ(index) * flare);
+  }
+  trunk.computeVertexNormals();
+  return trunk;
+}
+
+/** 樹：樹幹（根部張開的圓柱）＋兩團樹冠；灌木是貼地的一團。樹冠與灌木共用一個 InstancedMesh。 */
 function addPlants(
   group: Group,
   trees: readonly PropPlacement[],
@@ -436,7 +518,7 @@ function addPlants(
 ): void {
   const trunkRadiusM = ftToM(0.55);
   const trunks = instanced(
-    new CylinderGeometry(0.7, 1, 1, 8).translate(0, 0.5, 0),
+    createTrunkGeometry(),
     // 樹不在材質庫裡：樹幹照舊是單色。
     new MeshStandardMaterial({ color: LOT.trunkColor, roughness: 0.95 }),
     trees.map((tree) => ({
@@ -489,11 +571,13 @@ function addPlants(
     colors.push(pick(LOT.foliageColors, bush.variant, secondary(bush.variant)));
   }
   const foliage = instanced(
-    new IcosahedronGeometry(1, detail === 'high' ? 2 : 1),
+    createCanopyGeometry(detail),
     new MeshStandardMaterial({
       color: 0xffffff,
       roughness: LOT.foliageRoughness,
-      flatShading: true,
+      // high 的樹冠自己有平滑的法線與明暗（頂點顏色）；low 是多面體，用平面著色。
+      flatShading: detail === 'low',
+      vertexColors: true,
     }),
     blobs,
     { name: 'foliage', castShadow: true, colors },
@@ -563,45 +647,130 @@ export function createTrafficConeGeometry(): BufferGeometry {
   ]);
 }
 
-/** 垃圾桶：桶身＋蓋子。 */
+/**
+ * 垃圾桶：底圈、略往上張的桶身（上下各一道凸出的箍）、深色的罩（前後各一個投入口）與圓頂。
+ * 佔地是圓的，高度與原本相同（桶身 3 ft＋罩與圓頂）。
+ */
 export function createBinGeometry(): BufferGeometry {
   const bodyHeightM = ftToM(3);
-  const lidHeightM = ftToM(0.3);
+  const bottomM = ftToM(0.85);
+  const topM = ftToM(1);
+  const segments = 16;
+  const radiusAt = (yM: number): number => bottomM + ((topM - bottomM) * yM) / bodyHeightM;
+  /** 桶身上的一道箍：比桶身凸出一點的矮圓柱。 */
+  const hoop = (yM: number, heightM: number, color: number): BufferGeometry =>
+    tinted(
+      new CylinderGeometry(
+        radiusAt(yM + heightM / 2) + ftToM(0.04),
+        radiusAt(yM - heightM / 2) + ftToM(0.04),
+        heightM,
+        segments,
+      ).translate(0, yM, 0),
+      color,
+    );
+  const hoodHeightM = ftToM(0.62);
+  const hoodRadiusM = ftToM(1.04);
+  /** 投入口：貼著罩面的一段弧（張角、高度、比罩面凸出多少）。 */
+  const slot = { arcRad: 1.05, height: ftToM(0.34), proud: ftToM(0.015) };
+  const slotY = bodyHeightM + hoodHeightM * 0.52;
   return mergeGeometries([
     tinted(
-      new CylinderGeometry(ftToM(1), ftToM(0.85), bodyHeightM, 14).translate(0, bodyHeightM / 2, 0),
+      new CylinderGeometry(topM, bottomM, bodyHeightM, segments).translate(0, bodyHeightM / 2, 0),
       LOT.binColor,
     ),
+    hoop(ftToM(0.12), ftToM(0.24), LOT.binLidColor),
+    hoop(bodyHeightM * 0.36, ftToM(0.09), LOT.binColor),
+    hoop(bodyHeightM * 0.72, ftToM(0.09), LOT.binColor),
+    // 罩：比桶口略大的一圈，上面一個壓扁的圓頂。
     tinted(
-      new CylinderGeometry(ftToM(1.08), ftToM(1.08), lidHeightM, 14).translate(
+      new CylinderGeometry(hoodRadiusM, ftToM(1.08), hoodHeightM, segments).translate(
         0,
-        bodyHeightM + lidHeightM / 2,
+        bodyHeightM + hoodHeightM / 2,
         0,
       ),
       LOT.binLidColor,
     ),
+    tinted(
+      new SphereGeometry(hoodRadiusM, segments, 5, 0, 2 * Math.PI, 0, Math.PI / 2)
+        .scale(1, 0.32, 1)
+        .translate(0, bodyHeightM + hoodHeightM, 0),
+      LOT.binLidColor,
+    ),
+    // 投入口：前後各一個貼著罩面的黑色開口（一段比罩面略大的圓弧面）。
+    ...[0, Math.PI].map((centerRad) =>
+      tinted(
+        new CylinderGeometry(
+          hoodRadiusM + slot.proud,
+          hoodRadiusM + slot.proud,
+          slot.height,
+          6,
+          1,
+          true,
+          centerRad - slot.arcRad / 2,
+          slot.arcRad,
+        ).translate(0, slotY, 0),
+        LOT.binSlotColor,
+      ),
+    ),
   ]);
 }
 
-/** 標誌：一根桿子、頂端一塊藍色方牌，正反兩面各一塊白色的小方塊。 */
-function createSignGeometry(): BufferGeometry {
+/**
+ * 標誌：一根桿子、頂端一塊藍色的停車標誌牌——白色的邊框，中間一個白色的「P」（幾塊小方塊拼的），正反兩面都有。
+ */
+export function createSignGeometry(): BufferGeometry {
   const poleHeightM = ftToM(7.4);
   const plateM = ftToM(1.7);
   const plateThicknessM = ftToM(0.08);
   const plateY = poleHeightM - plateM / 2;
-  const markM = plateM * 0.5;
+  /** 牌面上的一塊白色（凸出牌面一點）：x、y 是相對牌面中心的位置。 */
+  const proudM = plateThicknessM * 0.8;
+  const mark = (x: number, y: number, width: number, height: number): BufferGeometry =>
+    tinted(
+      new BoxGeometry(width, height, proudM).translate(x, plateY + y, -plateThicknessM / 2),
+      LOT.signMarkColor,
+    );
+  const borderM = plateM * 0.045;
+  const edgeM = plateM / 2 - borderM * 1.6;
+  const strokeM = plateM * 0.11;
+  // 「P」：一豎，加上上半部的一個口字（上橫、下橫、右豎）。
+  const letterHeightM = plateM * 0.56;
+  const bowlWidthM = plateM * 0.3;
+  const bowlHeightM = letterHeightM * 0.56;
+  const stemX = -bowlWidthM / 2;
+  const face = [
+    mark(0, edgeM, 2 * edgeM + borderM, borderM),
+    mark(0, -edgeM, 2 * edgeM + borderM, borderM),
+    mark(-edgeM, 0, borderM, 2 * edgeM + borderM),
+    mark(edgeM, 0, borderM, 2 * edgeM + borderM),
+    mark(stemX, 0, strokeM, letterHeightM),
+    mark(stemX + bowlWidthM / 2, letterHeightM / 2 - strokeM / 2, bowlWidthM, strokeM),
+    mark(stemX + bowlWidthM / 2, letterHeightM / 2 - bowlHeightM + strokeM / 2, bowlWidthM, strokeM),
+    mark(stemX + bowlWidthM, letterHeightM / 2 - bowlHeightM / 2, strokeM, bowlHeightM),
+  ];
+  // 朝 −Z 的那一面從外面看：左邊是 +X，所以先左右鏡射成正的；背面再繞 Y 轉半圈。
+  const front = mergeGeometries(face).scale(-1, 1, 1);
+  // 鏡射會把三角形的正反面翻過來：把索引的順序換回來。
+  const index = front.getIndex();
+  if (index !== null) {
+    for (let triangle = 0; triangle + 2 < index.count; triangle += 3) {
+      const b = index.getX(triangle + 1);
+      index.setX(triangle + 1, index.getX(triangle + 2));
+      index.setX(triangle + 2, b);
+    }
+  }
+  front.computeVertexNormals();
   return mergeGeometries([
     tinted(
       new CylinderGeometry(ftToM(0.09), ftToM(0.09), poleHeightM, 6).translate(0, poleHeightM / 2, 0),
       LOT.signPoleColor,
     ),
     tinted(new BoxGeometry(plateM, plateM, plateThicknessM).translate(0, plateY, 0), LOT.signPlateColor),
-    tinted(
-      new BoxGeometry(markM, markM, plateThicknessM * 1.6).translate(0, plateY, 0),
-      LOT.signMarkColor,
-    ),
+    front,
+    front.clone().rotateY(Math.PI),
   ]);
 }
+
 
 /**
  * 監視器：掛在路燈桿上的一支短臂＋槍型機身＋鏡頭（本地座標：桿子在原點，朝 −Z 伸出去、往下俯）。

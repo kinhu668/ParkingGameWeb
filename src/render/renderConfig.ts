@@ -1137,6 +1137,8 @@ export const LOT_PROPS_CONFIG = {
   /** 垃圾桶、交通錐、標誌、排水孔蓋的顏色。 */
   binColor: 0x2f4f3f,
   binLidColor: 0x25282c,
+  /** 垃圾桶投入口（黑的開口）。 */
+  binSlotColor: 0x0b0c0d,
   trafficConeColor: 0xe2571c,
   trafficConeStripeColor: 0xe9e6dc,
   trafficConeBaseColor: 0x1b1c1e,
