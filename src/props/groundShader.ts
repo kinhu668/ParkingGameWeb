@@ -583,8 +583,8 @@ const FRAGMENT_MIRROR = /* glsl */ `
 	float groundWater = mix( uGroundMirror.x, uGroundMirror.y, pow( 1.0 - groundCosView, uGroundMirrorLook.z ) );
 	float groundMirrorAmount = uGroundMirrorLook.x * groundMirrorMask * mix( groundFilm, groundWater, groundPuddle );
 	#ifdef GROUND_RIPPLES
-		// 漣漪：水面朝鏡頭傾斜的那一側映到比較亮的天空，背對的那一側比較暗，一圈一圈才看得出來。
-		groundMirrorAmount *= clamp( 1.0 + uGroundRipple.z * dot( groundRipple, normalize( vGroundXZ - cameraPosition.xz ) ), 0.0, 2.0 );
+		// 漣漪：水面沿視線方向往前傾與往後傾的兩側，反射率一亮一暗，一圈一圈才看得出來（不超過 1：反射走的光不會比照進來的多）。
+		groundMirrorAmount = min( groundMirrorAmount * clamp( 1.0 + uGroundRipple.z * dot( groundRipple, normalize( vGroundXZ - cameraPosition.xz ) ), 0.0, 2.0 ), 1.0 );
 	#endif
 	vec3 groundMirror = radiance * uGroundMirrorSky;
 	#ifdef GROUND_PLANAR_TAPS
