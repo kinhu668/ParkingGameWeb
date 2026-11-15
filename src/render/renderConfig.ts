@@ -892,6 +892,8 @@ export const CAR_VISUAL_CONFIG = {
   rearWindowRakeM: ftToM(2.3),
   /** 車頂與引擎蓋中線比兩側高出的弧度。 */
   crownM: ftToM(0.09),
+  /** 車頂鈑金的最高點比車高低這麼多：留給貼在車頂上的天窗玻璃與接縫；整台車最高的是天線的頂端，剛好等於車高。 */
+  roofFittingAllowanceM: 0.006,
   /** 車艙底部比鈑金側面每側內縮（肩線）。 */
   shoulderInsetM: ftToM(0.25),
   /** 車艙頂部比底部每側再內縮（側窗內傾）。 */

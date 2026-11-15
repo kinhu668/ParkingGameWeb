@@ -104,8 +104,12 @@ const FIT = {
   archLipM: { proud: 0.008, face: 0.02, chamfer: 0.016, returnDepth: 0.024, legBottom: 0.285 },
   /** 窗台的鍍鉻飾條：斷面的邊長、比窗台往外、往上多少。 */
   beltlineM: { thickness: 0.011, out: 0.003, up: 0.004 },
+  /** 天窗：前緣在車頂前緣後方多遠、前後長度、半寬，玻璃比車頂高多少。 */
+  sunroofM: { behindHeader: 0.17, length: 0.6, halfWidth: 0.37, lift: 0.004 },
+  /** 天線：後葉子板上一根直立的細桿（x、在後擋下緣後方多遠、粗細）；頂端剛好是車高，是整台車最高的地方。 */
+  antennaM: { x: -0.6, behindRearWindow: 0.16, thickness: 0.007 },
   /** 排氣尾管：半徑、長度、中心的 x 與高度、管口比車尾內縮多少。 */
-  exhaustM: { radius: 0.026, length: 0.13, x: -0.4, y: 0.168, insetFromTail: 0.014 },
+  exhaustM: { radius: 0.026, length: 0.13, x: -0.4, y: 0.218, insetFromTail: 0.014 },
   /**
    * 車外後視鏡：鏡殼的寬、高、前後深度，中心比前擋下緣的腰線高多少、在前擋下緣後方多遠，
    * 以及接到車門的支臂。鏡殼最外側剛好在車寬的一半。
@@ -495,6 +499,38 @@ function createArchLips(segments: number): BufferGeometry {
   return builder.build();
 }
 
+/** 天窗：車頂上一圈黑色的接縫，裡面一片跟著車頂弧度的深色玻璃。 */
+function createSunroof(): { seam: BufferGeometry; glass: BufferGeometry } {
+  const roof = FIT.sunroofM;
+  const fromZM = L.windshieldTopZM + roof.behindHeader;
+  const toZM = fromZM + roof.length;
+  const xs = steps(-roof.halfWidth, roof.halfWidth, 8);
+  const zs = steps(fromZM, toZM, 4);
+  const onRoof = (xM: number, zM: number, liftM: number): Point3 => [
+    xM,
+    bodyTopHeightM(zM, xM) + liftM,
+    zM,
+  ];
+  const outline: Point3[] = [
+    ...zs.map((zM) => onRoof(-roof.halfWidth, zM, 0)),
+    ...xs.slice(1).map((xM) => onRoof(xM, toZM, 0)),
+    ...[...zs].reverse().slice(1).map((zM) => onRoof(roof.halfWidth, zM, 0)),
+    ...[...xs].reverse().slice(1).map((xM) => onRoof(xM, fromZM, 0)),
+  ];
+  const insetM = FIT.seamWidthM;
+  const glass = new FacetBuilder()
+    .grid(
+      steps(fromZM + insetM, toZM - insetM, 4).map((zM) =>
+        steps(-roof.halfWidth + insetM, roof.halfWidth - insetM, 8).map((xM) =>
+          onRoof(xM, zM, roof.lift),
+        ),
+      ),
+      [0, 1, 0],
+    )
+    .build();
+  return { seam: merged(polyline(outline, FIT.seamWidthM)), glass };
+}
+
 /** 窗台的鍍鉻飾條：左右各一條，沿側窗下緣從 A 柱根部到 C 柱。 */
 function createBeltline(pieces: number): BufferGeometry {
   const { thickness, out, up } = FIT.beltlineM;
@@ -840,6 +876,25 @@ export function createCarFittings(detail: VehicleDetail = 'high'): CarFitting[] 
     ),
   );
   add('trim:beltline', 'chrome', createBeltline(detail === 'high' ? 14 : 7));
+  const sunroof = createSunroof();
+  add('sunroof:seam', 'trim', sunroof.seam);
+  add('sunroof:glass', 'glass', sunroof.glass);
+  // 天線：後葉子板上一根直立的細桿，底下一個小座。
+  const antenna = FIT.antennaM;
+  const antennaZM = L.rearWindowBaseZM + antenna.behindRearWindow;
+  const antennaYM = bodyTopHeightM(antennaZM, antenna.x);
+  add(
+    'antenna',
+    'trim',
+    merged([
+      box([0.03, 0.012, 0.03], [antenna.x, antennaYM + 0.004, antennaZM]),
+      createBeamGeometry(
+        [antenna.x, antennaYM, antennaZM],
+        [antenna.x, VEHICLE_CONFIG_SI.heightM, antennaZM],
+        antenna.thickness,
+      ),
+    ]),
+  );
   const exhaust = FIT.exhaustM;
   add(
     'exhaust:tip',

@@ -133,10 +133,12 @@ function beltHeightM(zM: number): number {
 }
 
 /**
- * 車頂最高點比前擋下緣的腰線高多少（不含車頂弧度）：最高點那一站的車頂中線剛好等於車高。
+ * 車頂最高點比前擋下緣的腰線高多少（不含車頂弧度）：最高點那一站的車頂中線比車高低 roofFittingAllowanceM
+ * （貼在車頂上的天窗不會高過車高）。
  * 車頂線是以前擋下緣的腰線為基準的絕對高度，腰線往車尾升高不會把車頂頂高。
  */
-const GREENHOUSE_PEAK_M = VEHICLE_CONFIG_SI.heightM - VISUAL.crownM - L.cowlHeightM;
+const GREENHOUSE_PEAK_M =
+  VEHICLE_CONFIG_SI.heightM - VISUAL.roofFittingAllowanceM - VISUAL.crownM - L.cowlHeightM;
 /** 後擋下緣的車頂線比例：剛好落在升高後的行李廂腰線上，玻璃與行李廂蓋接得起來。 */
 const REAR_BASE_FRACTION = VISUAL.deckRiseM / GREENHOUSE_PEAK_M;
 

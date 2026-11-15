@@ -516,6 +516,41 @@ describe('車身配件 carFittings（燈組、車牌、門縫、保險桿、雨�
     expect(belt.max.x).toBeGreaterThan(BODY_LAYOUT.cabinHalfWidthM - 0.01);
   });
 
+  test('天窗貼在車頂上、不高過車高；天線立在後葉子板上，頂端剛好是車高', () => {
+    const glass = fittingBounds('sunroof:glass');
+    const seam = fittingBounds('sunroof:seam');
+    expect(glass.getCenter(new Vector3()).x).toBeCloseTo(0, 6);
+    expect(glass.min.z).toBeGreaterThan(BODY_LAYOUT.windshieldTopZM);
+    expect(glass.max.z).toBeLessThan(BODY_LAYOUT.rearWindowTopZM);
+    // 玻璃在接縫圍起來的範圍裡，比那裡的車頂高一點點（不與車頂重疊閃爍），但整個天窗不高過車高。
+    expect(glass.min.x).toBeGreaterThan(seam.min.x);
+    expect(glass.max.x).toBeLessThan(seam.max.x);
+    expect(glass.max.y).toBeGreaterThan(bodyTopHeightM(glass.getCenter(new Vector3()).z, 0));
+    expect(glass.max.y - bodyTopHeightM(glass.getCenter(new Vector3()).z, 0)).toBeLessThan(0.01);
+    expect(glass.max.y).toBeLessThan(VEHICLE_CONFIG_SI.heightM);
+    expect(seam.max.y).toBeLessThan(VEHICLE_CONFIG_SI.heightM);
+    // 車頂鈑金的最高點比車高低一點（留給天窗），差不到 1 公分。
+    const roofPeakM = Math.max(
+      ...Array.from({ length: 40 }, (_, index) =>
+        bodyTopHeightM(
+          BODY_LAYOUT.windshieldTopZM +
+            ((BODY_LAYOUT.rearWindowTopZM - BODY_LAYOUT.windshieldTopZM) * index) / 39,
+          0,
+        ),
+      ),
+    );
+    expect(roofPeakM).toBeLessThan(VEHICLE_CONFIG_SI.heightM);
+    expect(VEHICLE_CONFIG_SI.heightM - roofPeakM).toBeLessThan(0.01);
+
+    const antenna = fittingBounds('antenna');
+    expect(antenna.max.y).toBeCloseTo(VEHICLE_CONFIG_SI.heightM, 6);
+    expect(antenna.min.z).toBeGreaterThan(BODY_LAYOUT.rearWindowBaseZM);
+    expect(antenna.max.z).toBeLessThan(BODY_LAYOUT.tailStartZM);
+    expect(Math.abs(antenna.getCenter(new Vector3()).x)).toBeLessThan(BODY_LAYOUT.halfWidthM);
+    // 很細的一根：不到 4 公分寬（含底座）。
+    expect(antenna.max.x - antenna.min.x).toBeLessThan(0.04);
+  });
+
   test('車外後視鏡的鏡殼往前收小；背景車把後視鏡併進車身，外框剛好是車寬', () => {
     const shell = createDoorMirrorShellGeometry(1);
     shell.computeBoundingBox();
