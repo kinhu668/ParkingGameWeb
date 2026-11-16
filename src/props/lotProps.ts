@@ -391,6 +391,7 @@ function addLamps(
         hdr ? LOT.lampConeBrightness.hdr : LOT.lampConeBrightness.direct,
         shafts.air,
         shafts.quality,
+        shafts.depth,
       ),
       heads.map((position3) => ({
         x: position3.x,

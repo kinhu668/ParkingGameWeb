@@ -2,7 +2,9 @@
 // 幾何是一個開口的圓錐台（頂端在光源、沿本地 −Y 張開），只畫朝外的那一面、加色混合、不寫深度。
 // 亮度不是整面均勻：片段著色器算「視線穿過圓錐多長」（射線與圓錐求交，解析式），再乘上沿光軸的衰減，
 // 所以邊緣自然淡掉（弦長趨近 0）、正中間最亮、順著光軸看過去更亮——看起來是一團有厚度的光，不是一片貼紙。
-// 不需要深度貼圖，也不是全螢幕的 ray march：只有光柱蓋到的像素才算，低畫質也用同一套（段數少、沒有噪聲）。
+// 不是全螢幕的 ray march：只有光柱蓋到的像素才算，低畫質也用同一套（段數少、沒有噪聲）。
+// high／ultra 另外讀場景的深度（後製鏈上一幀畫的），把視線被車、被樓擋住之後的那一段光切掉：
+// 光錐罩住一台車時，車身只蓋上「鏡頭到車之間」那一點光，不會整台泡在光裡。low／medium 不讀深度。
 //
 // 霧氣的流動：一層很慢的三維噪聲調整亮度（光柱裡看得出水氣不均勻）。時間來自共用的 uniform；
 // `?fx=off` 與定格截圖不走時間，畫面是靜止的。噪聲只由世界座標與時間決定，不閃爍、可重現。
@@ -13,8 +15,12 @@ import {
   CylinderGeometry,
   FrontSide,
   ShaderMaterial,
+  Vector2,
   Vector3,
   type BufferGeometry,
+  type PerspectiveCamera,
+  type Scene,
+  type Texture,
 } from 'three';
 import type { LightShaftQualitySettings } from './quality';
 import { FOG_CONFIG, LIGHT_SHAFT_CONFIG as CONFIG } from './renderConfig';
@@ -44,10 +50,73 @@ export interface ShaftAir {
   readonly time: { value: number };
 }
 
-/** 建立光柱要的兩樣東西：所在的空氣與這個畫質級別的做法。 */
+/**
+ * 場景的深度，給光柱切掉被擋住的那一段用（著色器的 uniform；同一個場景的光柱共用同一組物件）。
+ * 由 framePipeline 每幀填：只有後製鏈畫主畫面的那一遍 on 才是 1；倒影、倒車小畫面用的是別的鏡頭，不能拿這張深度來比。
+ */
+export interface ShaftDepth {
+  readonly texture: { value: Texture | null };
+  readonly on: { value: number };
+  /** 深度貼圖的像素數。 */
+  readonly size: { value: Vector2 };
+  readonly cameraNear: { value: number };
+  readonly cameraFar: { value: number };
+}
+
+export function createShaftDepth(): ShaftDepth {
+  return {
+    texture: { value: null },
+    on: { value: 0 },
+    size: { value: new Vector2(1, 1) },
+    cameraNear: { value: 1 },
+    cameraFar: { value: 2 },
+  };
+}
+
+const SCENE_SHAFT_DEPTH = new WeakMap<Scene, ShaftDepth>();
+
+/** 登記這個場景的光柱共用的深度 uniform（scene.ts 建場景時呼叫，光柱有開深度的畫質級別才登記）。 */
+export function setSceneShaftDepth(scene: Scene, depth: ShaftDepth): void {
+  SCENE_SHAFT_DEPTH.set(scene, depth);
+}
+
+/**
+ * 後製鏈畫主畫面之前呼叫：把上一幀的場景深度交給這個場景的光柱。
+ * @param texture 上一幀的深度；null = 沒有可用的（第一幀、剛換場景），這一遍的光柱不切
+ * @returns 這個場景的光柱讀不讀深度（沒登記就是 false）
+ */
+export function beginShaftDepth(
+  scene: Scene,
+  texture: Texture | null,
+  size: Vector2,
+  camera: PerspectiveCamera,
+): boolean {
+  const depth = SCENE_SHAFT_DEPTH.get(scene);
+  if (depth === undefined) {
+    return false;
+  }
+  depth.texture.value = texture;
+  depth.on.value = texture === null ? 0 : 1;
+  depth.size.value.copy(size);
+  depth.cameraNear.value = camera.near;
+  depth.cameraFar.value = camera.far;
+  return true;
+}
+
+/** 主畫面畫完之後呼叫：之後用別的鏡頭畫這個場景（倒影、倒車小畫面）時光柱不讀深度。 */
+export function endShaftDepth(scene: Scene): void {
+  const depth = SCENE_SHAFT_DEPTH.get(scene);
+  if (depth !== undefined) {
+    depth.on.value = 0;
+  }
+}
+
+/** 建立光柱要的東西：所在的空氣、這個畫質級別的做法、（有開的話）場景的深度。 */
 export interface ShaftSetup {
   readonly air: ShaftAir;
   readonly quality: LightShaftQualitySettings;
+  /** 場景的深度；不給 = 光柱不讀深度（quality.depthFade 為 false 時也不讀）。 */
+  readonly depth?: ShaftDepth | undefined;
 }
 
 /**
@@ -56,7 +125,7 @@ export interface ShaftSetup {
  */
 export const DEFAULT_SHAFT_SETUP: ShaftSetup = {
   air: { strength: 1, fogNearM: FOG_CONFIG.nearM, fogFarM: FOG_CONFIG.farM, time: { value: 0 } },
-  quality: { radialSegments: 24, headlightBeams: 2, noiseOctaves: 0 },
+  quality: { radialSegments: 24, headlightBeams: 2, noiseOctaves: 0, depthFade: false },
 };
 
 /** 沿光軸的亮度（0–1）：along 是離光源端的比例（0 = 光源端、1 = 遠端）。與著色器裡的式子相同。 */
@@ -101,6 +170,15 @@ export function shaftChordM(
     return 0;
   }
   return Math.max(exit - entryM, 0);
+}
+
+/**
+ * 視線在光柱裡看得見的長度（公尺）：穿過光柱的那一段（chordM，從 entryM 開始）被場景裡的實體表面截斷。
+ * 表面比光柱近（sceneDistanceM ≤ entryM）是 0；比光柱的另一側還遠就是整段。與著色器裡的式子相同。
+ * @param sceneDistanceM 沿這條視線到最近的實體表面的距離
+ */
+export function shaftVisibleChordM(chordM: number, entryM: number, sceneDistanceM: number): number {
+  return Math.min(Math.max(sceneDistanceM - entryM, 0), chordM);
 }
 
 /**
@@ -173,6 +251,14 @@ const SHAFT_FRAGMENT_SHADER = /* glsl */ `
   varying vec3 vWorldPosition;
   varying float vViewDepth;
 
+  #ifdef SHAFT_DEPTH_FADE
+    uniform sampler2D sceneDepth;
+    uniform float sceneDepthOn;
+    uniform vec2 sceneDepthSize;
+    uniform float cameraNear;
+    uniform float cameraFar;
+  #endif
+
   #if SHAFT_NOISE_OCTAVES > 0
     // 整數雜湊（不用 sin）：同一個格點在每一台機器上都是同一個值。
     float latticeHash( ivec3 cell ) {
@@ -217,6 +303,15 @@ const SHAFT_FRAGMENT_SHADER = /* glsl */ `
       exit = min( ( - halfB + sqrt( max( halfB * halfB - a * c, 0.0 ) ) ) / a, slabExit );
     }
     float chord = clamp( exit - entry, 0.0, 4.0 * shaftLength );
+    #ifdef SHAFT_DEPTH_FADE
+      if ( sceneDepthOn > 0.5 ) {
+        // 視線被實體表面擋住之後的那一段不算（同 shaftVisibleChordM）。深度 → 沿鏡頭軸的距離 → 沿這條視線的距離。
+        float depth = texture2D( sceneDepth, gl_FragCoord.xy / sceneDepthSize ).x;
+        float sceneViewDepth = cameraNear * cameraFar / ( cameraFar - depth * ( cameraFar - cameraNear ) );
+        float sceneDistance = sceneViewDepth * entry / max( vViewDepth, 1e-4 );
+        chord = min( max( sceneDistance - entry, 0.0 ), chord );
+      }
+    #endif
 
     // 取弦的中點算「這一段光有多濃」：沿光軸的升起與衰減、越張越稀。
     vec3 middle = vLocalCamera + direction * ( entry + 0.5 * chord );
@@ -254,21 +349,35 @@ const SHAFT_FRAGMENT_SHADER = /* glsl */ `
  * 光柱的材質。
  * @param color 光的顏色（sRGB 十六進位）
  * @param brightness 最亮處加到畫面上的量（已經依「走不走後製鏈」選好的那一個）
+ * @param depth 場景的深度（ShaftSetup.depth）；quality.depthFade 為 true 而且有給，光柱才讀深度
  */
 export function createShaftMaterial(
   shape: ShaftShape,
   color: number,
   brightness: number,
   air: ShaftAir,
-  quality: Pick<LightShaftQualitySettings, 'noiseOctaves'>,
+  quality: Pick<LightShaftQualitySettings, 'noiseOctaves' | 'depthFade'>,
+  depth?: ShaftDepth,
 ): ShaderMaterial {
+  const defines: Record<string, string | number> = {
+    SHAFT_NOISE_OCTAVES: quality.noiseOctaves,
+    PARALLEL_EPSILON: CONFIG.parallelEpsilon.toExponential(),
+  };
+  const depthUniforms: ShaderMaterial['uniforms'] = {};
+  if (quality.depthFade && depth !== undefined) {
+    defines['SHAFT_DEPTH_FADE'] = '';
+    // 同一組物件：framePipeline 每幀填一次，所有光柱一起生效。
+    depthUniforms['sceneDepth'] = depth.texture;
+    depthUniforms['sceneDepthOn'] = depth.on;
+    depthUniforms['sceneDepthSize'] = depth.size;
+    depthUniforms['cameraNear'] = depth.cameraNear;
+    depthUniforms['cameraFar'] = depth.cameraFar;
+  }
   return new ShaderMaterial({
     name: 'LightShaftShader',
-    defines: {
-      SHAFT_NOISE_OCTAVES: quality.noiseOctaves,
-      PARALLEL_EPSILON: CONFIG.parallelEpsilon.toExponential(),
-    },
+    defines,
     uniforms: {
+      ...depthUniforms,
       shaftColor: { value: new Color(color).multiplyScalar(brightness * air.strength) },
       nearRadius: { value: shape.nearRadiusM },
       farRadius: { value: shape.farRadiusM },

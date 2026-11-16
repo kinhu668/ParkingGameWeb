@@ -94,7 +94,7 @@ import { SKIP_GROUND_REFLECTION } from './groundReflectionFlag';
 import { installHeightFog } from './heightFog';
 import { installToneLook } from './renderer';
 import { setSceneSun } from './lensFlare';
-import type { ShaftSetup } from './lightShaft';
+import { createShaftDepth, setSceneShaftDepth, type ShaftSetup } from './lightShaft';
 import { collectCameraBlockers } from './cameraBlockers';
 import { createOcclusionFade, type Point3, type SightBox } from './occlusionFade';
 import { fitShadowBox, type ShadowBox } from './shadowArea';
@@ -526,9 +526,12 @@ export function createGameScene(
   installToneLook(preset.look);
   // 光柱（路燈的光錐、車頭燈的光柱）：亮度跟著天氣，霧氣流動的時間全場景共用一個。
   const shaftTime = { value: 0 };
+  // 場景的深度（high、ultra）：framePipeline 每幀填，光柱被車與樓擋住的那一段才切得掉。
+  const shaftDepth = quality.lightShafts.depthFade ? createShaftDepth() : undefined;
   const shaftAir = (strength: number): ShaftSetup => ({
     air: { strength, fogNearM: preset.fog.nearM, fogFarM: preset.fog.farM, time: shaftTime },
     quality: quality.lightShafts,
+    depth: shaftDepth,
   });
 
   const scene = new Scene();
@@ -536,6 +539,9 @@ export function createGameScene(
   setScenePost(scene, preset.post);
   if (preset.post.sunFlare > 0) {
     setSceneSun(scene, { direction: sunDirection, color: preset.sun.color });
+  }
+  if (shaftDepth !== undefined) {
+    setSceneShaftDepth(scene, shaftDepth);
   }
   const skyDome = addSkyEnvironment(scene, renderer, quality, { ...preset, sunDirection }).dome;
   scene.add(skyDome);

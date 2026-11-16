@@ -56,6 +56,7 @@ import { SKIP_AMBIENT_OCCLUSION } from './ambientOcclusionFlag';
 import { DepthOfFieldPass, type LensFocus } from './depthOfField';
 import { groundReflectionOf } from './groundReflection';
 import { LensFlarePass } from './lensFlare';
+import { beginShaftDepth, endShaftDepth } from './lightShaft';
 import { MotionBlurPass, type MotionSubject } from './motionBlur';
 import {
   effectivePixelRatio,
@@ -503,11 +504,16 @@ export function createFramePipeline(
   const outputMaterial = createOutputMaterial(quality.lens, flarePass?.texture ?? null);
   composer.addPass(new ShaderPass(outputMaterial));
 
+  /** 環境光遮蔽那一遍的深度現在是哪個場景的（上一幀畫的）；光柱只在同一個場景的下一幀拿來用。 */
+  let depthScene: Scene | undefined;
+
   /** 後製鏈的緩衝區有沒有照畫布的大小設過；第一次一定要設。 */
   let composerSized = false;
   const fit = (camera: PerspectiveCamera): void => {
     const resized = fitRenderer(camera);
     if (resized || !composerSized) {
+      // 深度貼圖換了大小，內容作廢。
+      depthScene = undefined;
       // 後製鏈的每一張緩衝區（含環境光遮蔽、泛光自己的）都跟上繪圖緩衝區的大小。
       renderer.getDrawingBufferSize(size);
       composer.setSize(size.x, size.y);
@@ -552,7 +558,21 @@ export function createFramePipeline(
       renderer.info.reset();
       // 濕地的倒影（有的話）：先用鏡像鏡頭把場景畫進倒影貼圖，主畫面的地面才取樣得到。
       groundReflectionOf(scene)?.render(renderer, scene, camera);
+      // 光柱讀上一幀的場景深度（慢一幀）。只在這一遍讀：上面的倒影與別處的小畫面用的是別的鏡頭。
+      const shaftsReadDepth =
+        aoPass !== undefined &&
+        beginShaftDepth(scene, depthScene === scene ? aoPass.depthTexture : null, size, camera);
       composer.render();
+      if (aoPass !== undefined && shaftsReadDepth && depthScene !== scene) {
+        // 還沒有這個場景的深度（第一幀、剛換大小或換場景）：剛畫完的這一遍留下了，馬上用它重畫一遍。
+        // 定格與視窗大小改變後的重畫才會跟連續畫面一致，進關的第一幀光柱也不會跳一下。
+        beginShaftDepth(scene, aoPass.depthTexture, size, camera);
+        composer.readBuffer = sceneBuffer;
+        composer.writeBuffer = filterBuffer;
+        composer.render();
+      }
+      endShaftDepth(scene);
+      depthScene = aoPass === undefined ? undefined : scene;
       drawCalls = renderer.info.render.calls;
     },
     drawCalls: () => drawCalls,

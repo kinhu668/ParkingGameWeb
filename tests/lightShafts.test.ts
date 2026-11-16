@@ -1,6 +1,16 @@
 // 光柱（路燈的光錐、車頭燈的光柱）：哪些天氣、哪些畫質級別有；亮度跟著天氣；材質是加色、不寫深度、不進環境光遮蔽；
 // 「視線穿過圓錐多長」與沿光軸亮度的式子。不開 WebGL。
-import { AdditiveBlending, InstancedMesh, Mesh, ShaderMaterial, type Object3D } from 'three';
+import {
+  AdditiveBlending,
+  InstancedMesh,
+  Mesh,
+  PerspectiveCamera,
+  Scene,
+  ShaderMaterial,
+  Texture,
+  Vector2,
+  type Object3D,
+} from 'three';
 import { describe, expect, test } from 'vitest';
 import { DEFAULT_SEED } from '../src/core/gameConfig';
 import { WEATHER_IDS, type WeatherId } from '../src/core/weather';
@@ -10,10 +20,16 @@ import { createLotProps } from '../src/props/lotProps';
 import { SKIP_AMBIENT_OCCLUSION } from '../src/render/ambientOcclusionFlag';
 import {
   DEFAULT_SHAFT_SETUP,
+  beginShaftDepth,
+  createShaftDepth,
   createShaftGeometry,
+  createShaftMaterial,
+  endShaftDepth,
+  setSceneShaftDepth,
   shaftAxialBrightness,
   shaftChordM,
   shaftPeakBrightness,
+  shaftVisibleChordM,
   type ShaftSetup,
   type ShaftShape,
 } from '../src/render/lightShaft';
@@ -90,6 +106,7 @@ describe('畫質分級', () => {
       radialSegments: 12,
       headlightBeams: 1,
       noiseOctaves: 0,
+      depthFade: false,
     });
     let previous = QUALITY_PRESETS.low.lightShafts;
     for (const level of ['medium', 'high', 'ultra'] as const) {
@@ -237,6 +254,52 @@ describe('車頭燈的光柱', () => {
   });
 });
 
+describe('讀場景深度的光柱（high、ultra）', () => {
+  const shape = headlightShaftShape(2);
+  const air = DEFAULT_SHAFT_SETUP.air;
+
+  test('low、medium 不讀深度（著色器沒有那一段）；high、ultra 讀', () => {
+    for (const level of QUALITY_LEVELS) {
+      const quality = QUALITY_PRESETS[level].lightShafts;
+      expect(quality.depthFade, level).toBe(usesHdrChain(QUALITY_PRESETS[level]));
+      const material = createShaftMaterial(shape, 0xffffff, 1, air, quality, createShaftDepth());
+      expect('SHAFT_DEPTH_FADE' in (material.defines ?? {}), level).toBe(quality.depthFade);
+      expect('sceneDepth' in material.uniforms, level).toBe(quality.depthFade);
+    }
+    // 沒給深度（展示台、單元測試的擺設）就不讀，級別再高也一樣。
+    const bare = createShaftMaterial(shape, 0xffffff, 1, air, QUALITY_PRESETS.ultra.lightShafts);
+    expect('SHAFT_DEPTH_FADE' in (bare.defines ?? {})).toBe(false);
+  });
+
+  test('只有後製鏈畫主畫面的那一遍讀深度：開始時打開、結束後關掉；沒有可用的深度就不開', () => {
+    const scene = new Scene();
+    const camera = new PerspectiveCamera(50, 16 / 9, 0.3, 400);
+    const size = new Vector2(1280, 720);
+    const texture = new Texture();
+    // 沒登記的場景（展示台）：什麼都不做。
+    expect(beginShaftDepth(scene, texture, size, camera)).toBe(false);
+
+    const depth = createShaftDepth();
+    setSceneShaftDepth(scene, depth);
+    const material = createShaftMaterial(shape, 0xffffff, 1, air, QUALITY_PRESETS.high.lightShafts, depth);
+    expect(material.uniforms['sceneDepthOn']?.value).toBe(0);
+
+    expect(beginShaftDepth(scene, null, size, camera)).toBe(true);
+    expect(depth.on.value).toBe(0);
+
+    expect(beginShaftDepth(scene, texture, size, camera)).toBe(true);
+    // 材質拿的是同一組 uniform 物件：填一次，所有光柱一起生效。
+    expect(material.uniforms['sceneDepthOn']?.value).toBe(1);
+    expect(material.uniforms['sceneDepth']?.value).toBe(texture);
+    expect(depth.size.value.equals(size)).toBe(true);
+    expect(depth.cameraNear.value).toBe(0.3);
+    expect(depth.cameraFar.value).toBe(400);
+
+    endShaftDepth(scene);
+    expect(material.uniforms['sceneDepthOn']?.value).toBe(0);
+  });
+});
+
 describe('霧氣流動的時間', () => {
   test('同一個場景的光柱共用同一個時間 uniform；不走時間就是靜止的', () => {
     const time = { value: 0 };
@@ -315,6 +378,22 @@ describe('光柱的式子', () => {
       for (let index = 0; index < along.count; index += 1) {
         expect(along.getX(index)).toBeCloseTo(-position.getY(index) / shape.lengthM, 6);
       }
+    }
+  });
+
+  test('被實體表面擋住之後的那一段光不算：表面在光柱前面是 0、在光柱裡只算到表面、在後面是整段', () => {
+    // 視線走 10 m 進光柱，在裡面穿 4 m。
+    expect(shaftVisibleChordM(4, 10, 6)).toBe(0);
+    expect(shaftVisibleChordM(4, 10, 10)).toBe(0);
+    expect(shaftVisibleChordM(4, 10, 11.5)).toBeCloseTo(1.5, 9);
+    expect(shaftVisibleChordM(4, 10, 14)).toBe(4);
+    expect(shaftVisibleChordM(4, 10, 500)).toBe(4);
+    // 表面越遠看得見的光越多，不會倒退。
+    let previous = 0;
+    for (let distance = 8; distance <= 16; distance += 0.25) {
+      const visible = shaftVisibleChordM(4, 10, distance);
+      expect(visible).toBeGreaterThanOrEqual(previous);
+      previous = visible;
     }
   });
 

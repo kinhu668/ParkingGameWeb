@@ -169,6 +169,8 @@ export interface LightShaftQualitySettings {
   readonly headlightBeams: number;
   /** 霧氣流動的噪聲層數（0 = 沒有，亮度是平滑的）。 */
   readonly noiseOctaves: number;
+  /** 讀場景的深度，把被車、被樓擋住的那一段光切掉（要後製鏈的環境光遮蔽那一遍深度；low、medium 沒有）。 */
+  readonly depthFade: boolean;
 }
 
 /** 倒車輪胎痕（純視覺）：留在地上的段數上限與壽命。 */

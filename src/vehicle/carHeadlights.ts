@@ -146,6 +146,7 @@ function createHeadlightShafts(hdr: boolean, shafts: ShaftSetup): Mesh[] {
     hdr ? CONFIG.shaft.brightness.hdr : CONFIG.shaft.brightness.direct,
     shafts.air,
     shafts.quality,
+    shafts.depth,
   );
   const lateralOffsets = beams === 2 ? [-CONFIG.lampOffsetM, CONFIG.lampOffsetM] : [0];
   return lateralOffsets.map((lateralM) => {
