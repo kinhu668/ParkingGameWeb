@@ -13,8 +13,10 @@ import {
   qualitySettings,
   resolveQuality,
   skipsGroundReflection,
+  skipsLensEffects,
   usesHdrChain,
   withoutGroundReflection,
+  withoutLensEffects,
   type QualityHints,
   type QualityLevel,
 } from '../src/render/quality';
@@ -141,6 +143,12 @@ describe('chooseAutoQuality', () => {
     expect(chooseAutoQuality({ rendererName: 'llvmpipe (LLVM 15.0.7, 256 bits)' })).toBe('medium');
   });
 
+  test('手機與平板（主要指標是手指）→ medium，即使記憶體與核心數很多', () => {
+    expect(chooseAutoQuality({ ...CAPABLE, coarsePointer: true })).toBe('medium');
+    expect(chooseAutoQuality({ coarsePointer: true })).toBe('medium');
+    expect(chooseAutoQuality({ ...CAPABLE, coarsePointer: false })).toBe('high');
+  });
+
   test('一般裝置 → high', () => {
     expect(chooseAutoQuality(CAPABLE)).toBe('high');
   });
@@ -180,11 +188,15 @@ describe('chooseAutoQuality', () => {
 });
 
 describe('resolveQuality：有效的 ?quality= > 自動選擇', () => {
-  test('有效的 ?quality= 蓋過自動選擇（軟體算圖也照給）', () => {
+  test('有效的 ?quality= 蓋過自動選擇（軟體算圖也給那個級別，只少了景深、動態模糊、鏡頭光暈）', () => {
     for (const level of QUALITY_LEVELS) {
       const resolved = resolveQuality(`?quality=${level}`, { rendererName: SWIFTSHADER });
       expect(resolved.source).toBe('url');
-      expect(resolved.settings).toBe(QUALITY_PRESETS[level]);
+      expect(resolved.settings).toEqual(withoutLensEffects(QUALITY_PRESETS[level]));
+      expect(resolveQuality(`?quality=${level}`, CAPABLE)).toEqual({
+        settings: QUALITY_PRESETS[level],
+        source: 'url',
+      });
     }
   });
 
@@ -363,14 +375,16 @@ describe('濕地／積水的倒影（ground.reflection）的畫質矩陣', () =>
     }
   });
 
-  test('手機與平板（主要指標是手指）自動選到的級別不多畫倒影那一遍，其餘設定不變', () => {
+  test('手機與平板（主要指標是手指）自動選 medium，而且不多畫倒影那一遍，其餘設定不變', () => {
     const phone = resolveQuality('', { ...CAPABLE, coarsePointer: true });
     expect(phone.source).toBe('auto');
-    expect(phone.settings.level).toBe('high');
+    expect(phone.settings.level).toBe('medium');
     expect(phone.settings.ground.reflection).toBeNull();
-    expect(phone.settings).toEqual(withoutGroundReflection(QUALITY_PRESETS.high));
-    expect({ ...phone.settings, ground: QUALITY_PRESETS.high.ground }).toEqual(QUALITY_PRESETS.high);
-    // 低階的手機（medium）也一樣。
+    expect(phone.settings).toEqual(withoutGroundReflection(QUALITY_PRESETS.medium));
+    expect({ ...phone.settings, ground: QUALITY_PRESETS.medium.ground }).toEqual(
+      QUALITY_PRESETS.medium,
+    );
+    // 低階的手機也一樣。
     const lowEnd = resolveQuality('', { ...CAPABLE, deviceMemoryGb: 4, coarsePointer: true });
     expect(lowEnd.settings.level).toBe('medium');
     expect(lowEnd.settings.ground.reflection).toBeNull();
@@ -391,18 +405,15 @@ describe('濕地／積水的倒影（ground.reflection）的畫質矩陣', () =>
     expect(lowEndDesktop.settings).toBe(QUALITY_PRESETS.medium);
   });
 
-  test('桌面（或沒有這個線索）自動選到的級別照表給；?quality= 明確指定的在手機與軟體算圖上也照表給', () => {
+  test('桌面（或沒有這個線索）自動選到的級別照表給；?quality= 明確指定的在手機與軟體算圖上倒影也照表給', () => {
     expect(resolveQuality('', CAPABLE).settings).toBe(QUALITY_PRESETS.high);
     expect(resolveQuality('', { ...CAPABLE, coarsePointer: false }).settings).toBe(QUALITY_PRESETS.high);
     for (const level of QUALITY_LEVELS) {
-      expect(
-        resolveQuality(`?quality=${level}`, { ...CAPABLE, coarsePointer: true }).settings,
-        level,
-      ).toBe(QUALITY_PRESETS[level]);
-      expect(
-        resolveQuality(`?quality=${level}`, { rendererName: SWIFTSHADER }).settings,
-        level,
-      ).toBe(QUALITY_PRESETS[level]);
+      for (const hints of [{ ...CAPABLE, coarsePointer: true }, { rendererName: SWIFTSHADER }]) {
+        const settings = resolveQuality(`?quality=${level}`, hints).settings;
+        expect(settings.level, level).toBe(level);
+        expect(settings.ground, level).toBe(QUALITY_PRESETS[level].ground);
+      }
     }
   });
 
@@ -410,6 +421,118 @@ describe('濕地／積水的倒影（ground.reflection）的畫質矩陣', () =>
     expect(withoutGroundReflection(QUALITY_PRESETS.low)).toBe(QUALITY_PRESETS.low);
     expect(withoutGroundReflection(QUALITY_PRESETS.ultra)).not.toBe(QUALITY_PRESETS.ultra);
     expect(QUALITY_PRESETS.ultra.ground.reflection).not.toBeNull();
+  });
+});
+
+describe('景深、動態模糊、鏡頭光暈的畫質矩陣', () => {
+  const LENS_EFFECTS = ['depthOfField', 'motionBlur', 'lensFlare'] as const;
+  const PHONE: QualityHints = { ...CAPABLE, coarsePointer: true };
+  const SOFTWARE: QualityHints = { rendererName: SWIFTSHADER };
+
+  test('low、medium 三項都關，而且仍然直接畫到畫面上；high、ultra 三項都開', () => {
+    for (const level of ['low', 'medium'] as const) {
+      for (const effect of LENS_EFFECTS) {
+        expect(QUALITY_PRESETS[level][effect], `${level} ${effect}`).toBeNull();
+      }
+      expect(usesHdrChain(QUALITY_PRESETS[level]), level).toBe(false);
+    }
+    for (const level of ['high', 'ultra'] as const) {
+      for (const effect of LENS_EFFECTS) {
+        expect(QUALITY_PRESETS[level][effect], `${level} ${effect}`).not.toBeNull();
+      }
+    }
+  });
+
+  test('這三項不決定走不走後製鏈：只開它們的級別仍然直接畫到畫面上', () => {
+    const { depthOfField, motionBlur, lensFlare } = QUALITY_PRESETS.ultra;
+    expect(usesHdrChain({ ...QUALITY_PRESETS.medium, depthOfField, motionBlur, lensFlare })).toBe(false);
+  });
+
+  test('開了這三項的級別都有它們需要的東西：深度來自環境光遮蔽，光源來自泛光', () => {
+    for (const level of QUALITY_LEVELS) {
+      const settings = QUALITY_PRESETS[level];
+      if (settings.depthOfField !== null || settings.motionBlur !== null) {
+        expect(settings.ambientOcclusion, level).not.toBeNull();
+      }
+      if (settings.lensFlare !== null) {
+        expect(settings.bloom, level).not.toBeNull();
+      }
+    }
+  });
+
+  test('ultra 每一項都不比 high 弱；數值都很輕', () => {
+    const high = QUALITY_PRESETS.high;
+    const ultra = QUALITY_PRESETS.ultra;
+    if (
+      high.depthOfField === null || ultra.depthOfField === null ||
+      high.motionBlur === null || ultra.motionBlur === null ||
+      high.lensFlare === null || ultra.lensFlare === null
+    ) {
+      throw new Error('high 與 ultra 都要有景深、動態模糊、鏡頭光暈');
+    }
+    expect(ultra.depthOfField.maxBlur).toBeGreaterThanOrEqual(high.depthOfField.maxBlur);
+    expect(ultra.depthOfField.taps).toBeGreaterThanOrEqual(high.depthOfField.taps);
+    expect(ultra.motionBlur.shutter).toBeGreaterThanOrEqual(high.motionBlur.shutter);
+    expect(ultra.motionBlur.maxBlur).toBeGreaterThanOrEqual(high.motionBlur.maxBlur);
+    expect(ultra.lensFlare.streak).toBeGreaterThanOrEqual(high.lensFlare.streak);
+    expect(ultra.lensFlare.ghosts).toBeGreaterThanOrEqual(high.lensFlare.ghosts);
+    for (const settings of [high, ultra]) {
+      // 模糊那一張是縮小的；模糊半徑與拖影長度都只有畫面高度的百分之一、二。
+      expect(settings.depthOfField?.resolutionScale).toBeLessThanOrEqual(0.5);
+      expect(settings.depthOfField?.maxBlur).toBeLessThanOrEqual(0.01);
+      expect(settings.motionBlur?.maxBlur).toBeLessThanOrEqual(0.02);
+      expect(settings.motionBlur?.shutter).toBeLessThanOrEqual(0.5);
+      expect(settings.lensFlare?.streak).toBeLessThanOrEqual(0.1);
+      expect(settings.lensFlare?.ghosts).toBeLessThanOrEqual(0.1);
+    }
+  });
+
+  test('桌面的顯示卡：自動選到的 high 與 ?quality= 指定的級別三項照表給', () => {
+    expect(skipsLensEffects(CAPABLE)).toBe(false);
+    expect(skipsLensEffects({})).toBe(false);
+    expect(resolveQuality('', CAPABLE).settings).toBe(QUALITY_PRESETS.high);
+    expect(resolveQuality('?quality=ultra', CAPABLE).settings).toBe(QUALITY_PRESETS.ultra);
+  });
+
+  test('手機、平板與軟體算圖：三項一律關，就算 ?quality=high／ultra 明確指定也一樣；其餘照那個級別', () => {
+    expect(skipsLensEffects(PHONE)).toBe(true);
+    expect(skipsLensEffects(SOFTWARE)).toBe(true);
+    for (const hints of [PHONE, SOFTWARE]) {
+      for (const level of ['high', 'ultra'] as const) {
+        const settings = resolveQuality(`?quality=${level}`, hints).settings;
+        for (const effect of LENS_EFFECTS) {
+          expect(settings[effect], `${level} ${effect}`).toBeNull();
+        }
+        expect(settings).toEqual(withoutLensEffects(QUALITY_PRESETS[level]));
+        expect(settings.bloom).toBe(QUALITY_PRESETS[level].bloom);
+        expect(settings.ambientOcclusion).toBe(QUALITY_PRESETS[level].ambientOcclusion);
+        expect(usesHdrChain(settings)).toBe(true);
+      }
+    }
+  });
+
+  test('?fx=off：桌面也三項全關；?fx=on：手機與軟體算圖也照級別給', () => {
+    for (const search of ['?fx=off', '?quality=high&fx=off', '?fx=off&quality=ultra']) {
+      const settings = resolveQuality(search, CAPABLE).settings;
+      for (const effect of LENS_EFFECTS) {
+        expect(settings[effect], `${search} ${effect}`).toBeNull();
+      }
+    }
+    for (const hints of [PHONE, SOFTWARE]) {
+      expect(resolveQuality('?quality=high&fx=on', hints).settings).toBe(QUALITY_PRESETS.high);
+      expect(resolveQuality('?quality=ultra&fx=on', hints).settings).toBe(QUALITY_PRESETS.ultra);
+      // ?fx=on 不改變自動選到的級別：手機與軟體算圖仍然是 medium（本來就沒有這三項）。
+      expect(resolveQuality('?fx=on', hints).settings.level).toBe('medium');
+    }
+    // 不認得的值當作沒給。
+    expect(resolveQuality('?fx=maybe', CAPABLE).settings).toBe(QUALITY_PRESETS.high);
+    expect(resolveQuality('?quality=high&fx=maybe', SOFTWARE).settings.depthOfField).toBeNull();
+  });
+
+  test('withoutLensEffects：本來就都沒有的級別原樣傳回，不複製', () => {
+    expect(withoutLensEffects(QUALITY_PRESETS.low)).toBe(QUALITY_PRESETS.low);
+    expect(withoutLensEffects(QUALITY_PRESETS.medium)).toBe(QUALITY_PRESETS.medium);
+    expect(withoutLensEffects(QUALITY_PRESETS.high)).not.toBe(QUALITY_PRESETS.high);
   });
 });
 

@@ -14,8 +14,9 @@ export const RENDERER_CONFIG = {
  * 各畫質級別的開關與數值（解析與自動選擇見 quality.ts）。
  * - low：直接畫到畫面上，沒有任何全螢幕濾鏡；天空貼圖烘得小、陰影貼圖小、像素比上限 1。
  * - medium：low 加上暈影，天空與陰影較細；仍然直接畫到畫面上，CPU 軟體算圖也跑得動。
- * - high：走高動態範圍的後製鏈：環境光遮蔽、泛光、色差、暈影、抖色。
+ * - high：走高動態範圍的後製鏈：環境光遮蔽、泛光、色差、暈影、抖色，加上很輕的景深、動態模糊、鏡頭光暈。
  * - ultra：high 的全部再加強，另加 SMAA。對準高階顯示卡，只能由 `?quality=ultra` 開啟。
+ * 景深、動態模糊、鏡頭光暈在手機、平板與 CPU 軟體算圖上一律關掉（quality.ts 的 resolveQuality；`?fx=on` 強制開、`?fx=off` 強制關）。
  * 黃昏的色調分級併在色調映射裡，四個級別都有。
  * 車模（vehicleDetail）：low、medium 用較少的細分，high、ultra 用較多。
  * 材質庫（materials）：low 貼圖 128、沒有法線、只取樣最正對的一面；medium 256＋法線；high 512＋三面混合；ultra 1024。
@@ -49,6 +50,9 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = 
     bloom: null,
     lens: null,
     smaa: false,
+    depthOfField: null,
+    motionBlur: null,
+    lensFlare: null,
     ground: { textureSizePx: 512, maxAnisotropy: 2, normals: false, wetness: false, reflection: null },
     vehicleDetail: 'low',
     props: {
@@ -82,6 +86,9 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = 
     bloom: null,
     lens: { vignette: 0.24, chromaticAberration: 0 },
     smaa: false,
+    depthOfField: null,
+    motionBlur: null,
+    lensFlare: null,
     ground: {
       textureSizePx: 1024,
       maxAnisotropy: 4,
@@ -121,6 +128,9 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = 
     bloom: { strength: 0.18, radius: 0.5, threshold: 1.8 },
     lens: { vignette: 0.4, chromaticAberration: 0.0012 },
     smaa: false,
+    depthOfField: { maxBlur: 0.006, resolutionScale: 0.5, taps: 8 },
+    motionBlur: { shutter: 0.3, maxBlur: 0.012, taps: 6 },
+    lensFlare: { streak: 0.05, ghosts: 0.03 },
     ground: {
       textureSizePx: 1024,
       maxAnisotropy: 8,
@@ -160,6 +170,9 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = 
     bloom: { strength: 0.24, radius: 0.6, threshold: 1.6 },
     lens: { vignette: 0.4, chromaticAberration: 0.0012 },
     smaa: true,
+    depthOfField: { maxBlur: 0.008, resolutionScale: 0.5, taps: 12 },
+    motionBlur: { shutter: 0.45, maxBlur: 0.018, taps: 8 },
+    lensFlare: { streak: 0.07, ghosts: 0.045 },
     ground: {
       textureSizePx: 2048,
       maxAnisotropy: 16,

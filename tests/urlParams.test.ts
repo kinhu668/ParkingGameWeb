@@ -8,6 +8,7 @@ import {
   parseShowAngles,
   parseUnlockAllParam,
   parseUrlMode,
+  parseLensFxParam,
 } from '../src/core/urlParams';
 
 describe('parseUrlMode：各模式', () => {
@@ -209,5 +210,20 @@ describe('parseShowAngles（展示台的鏡頭角度）', () => {
   test('不是有限的數字就不給', () => {
     expect(parseShowAngles('?az=abc&el=Infinity')).toEqual({});
     expect(parseShowAngles('?az=NaN&el=10')).toEqual({ elevationDeg: 10 });
+  });
+});
+
+describe('parseLensFxParam（?fx= 對景深、動態模糊、鏡頭光暈的意思）', () => {
+  test('on 與 off 原樣傳回；可以和其他參數並用', () => {
+    expect(parseLensFxParam('?fx=on')).toBe('on');
+    expect(parseLensFxParam('?fx=off')).toBe('off');
+    expect(parseLensFxParam('?level=w1_l07&quality=high&fx=on&lang=en')).toBe('on');
+  });
+
+  test('沒給、空值或不認得的值 → undefined（由裝置決定）', () => {
+    expect(parseLensFxParam('')).toBeUndefined();
+    expect(parseLensFxParam('?fx=')).toBeUndefined();
+    expect(parseLensFxParam('?fx=ON')).toBeUndefined();
+    expect(parseLensFxParam('?quality=high')).toBeUndefined();
   });
 });

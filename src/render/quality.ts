@@ -1,6 +1,7 @@
 // 畫質級別：級別 id、`?quality=` 解析、自動選擇、各級別的開關與數值。
 // 不碰 DOM、不 import three：查詢字串與裝置線索（hints）由呼叫端傳入，全部可以純函式測試。
 // `?quality=` 不是啟動模式，所以不在 urlParams.parseUrlMode 裡處理，可與任何模式並用。
+import { parseLensFxParam } from '../core/urlParams';
 import type { MaterialQualitySettings } from '../materials/surfaces';
 import { QUALITY_PRESETS } from './renderConfig';
 
@@ -49,6 +50,43 @@ export interface LensSettings {
   readonly vignette: number;
   /** 色差：畫面角落紅藍兩個色版錯開的量（0 = 沒有）。只有走後製鏈的級別才做得到。 */
   readonly chromaticAberration: number;
+}
+
+/**
+ * 景深（render/depthOfField.ts）：對焦在玩家車，比對焦距離遠很多的背景與貼近鏡頭的前景略為模糊。
+ * 模糊那一張是縮小的、取樣數少；深度沿用環境光遮蔽那一遍的，不多畫一遍場景。
+ */
+export interface DepthOfFieldSettings {
+  /** 最模糊時的模糊半徑，以畫面高度為 1。 */
+  readonly maxBlur: number;
+  /** 模糊那一張的大小 = 繪圖緩衝區 × 這個比例（每一邊）。 */
+  readonly resolutionScale: number;
+  /** 模糊的取樣數（一圈一圈往外的圓盤）。 */
+  readonly taps: number;
+}
+
+/**
+ * 動態模糊（render/motionBlur.ts）：只算鏡頭自己的移動（由深度與前一幀的鏡頭矩陣重建每個像素的位移）。
+ * 停車遊戲以看得清楚為主：很輕，位移小於門檻時完全沒有。
+ */
+export interface MotionBlurSettings {
+  /** 快門：這一幀的位移有多少比例變成拖影（0–1）。 */
+  readonly shutter: number;
+  /** 拖影長度的上限，以畫面高度為 1。 */
+  readonly maxBlur: number;
+  /** 沿位移方向的取樣數。 */
+  readonly taps: number;
+}
+
+/**
+ * 鏡頭光暈（render/lensFlare.ts）：從泛光的緩衝區取太陽與燈這些最亮的光源，加上橫向的條紋與對稱的鬼影。
+ * 數值是加到畫面上的比例（場景線性亮度），要很輕。
+ */
+export interface LensFlareSettings {
+  /** 橫向條紋的強度。 */
+  readonly streak: number;
+  /** 鬼影（光源對畫面中心鏡射出去的幾個淡圓）的強度。 */
+  readonly ghosts: number;
 }
 
 /**
@@ -173,6 +211,12 @@ export interface QualitySettings {
   readonly lens: LensSettings | null;
   /** SMAA 抗鋸齒（疊在多重取樣之上）。 */
   readonly smaa: boolean;
+  /** 景深；null = 不開。只有走後製鏈、而且開了環境光遮蔽（深度從那裡來）的級別才做得到。 */
+  readonly depthOfField: DepthOfFieldSettings | null;
+  /** 動態模糊；null = 不開。條件同景深。 */
+  readonly motionBlur: MotionBlurSettings | null;
+  /** 鏡頭光暈；null = 不開。要有泛光（光源從泛光的緩衝區取）。 */
+  readonly lensFlare: LensFlareSettings | null;
   /** 地面（柏油）的細節。 */
   readonly ground: GroundQualitySettings;
   /** 材質庫（建築、擺設、車身的程序化 PBR 貼圖）的細節。 */
@@ -227,6 +271,8 @@ const LOW_END_CORES = 4;
 /** 軟體算圖用的級別：有天空、陰影、暈影，但不開環境光遮蔽與泛光（不必畫進半浮點緩衝區）。 */
 const SOFTWARE_RENDERER_LEVEL: QualityLevel = 'medium';
 const LOW_END_LEVEL: QualityLevel = 'medium';
+/** 手機與平板（主要指標是手指）用的級別：螢幕的像素多、顯示卡的填充率低，後製鏈（半浮點＋環境光遮蔽＋泛光）最容易掉幀。 */
+const TOUCH_DEVICE_LEVEL: QualityLevel = 'medium';
 /** 自動選擇的上限。`ultra` 只能由 `?quality=ultra` 明確開啟。 */
 const DEFAULT_LEVEL: QualityLevel = 'high';
 
@@ -251,11 +297,14 @@ export function isSoftwareRenderer(rendererName: string | undefined): boolean {
 
 /**
  * 沒有指定 `?quality=` 時依裝置線索選級別：
- * 軟體算圖 → medium；記憶體或核心數很少 → medium；其餘 → high。永遠不會自動選 ultra。
+ * 軟體算圖 → medium；手機與平板 → medium；記憶體或核心數很少 → medium；其餘 → high。永遠不會自動選 ultra。
  */
 export function chooseAutoQuality(hints: QualityHints): QualityLevel {
   if (isSoftwareRenderer(hints.rendererName)) {
     return SOFTWARE_RENDERER_LEVEL;
+  }
+  if (hints.coarsePointer === true) {
+    return TOUCH_DEVICE_LEVEL;
   }
   const lowMemory = hints.deviceMemoryGb !== undefined && hints.deviceMemoryGb <= LOW_END_MEMORY_GB;
   const fewCores =
@@ -286,19 +335,42 @@ export function skipsGroundReflection(hints: QualityHints): boolean {
   return hints.coarsePointer === true || isSoftwareRenderer(hints.rendererName);
 }
 
+/** 拿掉景深、動態模糊、鏡頭光暈，其餘的設定不變。本來就都沒有的級別原樣傳回。 */
+export function withoutLensEffects(settings: QualitySettings): QualitySettings {
+  return settings.depthOfField === null && settings.motionBlur === null && settings.lensFlare === null
+    ? settings
+    : { ...settings, depthOfField: null, motionBlur: null, lensFlare: null };
+}
+
+/**
+ * 這台裝置要不要關掉景深、動態模糊、鏡頭光暈（每一項都是多一到兩個全螢幕濾鏡）：
+ * 手機與平板的填充率低；CPU 軟體算圖每多一個全螢幕濾鏡就少好幾幀。與倒影不同，
+ * 就算 `?quality=high` 明確指定了級別也照關——要在這些裝置上看，用 `?fx=on`。
+ */
+export function skipsLensEffects(hints: QualityHints): boolean {
+  return hints.coarsePointer === true || isSoftwareRenderer(hints.rendererName);
+}
+
 /**
  * 決議畫質：有效的 `?quality=` > 自動選擇。
- * 自動選擇時，手機、平板與軟體算圖拿掉倒影那一遍（skipsGroundReflection）；`?quality=` 明確指定的級別照表給，不打折。
+ * - 自動選擇時，手機、平板與軟體算圖拿掉倒影那一遍（skipsGroundReflection）；`?quality=` 明確指定的級別照表給。
+ * - 景深、動態模糊、鏡頭光暈：`?fx=off` 一律關、`?fx=on` 一律照級別給；都沒給時，手機、平板與軟體算圖關掉
+ *   （skipsLensEffects，不管級別是自動選的還是網址指定的）。
  */
 export function resolveQuality(urlSearch: string, hints: QualityHints): ResolvedQuality {
   const requested = parseQualityParam(urlSearch);
-  if (requested !== undefined) {
-    return { settings: qualitySettings(requested), source: 'url' };
-  }
-  const settings = qualitySettings(chooseAutoQuality(hints));
+  const auto = qualitySettings(chooseAutoQuality(hints));
+  const base =
+    requested !== undefined
+      ? qualitySettings(requested)
+      : skipsGroundReflection(hints)
+        ? withoutGroundReflection(auto)
+        : auto;
+  const lensFx = parseLensFxParam(urlSearch);
+  const lensEffects = lensFx === 'on' || (lensFx === undefined && !skipsLensEffects(hints));
   return {
-    settings: skipsGroundReflection(hints) ? withoutGroundReflection(settings) : settings,
-    source: 'auto',
+    settings: lensEffects ? base : withoutLensEffects(base),
+    source: requested !== undefined ? 'url' : 'auto',
   };
 }
 
