@@ -6,6 +6,7 @@ import type { BufferGeometry } from 'three';
 import type { VehicleDetail } from '../render/quality';
 import { CAR_VISUAL_CONFIG as VISUAL } from '../render/renderConfig';
 import { BODY_LAYOUT } from './carBody';
+import { createFastbackParts } from './carFastback';
 import { createBodyGeometries, createPlateTextGeometry } from './carFittings';
 import type { CarModelId } from './carModels';
 import {
@@ -15,6 +16,8 @@ import {
   PARKED_WHEEL_SEGMENTS,
 } from './carWheel';
 import { createRallyParts } from './carRally';
+import { createRoadsterParts } from './carRoadster';
+import { createWidebodyParts } from './carWidebody';
 import type { Point3 } from './facetBuilder';
 import { VEHICLE_CONFIG_SI } from './vehicleConfig';
 
@@ -92,9 +95,9 @@ const BUILDERS: Readonly<Record<CarModelId, (detail: VehicleDetail) => CarModelP
   sedan: createSedanParts,
   // 四款新車建模完成前先用轎車頂著（關卡還不會擺出這四款）。
   rally: createRallyParts,
-  widebody: createSedanParts,
-  fastback: createSedanParts,
-  roadster: createSedanParts,
+  widebody: createWidebodyParts,
+  fastback: createFastbackParts,
+  roadster: createRoadsterParts,
 };
 
 /**
