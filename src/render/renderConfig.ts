@@ -577,6 +577,16 @@ export const POST_CONFIG = {
     onCarFocusM: ftToM(45),
   },
   /**
+   * 動態模糊（render/motionBlur.ts）。位移以畫面高度為 1、每幀計。
+   * 低於 startDisplacement 完全不拖（停車時的微調、方向盤的小修正都要清楚），到 fullDisplacement 才照快門拖滿；
+   * 一幀就超過 cutDisplacement 的是鏡頭切換（按 V、重來），那一幀不拖。
+   */
+  motionBlur: {
+    startDisplacement: 0.004,
+    fullDisplacement: 0.012,
+    cutDisplacement: 0.3,
+  },
+  /**
    * 進泛光的亮度上限（場景線性亮度）：比它亮的像素當作這麼亮。高過每種天氣的門檻與燈殼的亮度，
    * 所以燈照常發光；被壓住的只有太陽在車漆、積水上的反光（可以到幾十）。
    */
