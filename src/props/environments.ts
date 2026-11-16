@@ -86,6 +86,7 @@ export function createSpotArrow(spot: ParkingSpot): Group {
  * @param lampsLit 路燈亮不亮（跟著天氣）；白天路燈不亮，招牌也不自發光
  * @param buildingShadowHeightM 建築在陰影貼圖裡最高算多高（shadowReach.ts）；不給 = 不設限，照實投影
  * @param shafts 路燈光錐所在的空氣與畫質做法；不給 = 黃昏那種乾淨的空氣
+ * @param lampLightScale 路燈真光源與地上光暈的亮度倍率（天氣的 post.lampLightScale）；不給 = 全亮
  */
 export function createEnvironment(
   spot: ParkingSpot,
@@ -95,6 +96,7 @@ export function createEnvironment(
   lampsLit = true,
   buildingShadowHeightM = Infinity,
   shafts: ShaftSetup = DEFAULT_SHAFT_SETUP,
+  lampLightScale = 1,
 ): Group {
   const group = new Group();
   group.name = 'environment';
@@ -110,6 +112,7 @@ export function createEnvironment(
       'braced',
       buildingShadowHeightM,
       shafts,
+      lampLightScale,
     ),
   );
 

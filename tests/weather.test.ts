@@ -1,5 +1,6 @@
-// 天氣：`?weather=` 的解析與覆蓋規則、六種天氣的預設值（dusk 必須等於既有設定）、閃電的時間表與閃光曲線。
-import { LineBasicMaterial } from 'three';
+// 天氣：`?weather=` 的解析與覆蓋規則、六種天氣的預設值（dusk 必須等於既有設定）、閃電的時間表與閃光曲線、
+// 泛光與路燈跟著天氣的倍率。
+import { Color, LineBasicMaterial, Scene } from 'three';
 import { describe, expect, test } from 'vitest';
 import { DEFAULT_SEED } from '../src/core/gameConfig';
 import { parseFxOffParam } from '../src/core/urlParams';
@@ -13,6 +14,9 @@ import {
   FOG_CONFIG,
   GROUND_CONFIG,
   HEMISPHERE_LIGHT_CONFIG,
+  LOT_PROPS_CONFIG,
+  POST_CONFIG,
+  QUALITY_PRESETS,
   SKY_CONFIG,
   SUN_CONFIG,
 } from '../src/render/renderConfig';
@@ -21,6 +25,9 @@ import {
   LIGHTNING_CONFIG,
   RAIN_CONFIG,
   WEATHER_PRESETS,
+  scenePostOf,
+  setScenePost,
+  weatherBloom,
   weatherPreset,
 } from '../src/render/weatherPresets';
 import { degToRad } from '../src/core/units';
@@ -261,5 +268,109 @@ describe('閃電', () => {
     const secondStrike = schedule[1] ?? 0;
     expect(lightning.flashAt(secondStrike - 0.05)).toBe(0);
     expect(lightning.flashAt(secondStrike)).toBe(1);
+  });
+});
+
+describe('泛光與路燈跟著天氣（PostPreset）', () => {
+  /** 走後製鏈的級別（有泛光的）。 */
+  const BLOOM_LEVELS = QUALITY_LEVELS.filter((level) => QUALITY_PRESETS[level].bloom !== null);
+  const LUMA = { r: 0.2126, g: 0.7152, b: 0.0722 };
+  /** 白車漆的反照率（線性）；比遊戲裡最淺的車漆還亮一點。 */
+  const WHITE_PAINT_ALBEDO = 0.9;
+
+  /** 這種天氣、這個級別的泛光門檻。 */
+  const thresholdOf = (weather: (typeof WEATHER_IDS)[number], level: (typeof BLOOM_LEVELS)[number]): number => {
+    const bloom = QUALITY_PRESETS[level].bloom;
+    if (bloom === null) {
+      throw new Error(`${level} 沒有泛光`);
+    }
+    return weatherBloom(bloom, weatherPreset(weather).post).threshold;
+  };
+
+  /**
+   * 正對太陽的白車漆的漫反射亮度上限（場景線性亮度）：three 的 Lambert 是「反照率 ÷ π × 照度」，
+   * 太陽與半球補光都算正面照到；環境貼圖的漫反射再算進天空亮度的一份。
+   */
+  const litWhitePaintLuma = (weather: (typeof WEATHER_IDS)[number]): number => {
+    const preset = weatherPreset(weather);
+    return (
+      (WHITE_PAINT_ALBEDO * (preset.sun.intensity + preset.hemisphere.intensity)) / Math.PI +
+      WHITE_PAINT_ALBEDO * preset.sky.environmentIntensity
+    );
+  };
+
+  /** 亮著的燈殼在後製鏈裡的亮度。 */
+  const lampShellLuma = (): number => {
+    const color = new Color(LOT_PROPS_CONFIG.lampGlowColor);
+    return (
+      (color.r * LUMA.r + color.g * LUMA.g + color.b * LUMA.b) * LOT_PROPS_CONFIG.lampGlowIntensity.hdr
+    );
+  };
+
+  test('有泛光的級別是 high 與 ultra', () => {
+    expect(BLOOM_LEVELS).toEqual(['high', 'ultra']);
+  });
+
+  test('每種天氣：受太陽光的白車漆在泛光門檻之下（不會整台車發光）', () => {
+    for (const weather of WEATHER_IDS) {
+      for (const level of BLOOM_LEVELS) {
+        expect(litWhitePaintLuma(weather), `${weather} ${level}`).toBeLessThan(thresholdOf(weather, level));
+      }
+    }
+  });
+
+  test('路燈亮著的天氣：燈殼在泛光門檻之上、在進泛光的亮度上限之下（燈照常發光）', () => {
+    const lampsOn = WEATHER_IDS.filter((weather) => weatherPreset(weather).lampsOn);
+    expect(lampsOn).toEqual(['dusk', 'rain', 'storm', 'night']);
+    for (const weather of lampsOn) {
+      for (const level of BLOOM_LEVELS) {
+        expect(lampShellLuma(), `${weather} ${level}`).toBeGreaterThan(thresholdOf(weather, level));
+      }
+    }
+    expect(lampShellLuma()).toBeLessThan(POST_CONFIG.bloomMaxLuma);
+  });
+
+  test('有太陽的天氣門檻比較高；雨、雷雨、夜晚照畫質級別原本的數值', () => {
+    for (const weather of ['rain', 'storm', 'night'] as const) {
+      expect(weatherPreset(weather).post).toEqual({
+        bloomThresholdScale: 1,
+        bloomStrengthScale: 1,
+        lampLightScale: 1,
+      });
+    }
+    for (const weather of ['clear', 'wet', 'dusk'] as const) {
+      const post = weatherPreset(weather).post;
+      expect(post.bloomThresholdScale).toBeGreaterThan(1);
+      expect(post.bloomStrengthScale).toBeLessThanOrEqual(1);
+      expect(post.bloomStrengthScale).toBeGreaterThan(0.5);
+    }
+    // 進泛光的亮度上限高過每一個門檻。
+    for (const weather of WEATHER_IDS) {
+      for (const level of BLOOM_LEVELS) {
+        expect(POST_CONFIG.bloomMaxLuma).toBeGreaterThan(thresholdOf(weather, level));
+      }
+    }
+  });
+
+  test('黃昏還有太陽：路燈的真光源只開一部分；其他天氣全亮', () => {
+    expect(weatherPreset('dusk').post.lampLightScale).toBeGreaterThan(0);
+    expect(weatherPreset('dusk').post.lampLightScale).toBeLessThan(1);
+    for (const weather of ['rain', 'storm', 'night'] as const) {
+      expect(weatherPreset(weather).post.lampLightScale).toBe(1);
+    }
+  });
+
+  test('weatherBloom：門檻與強度各乘上倍率，半徑不變', () => {
+    const bloom = { strength: 0.2, radius: 0.5, threshold: 1.8 };
+    expect(
+      weatherBloom(bloom, { bloomThresholdScale: 2, bloomStrengthScale: 0.5, lampLightScale: 1 }),
+    ).toEqual({ strength: 0.1, radius: 0.5, threshold: 3.6 });
+  });
+
+  test('場景登記的倍率查得回來；沒登記的場景是 undefined', () => {
+    const scene = new Scene();
+    expect(scenePostOf(scene)).toBeUndefined();
+    setScenePost(scene, weatherPreset('clear').post);
+    expect(scenePostOf(scene)).toBe(weatherPreset('clear').post);
   });
 });

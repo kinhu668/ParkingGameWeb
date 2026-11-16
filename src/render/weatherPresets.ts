@@ -3,9 +3,10 @@
 // `dusk` 是基準畫面：直接引用既有的 SKY_CONFIG／SUN_CONFIG／FOG_CONFIG／HEMISPHERE_LIGHT_CONFIG／GROUND_CONFIG，
 // 一個數字都不改（tests/weather.test.ts 釘住）。其他天氣只是換數值；只有「有沒有貼地霧氣」會換霧的著色器片段
 // （render/heightFog.ts：雨、雷雨、夜晚才換，晴天、黃昏、雨後用 three 原本的）。
+import type { Scene } from 'three';
 import type { WeatherId } from '../core/weather';
 import { ftToM } from '../core/units';
-import type { QualityLevel } from './quality';
+import type { BloomSettings, QualityLevel } from './quality';
 import {
   FOG_CONFIG,
   GROUND_CONFIG,
@@ -105,6 +106,19 @@ export interface AssistViewPreset {
   readonly kneeLuma: number;
 }
 
+/**
+ * 後製與路燈在這種天氣的倍率。泛光的門檻是場景線性亮度：有太陽的天氣，受光的淺色車漆本身就有 1–3，
+ * 門檻要拉高到它之上，只留燈殼、太陽的反光；沒有太陽的天氣（雨、雷雨、夜晚）維持級別原本的門檻。
+ */
+export interface PostPreset {
+  /** 泛光門檻的倍率（乘在畫質級別的 bloom.threshold 上）。 */
+  readonly bloomThresholdScale: number;
+  /** 泛光強度的倍率（乘在畫質級別的 bloom.strength 上）。 */
+  readonly bloomStrengthScale: number;
+  /** 路燈真光源（SpotLight）與地上光暈的亮度倍率：黃昏還有太陽，路燈再全亮會把燈下的淺色車照到過曝。 */
+  readonly lampLightScale: number;
+}
+
 /** 一種天氣的全部數值。 */
 export interface WeatherPreset {
   readonly sky: SkyPreset;
@@ -124,6 +138,8 @@ export interface WeatherPreset {
   readonly air: AirPreset;
   /** 倒車輔助層小畫面的暗部增益。 */
   readonly assistView: AssistViewPreset;
+  /** 泛光與路燈亮度的倍率。 */
+  readonly post: PostPreset;
 }
 
 /** 乾淨的空氣：沒有貼地霧氣、沒有頭燈光柱；路燈光錐是基準亮度。 */
@@ -132,7 +148,13 @@ const CLEAR_AIR: AirPreset = { mistDensityPerM: 0, mistHeightM: 1, lampShaft: 1,
 /** 白天與黃昏：小畫面不必抬亮。 */
 const NO_ASSIST_GAIN: AssistViewPreset = { darkGain: 1, kneeLuma: 0.3 };
 
-/** 黃昏：基準畫面，全部引用既有設定。 */
+/** 沒有太陽的天氣（雨、雷雨、夜晚）：泛光照畫質級別的數值，路燈全亮。 */
+const LAMP_LIT_POST: PostPreset = { bloomThresholdScale: 1, bloomStrengthScale: 1, lampLightScale: 1 };
+
+/** 白天（晴天、雨後）：門檻拉到受太陽光的白車漆之上，只有太陽在車漆、積水上的反光會發光；路燈本來就不亮。 */
+const DAYLIGHT_POST: PostPreset = { bloomThresholdScale: 2.5, bloomStrengthScale: 0.8, lampLightScale: 1 };
+
+/** 黃昏：基準畫面，天空、太陽、霧、補光、地面全部引用既有設定。 */
 const DUSK: WeatherPreset = {
   sky: { ...SKY_CONFIG, overcast: 0 },
   sun: SUN_CONFIG,
@@ -145,6 +167,8 @@ const DUSK: WeatherPreset = {
   surfaceWetness: 0,
   air: CLEAR_AIR,
   assistView: NO_ASSIST_GAIN,
+  // 太陽強度 8：受光的白車漆約 2.6，門檻放在它與燈殼（HDR 亮度約 4.6）之間；路燈只開一半。
+  post: { bloomThresholdScale: 2, bloomStrengthScale: 0.9, lampLightScale: 0.5 },
 };
 
 /** 門檻放在噪聲值域（0–1）之外：整片都不濕。 */
@@ -208,6 +232,7 @@ export const WEATHER_PRESETS: Readonly<Record<WeatherId, WeatherPreset>> = {
     surfaceWetness: 0,
     air: CLEAR_AIR,
     assistView: NO_ASSIST_GAIN,
+    post: DAYLIGHT_POST,
   },
   dusk: DUSK,
   // 雨天：灰雲蓋滿、太陽很弱偏冷、近而灰的霧、全面潮濕＋積水、雨絲、路燈亮。
@@ -224,6 +249,7 @@ export const WEATHER_PRESETS: Readonly<Record<WeatherId, WeatherPreset>> = {
     // 雨幕：貼地一層水氣，路燈與車燈在雨裡打出看得見的光柱。
     air: { mistDensityPerM: 0.02, mistHeightM: ftToM(13), lampShaft: 2.6, headlightShaft: 1 },
     assistView: { darkGain: 1.5, kneeLuma: 0.3 },
+    post: LAMP_LIT_POST,
   },
   // 雨後：雲散了一半、低角度的暖陽、大片潮濕與積水（粗糙度低，逆光看反光明顯）、路燈不亮。
   wet: {
@@ -258,6 +284,7 @@ export const WEATHER_PRESETS: Readonly<Record<WeatherId, WeatherPreset>> = {
     surfaceWetness: 0.5,
     air: CLEAR_AIR,
     assistView: NO_ASSIST_GAIN,
+    post: DAYLIGHT_POST,
   },
   // 雷雨：比雨天更暗、霧更近、雨更密，加上閃光。
   storm: {
@@ -273,6 +300,7 @@ export const WEATHER_PRESETS: Readonly<Record<WeatherId, WeatherPreset>> = {
     // 比雨天更濃、更厚的水氣；光柱最明顯。
     air: { mistDensityPerM: 0.028, mistHeightM: ftToM(16), lampShaft: 3, headlightShaft: 1.2 },
     assistView: { darkGain: 2.6, kneeLuma: 0.3 },
+    post: LAMP_LIT_POST,
   },
   // 夜晚：很暗的天空（白天的天空壓到很暗）、冷色的弱月光、深藍的近霧、乾地；路燈與車頭燈是主要光源。
   night: {
@@ -297,6 +325,7 @@ export const WEATHER_PRESETS: Readonly<Record<WeatherId, WeatherPreset>> = {
     // 乾的夜晚：只有薄薄一層夜霧；光柱看得到，但比雨裡淡。
     air: { mistDensityPerM: 0.006, mistHeightM: ftToM(10), lampShaft: 2.4, headlightShaft: 0.6 },
     assistView: { darkGain: 5, kneeLuma: 0.24 },
+    post: LAMP_LIT_POST,
   },
 };
 
@@ -322,6 +351,27 @@ export function sunAzimuthDeg(weather: WeatherId, levelId?: string): number {
 /** 這種天氣的數值。 */
 export function weatherPreset(weather: WeatherId): WeatherPreset {
   return WEATHER_PRESETS[weather];
+}
+
+const SCENE_POST = new WeakMap<Scene, PostPreset>();
+
+/** 登記這個場景的天氣要用的後製倍率（scene.ts 建場景時呼叫）；畫這個場景時 framePipeline 會照著調泛光。 */
+export function setScenePost(scene: Scene, post: PostPreset): void {
+  SCENE_POST.set(scene, post);
+}
+
+/** 這個場景登記的後製倍率；沒登記（展示台）就是 undefined，泛光照畫質級別原本的數值。 */
+export function scenePostOf(scene: Scene): PostPreset | undefined {
+  return SCENE_POST.get(scene);
+}
+
+/** 這個畫質級別的泛光在這種天氣實際用的數值：門檻與強度各乘上天氣的倍率，半徑不變。 */
+export function weatherBloom(bloom: BloomSettings, post: PostPreset): BloomSettings {
+  return {
+    strength: bloom.strength * post.bloomStrengthScale,
+    radius: bloom.radius,
+    threshold: bloom.threshold * post.bloomThresholdScale,
+  };
 }
 
 /**

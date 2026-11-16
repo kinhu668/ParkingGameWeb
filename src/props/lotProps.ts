@@ -283,6 +283,7 @@ function addLamps(
   lampsLit: boolean,
   style: LampStyle,
   shafts: ShaftSetup,
+  lightScale: number,
 ): void {
   if (lamps.length === 0) {
     return;
@@ -307,7 +308,7 @@ function addLamps(
       ? new MeshStandardMaterial({
           color: LOT.lampGlowColor,
           emissive: LOT.lampGlowColor,
-          emissiveIntensity: LOT.lampGlowIntensity,
+          emissiveIntensity: hdr ? LOT.lampGlowIntensity.hdr : LOT.lampGlowIntensity.direct,
           roughness: 0.4,
         })
       : // 白天不亮：只是一片乳白的燈罩。
@@ -359,7 +360,9 @@ function addLamps(
   // 地上光暈的材質。加色混合的材質不做色調映射：直接畫到畫面上時，色調映射會把「沒有光」的邊緣也抬成一圈看得見的冷色。
   const glow = (brightness: { readonly hdr: number; readonly direct: number }): MeshBasicMaterial =>
     new MeshBasicMaterial({
-      color: new Color(LOT.lampConeColor).multiplyScalar(hdr ? brightness.hdr : brightness.direct),
+      color: new Color(LOT.lampConeColor).multiplyScalar(
+        (hdr ? brightness.hdr : brightness.direct) * lightScale,
+      ),
       vertexColors: true,
       transparent: true,
       blending: AdditiveBlending,
@@ -442,7 +445,7 @@ function addLamps(
   for (const position3 of heads.slice(0, realLights)) {
     const light = new SpotLight(
       LOT.lampGlowColor,
-      LOT.lampLightIntensity,
+      LOT.lampLightIntensity * lightScale,
       LOT.lampLightDistanceM,
       LOT.lampLightAngleRad,
       LOT.lampLightPenumbra,
@@ -879,6 +882,7 @@ export function createPayStationGeometry(): BufferGeometry {
  * @param lampStyle 路燈的樣式；不給 = 原型關的 classic
  * @param buildingShadowHeightM 背景建築在陰影貼圖裡最高算多高（shadowReach.ts）；不給 = 不設限，照實投影
  * @param shafts 路燈光錐所在的空氣與畫質做法；不給 = 黃昏那種乾淨的空氣
+ * @param lampLightScale 路燈真光源與地上光暈的亮度倍率（天氣的 post.lampLightScale）；不給 = 全亮
  */
 export function createLotProps(
   spot: ParkingSpot,
@@ -889,6 +893,7 @@ export function createLotProps(
   lampStyle: LampStyle = 'classic',
   buildingShadowHeightM = Infinity,
   shafts: ShaftSetup = DEFAULT_SHAFT_SETUP,
+  lampLightScale = 1,
 ): Group {
   const frame = createSpotFrame(spot);
   frame.name = 'lotProps';
@@ -926,7 +931,7 @@ export function createLotProps(
   };
 
   frame.add(createParkedCars(layout.parkedCars, props.meshDetail));
-  addLamps(frame, layout.lamps, props, hdr, lampsLit, lampStyle, shafts);
+  addLamps(frame, layout.lamps, props, hdr, lampsLit, lampStyle, shafts, lampLightScale);
 
   // 混凝土柱與柱頂的橫梁：同一個材質，一個 draw call。
   const concrete = [...layout.pillars, ...layout.beams];

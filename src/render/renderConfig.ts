@@ -546,6 +546,11 @@ export const POST_CONFIG = {
   vignetteOuter: 2.1,
   /** 環境光遮蔽的降噪半徑（像素）。 */
   aoDenoiseRadiusPx: 8,
+  /**
+   * 進泛光的亮度上限（場景線性亮度）：比它亮的像素當作這麼亮。高過每種天氣的門檻與燈殼的亮度，
+   * 所以燈照常發光；被壓住的只有太陽在車漆、積水上的反光（可以到幾十）。
+   */
+  bloomMaxLuma: 8,
   /** `?cam` 定格前，要等後製鏈的非同步資源（SMAA 查表貼圖）最多這麼久（毫秒）；逾時就照常畫。 */
   readyTimeoutMs: 2000,
 } as const;
@@ -1079,9 +1084,12 @@ export const LOT_PROPS_CONFIG = {
   lampColor: 0x2c2f33,
   /** 路緣外的路燈離路緣內側多遠。 */
   lampOutsideCurbM: ftToM(2.5),
-  /** 燈殼底下的發光面：暖黃，亮度高過泛光門檻。 */
+  /**
+   * 燈殼底下的發光面：暖黃。走後製鏈的級別要亮過黃昏的泛光門檻（那個門檻在受夕陽的白車漆之上），
+   * 燈才是畫面裡會發光的東西；直接畫到畫面上的級別沒有泛光，維持原本的亮度。
+   */
   lampGlowColor: 0xffd49a,
-  lampGlowIntensity: 3.2,
+  lampGlowIntensity: { hdr: 6.5, direct: 3.2 },
   /** 光錐（render/lightShaft.ts 的光柱）：頂端與地面的半徑；亮度沿光軸的分布見 lampCone。 */
   lampConeTopRadiusM: ftToM(0.8),
   lampConeBottomRadiusM: ftToM(13),

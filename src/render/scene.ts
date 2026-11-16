@@ -107,6 +107,7 @@ import {
   LIGHTNING_CONFIG,
   RAIN_CONFIG,
   sunAzimuthDeg,
+  setScenePost,
   weatherPreset,
   type HemispherePreset,
   type WeatherPreset,
@@ -527,6 +528,8 @@ export function createGameScene(
   });
 
   const scene = new Scene();
+  // 泛光的門檻與強度跟著天氣：畫這個場景時管線會照著調。
+  setScenePost(scene, preset.post);
   const skyDome = addSkyEnvironment(scene, renderer, quality, { ...preset, sunDirection }).dome;
   scene.add(skyDome);
   // 霧色與天空貼圖在地平線那一圈的霾同色，遠處的地面融進天空，沒有硬邊。
@@ -613,6 +616,7 @@ export function createGameScene(
         'classic',
         buildingShadowHeightM,
         shaftAir(preset.air.lampShaft),
+        preset.post.lampLightScale,
       ),
     );
   } else if (environmentLayout !== undefined) {
@@ -626,6 +630,7 @@ export function createGameScene(
         preset.lampsOn,
         buildingShadowHeightM,
         shaftAir(preset.air.lampShaft),
+        preset.post.lampLightScale,
       ),
     );
   }

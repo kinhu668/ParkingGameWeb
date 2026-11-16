@@ -9,7 +9,8 @@
 // B. 有環境光遮蔽／泛光／SMAA（high、ultra）：後製鏈（EffectComposer），順序是
 //    1. RenderPass        場景 → 半浮點緩衝區（場景線性亮度，還沒做色調映射；多重取樣只開在這一張）
 //    2. GTAOPass          環境光遮蔽
-//    3. UnrealBloomPass   泛光；門檻是線性亮度，所以要在色調映射之前
+//    3. UnrealBloomPass   泛光；門檻是線性亮度，所以要在色調映射之前。門檻與強度跟著場景的天氣
+//                         （weatherPresets.ts 的 PostPreset），進泛光的亮度有上限（BLOOM_HIGH_PASS_FRAGMENT_SHADER）
 //    4. SMAAPass          ultra
 //    5. 輸出 ShaderPass    色差 → 暈影 → 色調映射 + 轉成輸出色域（sRGB）→ 抖色
 //
@@ -57,6 +58,7 @@ import {
   type QualitySettings,
 } from './quality';
 import { POST_CONFIG } from './renderConfig';
+import { scenePostOf, weatherBloom } from './weatherPresets';
 
 export interface FramePipeline {
   /**
@@ -154,6 +156,26 @@ const OUTPUT_FRAGMENT_SHADER = /* glsl */ `
     vec3 color = gl_FragColor.rgb;
     color += ( hash( gl_FragCoord.xy ) - 0.5 ) / 255.0;
     gl_FragColor = vec4( clamp( color, 0.0, 1.0 ), 1.0 );
+  }
+`;
+
+/**
+ * 泛光的高通：亮度過門檻的像素才留下（同 three 的 LuminosityHighPassShader），再把亮度壓到 maxLuma 以下。
+ * 太陽在車漆、積水上的反光可以是門檻的幾十倍，不設上限的話一小塊反光會把整台車連同旁邊的地面糊成一片白。
+ */
+const BLOOM_HIGH_PASS_FRAGMENT_SHADER = /* glsl */ `
+  uniform sampler2D tDiffuse;
+  uniform float luminosityThreshold;
+  uniform float smoothWidth;
+  uniform float maxLuma;
+  varying vec2 vUv;
+
+  void main() {
+    vec3 color = texture2D( tDiffuse, vUv ).rgb;
+    float luma = dot( color, vec3( 0.2126, 0.7152, 0.0722 ) );
+    color *= min( 1.0, maxLuma / max( luma, 1e-4 ) );
+    float pass = smoothstep( luminosityThreshold, luminosityThreshold + smoothWidth, luma );
+    gl_FragColor = vec4( color * pass, pass );
   }
 `;
 
@@ -404,11 +426,18 @@ export function createFramePipeline(
     composer.addPass(aoPass);
   }
 
+  let bloomPass: UnrealBloomPass | undefined;
   if (quality.bloom !== null) {
     const bloom = quality.bloom;
-    composer.addPass(
-      new UnrealBloomPass(new Vector2(size.x, size.y), bloom.strength, bloom.radius, bloom.threshold),
+    bloomPass = new UnrealBloomPass(
+      new Vector2(size.x, size.y),
+      bloom.strength,
+      bloom.radius,
+      bloom.threshold,
     );
+    bloomPass.materialHighPassFilter.uniforms['maxLuma'] = { value: POST_CONFIG.bloomMaxLuma };
+    bloomPass.materialHighPassFilter.fragmentShader = BLOOM_HIGH_PASS_FRAGMENT_SHADER;
+    composer.addPass(bloomPass);
   }
 
   let ready: Promise<void> = Promise.resolve();
@@ -444,6 +473,13 @@ export function createFramePipeline(
       if (aoPass !== undefined) {
         aoPass.scene = scene;
         aoPass.camera = camera;
+      }
+      if (bloomPass !== undefined && quality.bloom !== null) {
+        // 泛光的門檻與強度跟著這個場景的天氣：白天受太陽光的白車漆不進泛光，夜裡的燈照常發光。
+        const post = scenePostOf(scene);
+        const bloom = post === undefined ? quality.bloom : weatherBloom(quality.bloom, post);
+        bloomPass.threshold = bloom.threshold;
+        bloomPass.strength = bloom.strength;
       }
       // composer 每畫完一個濾鏡就交換兩張緩衝區，交換的次數跟著濾鏡數走；
       // 每幀開頭重設，場景才永遠畫進有多重取樣的那一張。
