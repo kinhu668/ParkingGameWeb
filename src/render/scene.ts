@@ -6,6 +6,7 @@ import {
   HemisphereLight,
   Scene,
   Vector3,
+  type Object3D,
   type WebGLRenderer,
 } from 'three';
 import { DEFAULT_SEED } from '../core/gameConfig';
@@ -44,7 +45,7 @@ import {
 import type { GroundEdgeBox } from '../props/groundShader';
 import type { BoundsFt } from '../level/collision';
 import { ftToM } from '../core/units';
-import { createLotProps } from '../props/lotProps';
+import { createLotProps, lampHeadPosition } from '../props/lotProps';
 import { buildingShadowMaxHeightM } from '../props/shadowReach';
 import {
   createEnvironmentLayout,
@@ -81,6 +82,7 @@ import {
   CURB_CONFIG,
   HEADLIGHT_CONFIG,
   HEMISPHERE_LIGHT_CONFIG,
+  LOT_PROPS_CONFIG,
   SKY_CONFIG,
   SUN_CONFIG,
   WHEEL_STOP_CONFIG,
@@ -93,7 +95,7 @@ import {
 import { SKIP_GROUND_REFLECTION } from './groundReflectionFlag';
 import { installHeightFog } from './heightFog';
 import { installToneLook } from './renderer';
-import { setSceneSun } from './lensFlare';
+import { setSceneLamps, setSceneSun } from './lensFlare';
 import { createShaftDepth, setSceneShaftDepth, type ShaftSetup } from './lightShaft';
 import { collectCameraBlockers } from './cameraBlockers';
 import { createOcclusionFade, type Point3, type SightBox } from './occlusionFade';
@@ -611,6 +613,21 @@ export function createGameScene(
   );
   scene.add(ground);
 
+  // 亮著的路燈登記給鏡頭光暈（有太陽的天氣只有太陽起光暈）。佈局裡燈的座標是 props 這個物件的本地座標。
+  const registerFlareLamps = (props: Object3D, lamps: readonly PropPlacement[]): void => {
+    if (!preset.lampsOn || preset.post.lampFlare <= 0) {
+      return;
+    }
+    props.updateMatrixWorld();
+    setSceneLamps(scene, {
+      heads: lamps.map((lamp) => {
+        const head = lampHeadPosition(lamp);
+        return new Vector3(head.x, head.y, head.z).applyMatrix4(props.matrixWorld);
+      }),
+      color: LOT_PROPS_CONFIG.lampGlowColor,
+    });
+  };
+
   // 標線貼在地面上：鏡像之後還在原地，不畫進倒影。
   const spotMarkings = createSpotMarkings(spot);
   spotMarkings.userData[SKIP_GROUND_REFLECTION] = true;
@@ -619,33 +636,33 @@ export function createGameScene(
     // 路緣石與車擋只是擺設：沒有碰撞，也不進停車判定。
     scene.add(createCurbs(spot), createWheelStop(spot));
     // 場地擺設（路燈、柱子、建築、圍欄、樹、背景車、小細節）同樣只是擺設：固定種子、全部用 InstancedMesh。
-    scene.add(
-      createLotProps(
-        spot,
-        lotLayout,
-        quality.props,
-        usesHdrChain(quality),
-        preset.lampsOn,
-        'classic',
-        buildingShadowHeightM,
-        shaftAir(preset.air.lampShaft),
-        preset.post.lampLightScale,
-      ),
+    const lotProps = createLotProps(
+      spot,
+      lotLayout,
+      quality.props,
+      usesHdrChain(quality),
+      preset.lampsOn,
+      'classic',
+      buildingShadowHeightM,
+      shaftAir(preset.air.lampShaft),
+      preset.post.lampLightScale,
     );
+    scene.add(lotProps);
+    registerFlareLamps(lotProps, lotLayout.lamps);
   } else if (environmentLayout !== undefined) {
     // bounds 外面的建築、招牌、背景車、路燈…；bounds 裡面沒有穿得過去的東西。
-    scene.add(
-      createEnvironment(
-        spot,
-        environmentLayout,
-        quality.props,
-        usesHdrChain(quality),
-        preset.lampsOn,
-        buildingShadowHeightM,
-        shaftAir(preset.air.lampShaft),
-        preset.post.lampLightScale,
-      ),
+    const environment = createEnvironment(
+      spot,
+      environmentLayout,
+      quality.props,
+      usesHdrChain(quality),
+      preset.lampsOn,
+      buildingShadowHeightM,
+      shaftAir(preset.air.lampShaft),
+      preset.post.lampLightScale,
     );
+    scene.add(environment);
+    registerFlareLamps(environment, environmentLayout.lot.lamps);
   }
 
   // 關卡的障礙物與邊界：這些才有碰撞。模型的佔地就是碰撞盒。

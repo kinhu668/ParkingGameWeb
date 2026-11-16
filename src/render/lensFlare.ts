@@ -1,14 +1,14 @@
-// 鏡頭光暈：一道橫向的條紋與幾個鬼影，光源有兩種——
-// - 夜裡的燈殼：從泛光已經模糊好的小張緩衝區裡挑（夠亮、整塊的才算）。
-// - 太陽：白天泛光的門檻拉得比天空高（車漆才不會洗白），泛光裡沒有太陽；改由太陽在畫面上的位置直接畫，
-//   被樓與車擋住多少看場景的深度（太陽周圍幾個點是不是天空）。
+// 鏡頭光暈：一道橫向的條紋與幾個鬼影。光源只有場景登記的太陽與路燈的燈頭，照它們在畫面上的位置直接畫
+// （不從畫面的亮點找：車漆、積水、櫥窗再亮也不起光暈）——
+// - 太陽（有太陽的天氣）：被樓與車擋住多少看場景的深度（太陽周圍幾個點是不是天空）。
+// - 路燈的燈頭（沒有太陽、路燈亮的天氣）：取畫面裡最近的幾盞，越遠越淡；燈頭前面有東西擋著就沒有。
 // 畫進自己的一張四分之一大小的緩衝區，由後製鏈最後一步加到畫面上（framePipeline.ts）。不用貼圖。
-// 哪些像素算光源（flareSourceWeight）與著色器裡的式子相同，可以不開 WebGL 測。
 import {
   Color,
   HalfFloatType,
   ShaderMaterial,
   Vector3,
+  Vector4,
   WebGLRenderTarget,
   type PerspectiveCamera,
   type Scene,
@@ -20,21 +20,6 @@ import type { LensFlareSettings } from './quality';
 import { POST_CONFIG } from './renderConfig';
 
 const FLARE = POST_CONFIG.lensFlare;
-
-/**
- * 一個像素算不算光暈的光源（0–1）。
- * @param luma 泛光緩衝區裡的亮度（已經過泛光的門檻、壓過上限、模糊過：一小點反光被周圍平均掉，整塊亮的才留得住）
- * @param isSky 這個像素後面是不是天空（沒有任何實體表面）：太陽圓盤一定是
- * @param surfaceScale 實體表面上的亮點算幾成（PostPreset.flareSurfaceScale）：有太陽的天氣是 0——
- *   車漆、積水上的太陽反光不算光源；沒有太陽的天氣是 1，夠亮的只有燈殼
- */
-export function flareSourceWeight(luma: number, isSky: boolean, surfaceScale: number): number {
-  const t = Math.min(
-    Math.max((luma - FLARE.sourceMinLuma) / (FLARE.sourceMaxLuma - FLARE.sourceMinLuma), 0),
-    1,
-  );
-  return t * t * (3 - 2 * t) * (isSky ? 1 : surfaceScale);
-}
 
 /** 場景裡太陽的方向（指向太陽的單位向量）與顏色。 */
 export interface SceneSun {
@@ -71,6 +56,54 @@ export function sunScreenUv(
   return { x: SUN_CLIP.x * 0.5 + 0.5, y: SUN_CLIP.y * 0.5 + 0.5 };
 }
 
+/** 場景裡亮著的路燈：燈頭的位置（世界座標）與燈光的顏色。 */
+export interface SceneLamps {
+  readonly heads: readonly { readonly x: number; readonly y: number; readonly z: number }[];
+  /** 燈殼的顏色（sRGB 十六進位）。 */
+  readonly color: number;
+}
+
+const SCENE_LAMPS = new WeakMap<Scene, SceneLamps>();
+
+/** 登記這個場景亮著的路燈（scene.ts 建場景時呼叫）。 */
+export function setSceneLamps(scene: Scene, lamps: SceneLamps): void {
+  SCENE_LAMPS.set(scene, lamps);
+}
+
+/** 一盞起光暈的燈：畫面上的位置（0–1，左下角是原點）、沿視線方向離鏡頭多遠、光暈的強度（0–1）。 */
+export interface LampFlareSource {
+  readonly x: number;
+  readonly y: number;
+  readonly viewDistanceM: number;
+  readonly strength: number;
+}
+
+const LAMP_POINT = new Vector3();
+
+/**
+ * 這一幀起光暈的燈：在鏡頭前面、落在畫面裡的燈頭，由近到遠最多 FLARE.lampCount 盞。
+ * 強度在 lampFullDistanceM 之內是 1，再遠就照距離反比淡下去（燈頭在畫面上越來越小）。
+ * @param camera 世界矩陣與投影矩陣都要是這一幀的
+ */
+export function lampFlareSources(camera: PerspectiveCamera, heads: SceneLamps['heads']): LampFlareSource[] {
+  const sources: LampFlareSource[] = [];
+  for (const head of heads) {
+    LAMP_POINT.set(head.x, head.y, head.z).applyMatrix4(camera.matrixWorldInverse);
+    const viewDistanceM = -LAMP_POINT.z;
+    if (viewDistanceM <= camera.near) {
+      continue;
+    }
+    LAMP_POINT.applyMatrix4(camera.projectionMatrix);
+    const x = LAMP_POINT.x * 0.5 + 0.5;
+    const y = LAMP_POINT.y * 0.5 + 0.5;
+    if (x < 0 || x > 1 || y < 0 || y > 1) {
+      continue;
+    }
+    sources.push({ x, y, viewDistanceM, strength: Math.min(FLARE.lampFullDistanceM / viewDistanceM, 1) });
+  }
+  return sources.sort((a, b) => a.viewDistanceM - b.viewDistanceM).slice(0, FLARE.lampCount);
+}
+
 const VERTEX_SHADER = /* glsl */ `
   varying vec2 vUv;
   void main() {
@@ -89,14 +122,17 @@ function glslVec3(color: { readonly r: number; readonly g: number; readonly b: n
 }
 
 const FRAGMENT_SHADER = /* glsl */ `
-  uniform sampler2D tBloom;
   uniform sampler2D tDepth;
   uniform float streak;
   uniform float ghosts;
-  uniform float surfaceScale;
   // 太陽：xy = 畫面上的位置（0–1），z = 強度（0 = 這一幀沒有太陽的光暈）。
   uniform vec3 sun;
   uniform vec3 sunColor;
+  // 路燈的燈頭：xy = 畫面上的位置，z = 強度（0 = 沒有這一盞），w = 沿視線方向離鏡頭多遠（公尺）。
+  uniform vec4 lamps[ LAMP_COUNT ];
+  uniform vec3 lampColor;
+  uniform float cameraNear;
+  uniform float cameraFar;
   uniform float aspect;
   varying vec2 vUv;
 
@@ -104,14 +140,26 @@ const FRAGMENT_SHADER = /* glsl */ `
     return step( 0.99999, texture2D( tDepth, uv ).x );
   }
 
-  // 太陽露出來幾成：太陽的位置與四周共五個點有幾個是天空；太陽靠近畫面邊緣時淡掉。
+  // 光源靠近畫面邊緣時淡掉：鏡頭轉動時光暈不會突然出現或消失。
+  float edgeFade( vec2 uv ) {
+    vec2 edge = smoothstep( vec2( 0.0 ), vec2( ${glslFloat(FLARE.edgeFade)} ), uv )
+      * smoothstep( vec2( 0.0 ), vec2( ${glslFloat(FLARE.edgeFade)} ), 1.0 - uv );
+    return edge.x * edge.y;
+  }
+
+  // 太陽露出來幾成：太陽的位置與四周共五個點有幾個是天空。
   float sunVisibility() {
     vec2 r = vec2( ${glslFloat(FLARE.sunProbeRadius)} / aspect, ${glslFloat(FLARE.sunProbeRadius)} );
     float sky = skyAt( sun.xy ) + skyAt( sun.xy + vec2( r.x, 0.0 ) ) + skyAt( sun.xy - vec2( r.x, 0.0 ) )
       + skyAt( sun.xy + vec2( 0.0, r.y ) ) + skyAt( sun.xy - vec2( 0.0, r.y ) );
-    vec2 edge = smoothstep( vec2( 0.0 ), vec2( ${glslFloat(FLARE.edgeFade)} ), sun.xy )
-      * smoothstep( vec2( 0.0 ), vec2( ${glslFloat(FLARE.edgeFade)} ), 1.0 - sun.xy );
-    return sky / 5.0 * edge.x * edge.y;
+    return sky / 5.0 * edgeFade( sun.xy );
+  }
+
+  // 燈頭有沒有露出來：那個位置畫到的表面沿視線方向的距離，不比燈頭近（留一點餘裕：燈殼自己就在那裡）。
+  float lampVisibility( vec4 lamp ) {
+    float depth = texture2D( tDepth, lamp.xy ).x;
+    float sceneDistance = cameraNear * cameraFar / ( cameraFar - depth * ( cameraFar - cameraNear ) );
+    return step( lamp.w * ${glslFloat(FLARE.lampDepthSlack)}, sceneDistance ) * edgeFade( lamp.xy );
   }
 
   // 一個邊緣柔的圓（以畫面高度為 1 的座標）。
@@ -119,53 +167,37 @@ const FRAGMENT_SHADER = /* glsl */ `
     return 1.0 - smoothstep( radius * 0.55, radius, length( point - center ) );
   }
 
-  // 這個位置的光源：泛光緩衝區的顏色 × 光源的權重（同 flareSourceWeight）。靠近畫面邊緣淡到 0，
-  // 取樣點跑出畫面時不會把邊緣那一排像素拉成一條。
-  vec3 flareSource( vec2 uv ) {
-    vec3 color = texture2D( tBloom, uv ).rgb;
-    float luma = dot( color, vec3( 0.2126, 0.7152, 0.0722 ) );
-    float sky = step( 0.99999, texture2D( tDepth, uv ).x );
-    float weight = smoothstep( ${glslFloat(FLARE.sourceMinLuma)}, ${glslFloat(FLARE.sourceMaxLuma)}, luma )
-      * mix( surfaceScale, 1.0, sky );
-    vec2 edge = smoothstep( vec2( 0.0 ), vec2( ${glslFloat(FLARE.edgeFade)} ), uv )
-      * smoothstep( vec2( 0.0 ), vec2( ${glslFloat(FLARE.edgeFade)} ), 1.0 - uv );
-    return color * weight * edge.x * edge.y;
+  // 一個光源（在畫面上 source 的位置）在這個像素的條紋與鬼影；ghostGain 是鬼影的倍率。
+  // 座標以畫面高度為 1，圓才是圓的。
+  vec3 flareOf( vec2 source, float ghostGain ) {
+    vec2 scale = vec2( aspect, 1.0 );
+    vec2 point = ( vUv - 0.5 ) * scale;
+    vec2 center = ( source - 0.5 ) * scale;
+    vec2 offset = point - center;
+    // 橫向條紋：離光源越遠越淡。
+    float along = max( 1.0 - abs( offset.x ) / ( ${glslFloat(FLARE.streakHalfWidth)} * aspect ), 0.0 );
+    float across = exp( - offset.y * offset.y / ${glslFloat(FLARE.streakHeight * FLARE.streakHeight)} );
+    vec3 flare = ${glslVec3(FLARE.streakTint)} * along * along * across * streak;
+    // 鬼影：光源對畫面中心鏡射到另一側，離中心的距離各除以一個比例。
+    flare += ghosts * ghostGain * (
+      ${glslVec3(FLARE.ghostTints[0])} * ghostDisc( point, - center / ${glslFloat(FLARE.ghostScales[0])}, ${glslFloat(FLARE.ghostRadii[0])} )
+      + ${glslVec3(FLARE.ghostTints[1])} * ghostDisc( point, - center / ${glslFloat(FLARE.ghostScales[1])}, ${glslFloat(FLARE.ghostRadii[1])} )
+      + ${glslVec3(FLARE.ghostTints[2])} * ghostDisc( point, - center / ${glslFloat(FLARE.ghostScales[2])}, ${glslFloat(FLARE.ghostRadii[2])} )
+    );
+    return flare;
   }
 
   void main() {
-    // 橫向條紋：左右各取幾個樣本，離光源越遠越淡。樣本的間隔比模糊過的光源窄，相鄰的樣本會重疊，條紋是連續的。
-    vec3 streakSum = vec3( 0.0 );
-    for ( int i = - STREAK_TAPS; i <= STREAK_TAPS; i ++ ) {
-      float x = float( i ) / float( STREAK_TAPS );
-      float falloff = ( 1.0 - abs( x ) ) * ( 1.0 - abs( x ) );
-      streakSum += flareSource( vUv + vec2( x * ${glslFloat(FLARE.streakHalfWidth)}, 0.0 ) ) * falloff;
-    }
-    vec3 flare = streakSum * ${glslVec3(FLARE.streakTint)} * streak;
-
-    // 鬼影：光源對畫面中心鏡射到另一側，離中心的距離各乘一個比例。
-    vec2 mirrored = 0.5 - vUv;
-    vec3 ghostSum = flareSource( 0.5 + mirrored * ${glslFloat(FLARE.ghostScales[0])} ) * ${glslVec3(FLARE.ghostTints[0])};
-    ghostSum += flareSource( 0.5 + mirrored * ${glslFloat(FLARE.ghostScales[1])} ) * ${glslVec3(FLARE.ghostTints[1])};
-    ghostSum += flareSource( 0.5 + mirrored * ${glslFloat(FLARE.ghostScales[2])} ) * ${glslVec3(FLARE.ghostTints[2])};
-    flare += ghostSum * ghosts;
-
+    vec3 flare = vec3( 0.0 );
     if ( sun.z > 0.0 ) {
-      // 太陽的條紋與鬼影直接照它在畫面上的位置畫（座標以畫面高度為 1，圓才是圓的）。
-      vec2 scale = vec2( aspect, 1.0 );
-      vec2 point = ( vUv - 0.5 ) * scale;
-      vec2 center = ( sun.xy - 0.5 ) * scale;
-      vec2 offset = point - center;
-      float along = max( 1.0 - abs( offset.x ) / ( ${glslFloat(FLARE.streakHalfWidth)} * aspect ), 0.0 );
-      float across = exp( - offset.y * offset.y / ${glslFloat(FLARE.sunStreakHeight * FLARE.sunStreakHeight)} );
-      vec3 sunFlare = ${glslVec3(FLARE.streakTint)} * along * along * across * streak;
-      sunFlare += ghosts * (
-        ${glslVec3(FLARE.ghostTints[0])} * ghostDisc( point, - center / ${glslFloat(FLARE.ghostScales[0])}, ${glslFloat(FLARE.sunGhostRadii[0])} )
-        + ${glslVec3(FLARE.ghostTints[1])} * ghostDisc( point, - center / ${glslFloat(FLARE.ghostScales[1])}, ${glslFloat(FLARE.sunGhostRadii[1])} )
-        + ${glslVec3(FLARE.ghostTints[2])} * ghostDisc( point, - center / ${glslFloat(FLARE.ghostScales[2])}, ${glslFloat(FLARE.sunGhostRadii[2])} )
-      );
-      flare += sunFlare * sunColor * ( sun.z * sunVisibility() * ${glslFloat(FLARE.sunLuma)} );
+      flare += flareOf( sun.xy, 1.0 ) * sunColor * ( sun.z * sunVisibility() * ${glslFloat(FLARE.sunLuma)} );
     }
-
+    for ( int i = 0; i < LAMP_COUNT; i ++ ) {
+      vec4 lamp = lamps[ i ];
+      if ( lamp.z > 0.0 ) {
+        flare += flareOf( lamp.xy, ${glslFloat(FLARE.lampGhostGain)} ) * lampColor * ( lamp.z * lampVisibility( lamp ) * ${glslFloat(FLARE.lampLuma)} );
+      }
+    }
     gl_FragColor = vec4( flare, 1.0 );
   }
 `;
@@ -179,26 +211,29 @@ export class LensFlarePass extends Pass {
   private readonly quad: FullScreenQuad;
   private readonly sun = new Vector3();
   private readonly sunColor = new Color();
+  private readonly lamps = Array.from({ length: FLARE.lampCount }, () => new Vector4());
+  private readonly lampColor = new Color();
 
   /**
    * @param settings 這個畫質級別的光暈強度
-   * @param bloomTexture 泛光模糊過的一張小緩衝區
    * @param depthTexture 場景的深度（環境光遮蔽那一遍畫的；天空是 1）
    */
-  constructor(settings: LensFlareSettings, bloomTexture: Texture, depthTexture: Texture) {
+  constructor(settings: LensFlareSettings, depthTexture: Texture) {
     super();
     this.needsSwap = false;
     this.material = new ShaderMaterial({
       name: 'LensFlareShader',
-      defines: { STREAK_TAPS: FLARE.streakTaps },
+      defines: { LAMP_COUNT: FLARE.lampCount },
       uniforms: {
-        tBloom: { value: bloomTexture },
         tDepth: { value: depthTexture },
         streak: { value: settings.streak },
         ghosts: { value: settings.ghosts },
-        surfaceScale: { value: 1 },
         sun: { value: this.sun },
         sunColor: { value: this.sunColor },
+        lamps: { value: this.lamps },
+        lampColor: { value: this.lampColor },
+        cameraNear: { value: 1 },
+        cameraFar: { value: 2 },
         aspect: { value: 1 },
       },
       vertexShader: VERTEX_SHADER,
@@ -215,26 +250,39 @@ export class LensFlarePass extends Pass {
   }
 
   /**
-   * 這一幀的場景與鏡頭（鏡頭的矩陣要是這一幀的）。
-   * @param surfaceScale 實體表面上的亮點算幾成光源（PostPreset.flareSurfaceScale）
-   * @param sunStrength 太陽的光暈有多強（PostPreset.sunFlare）；場景沒登記太陽就沒有
+   * 這一幀的場景與鏡頭（鏡頭的矩陣要是這一幀的）。場景沒登記太陽、路燈就沒有那一種光暈。
+   * @param sunStrength 太陽的光暈有多強（PostPreset.sunFlare）
+   * @param lampStrength 路燈的光暈有多強（PostPreset.lampFlare）
    */
-  setScene(scene: Scene, camera: PerspectiveCamera, surfaceScale: number, sunStrength: number): void {
+  setScene(scene: Scene, camera: PerspectiveCamera, sunStrength: number, lampStrength: number): void {
     const uniforms = this.material.uniforms;
-    if (uniforms['surfaceScale'] !== undefined) {
-      uniforms['surfaceScale'].value = surfaceScale;
-    }
-    if (uniforms['aspect'] !== undefined) {
+    if (uniforms['aspect'] !== undefined && uniforms['cameraNear'] !== undefined && uniforms['cameraFar'] !== undefined) {
       uniforms['aspect'].value = camera.aspect;
+      uniforms['cameraNear'].value = camera.near;
+      uniforms['cameraFar'].value = camera.far;
     }
     const sceneSun = SCENE_SUN.get(scene);
     const uv = sceneSun === undefined || sunStrength <= 0 ? null : sunScreenUv(camera, sceneSun.direction);
     if (sceneSun === undefined || uv === null) {
       this.sun.set(0, 0, 0);
-      return;
+    } else {
+      this.sun.set(uv.x, uv.y, sunStrength);
+      this.sunColor.set(sceneSun.color);
     }
-    this.sun.set(uv.x, uv.y, sunStrength);
-    this.sunColor.set(sceneSun.color);
+    const sceneLamps = SCENE_LAMPS.get(scene);
+    const sources =
+      sceneLamps === undefined || lampStrength <= 0 ? [] : lampFlareSources(camera, sceneLamps.heads);
+    this.lamps.forEach((lamp, index) => {
+      const source = sources[index];
+      if (source === undefined) {
+        lamp.set(0, 0, 0, 0);
+      } else {
+        lamp.set(source.x, source.y, source.strength * lampStrength, source.viewDistanceM);
+      }
+    });
+    if (sceneLamps !== undefined) {
+      this.lampColor.set(sceneLamps.color);
+    }
   }
 
   override setSize(width: number, height: number): void {

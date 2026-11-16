@@ -13,7 +13,7 @@
 //    2b. MotionBlurPass   動態模糊（render/motionBlur.ts）；只有一般遊戲的畫面才做，定格一律跳過
 //    3. UnrealBloomPass   泛光；門檻是線性亮度，所以要在色調映射之前。門檻與強度跟著場景的天氣
 //                         （weatherPresets.ts 的 PostPreset），進泛光的亮度有上限（BLOOM_HIGH_PASS_FRAGMENT_SHADER）
-//    3a. LensFlarePass    鏡頭光暈（render/lensFlare.ts）：從泛光的緩衝區畫進自己的一小張，最後一步才加上去
+//    3a. LensFlarePass    鏡頭光暈（render/lensFlare.ts）：太陽與路燈的條紋、鬼影畫進自己的一小張，最後一步才加上去
 //    4. SMAAPass          ultra
 //    5. 輸出 ShaderPass    色差 → 加上鏡頭光暈 → 暈影 → 色調映射 + 轉成輸出色域（sRGB）→ 抖色
 //
@@ -486,11 +486,10 @@ export function createFramePipeline(
     composer.addPass(bloomPass);
   }
 
-  // 鏡頭光暈的光源取自泛光模糊過的緩衝區（八分之一大小那一張），天空與實體表面靠深度分。
+  // 鏡頭光暈：太陽與燈頭有沒有被擋住，看環境光遮蔽那一遍的深度。
   let flarePass: LensFlarePass | undefined;
-  const flareSource = bloomPass?.renderTargetsVertical[2];
-  if (quality.lensFlare !== null && flareSource !== undefined && aoPass !== undefined) {
-    flarePass = new LensFlarePass(quality.lensFlare, flareSource.texture, aoPass.depthTexture);
+  if (quality.lensFlare !== null && aoPass !== undefined) {
+    flarePass = new LensFlarePass(quality.lensFlare, aoPass.depthTexture);
     composer.addPass(flarePass);
   }
 
@@ -541,9 +540,9 @@ export function createFramePipeline(
       }
       const post = scenePostOf(scene);
       if (flarePass !== undefined) {
-        // 沒登記天氣的場景（展示台）沒有太陽也沒有燈殼：車漆的反光不起光暈。
+        // 沒登記天氣的場景（展示台）沒有太陽也沒有路燈：沒有光暈。
         camera.updateMatrixWorld();
-        flarePass.setScene(scene, camera, post?.flareSurfaceScale ?? 0, post?.sunFlare ?? 0);
+        flarePass.setScene(scene, camera, post?.sunFlare ?? 0, post?.lampFlare ?? 0);
       }
       if (bloomPass !== undefined && quality.bloom !== null) {
         // 泛光的門檻與強度跟著這個場景的天氣：白天受太陽光的白車漆不進泛光，夜裡的燈照常發光。

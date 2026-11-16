@@ -78,7 +78,7 @@ export interface MotionBlurSettings {
 }
 
 /**
- * 鏡頭光暈（render/lensFlare.ts）：從泛光的緩衝區取太陽與燈這些最亮的光源，加上橫向的條紋與對稱的鬼影。
+ * 鏡頭光暈（render/lensFlare.ts）：太陽與路燈的燈頭在畫面上加橫向的條紋與對稱的鬼影。
  * 數值是加到畫面上的比例（場景線性亮度），要很輕。
  */
 export interface LensFlareSettings {

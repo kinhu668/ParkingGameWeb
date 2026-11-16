@@ -1,63 +1,14 @@
 import { PerspectiveCamera } from 'three';
 import { describe, expect, test } from 'vitest';
-import { WEATHER_IDS } from '../src/core/weather';
-import { flareSourceWeight, sunScreenUv } from '../src/render/lensFlare';
-import { LOT_PROPS_CONFIG, POST_CONFIG, QUALITY_PRESETS } from '../src/render/renderConfig';
-import { weatherBloom, weatherPreset } from '../src/render/weatherPresets';
+import { lampFlareSources, sunScreenUv } from '../src/render/lensFlare';
+import { POST_CONFIG, QUALITY_PRESETS } from '../src/render/renderConfig';
+import { weatherPreset } from '../src/render/weatherPresets';
 
 const FLARE = POST_CONFIG.lensFlare;
 const SUN_WEATHERS = ['clear', 'wet', 'dusk'] as const;
 const LAMP_WEATHERS = ['rain', 'storm', 'night'] as const;
 
-describe('鏡頭光暈的光源遮罩', () => {
-  test('暗的像素不是光源；越亮權重越高，到 sourceMaxLuma 為 1', () => {
-    expect(flareSourceWeight(0, true, 1)).toBe(0);
-    expect(flareSourceWeight(FLARE.sourceMinLuma, true, 1)).toBe(0);
-    expect(flareSourceWeight(FLARE.sourceMaxLuma, true, 1)).toBe(1);
-    expect(flareSourceWeight(POST_CONFIG.bloomMaxLuma, true, 1)).toBe(1);
-    let previous = 0;
-    for (let luma = 0; luma <= POST_CONFIG.bloomMaxLuma; luma += 0.25) {
-      const weight = flareSourceWeight(luma, true, 1);
-      expect(weight).toBeGreaterThanOrEqual(previous);
-      previous = weight;
-    }
-  });
-
-  test('有太陽的天氣：只有天上的太陽是光源，車漆與積水上再亮的反光都不是', () => {
-    for (const weather of SUN_WEATHERS) {
-      const scale = weatherPreset(weather).post.flareSurfaceScale;
-      // 太陽的反光進泛光時最亮就是上限 bloomMaxLuma。
-      expect(flareSourceWeight(POST_CONFIG.bloomMaxLuma, false, scale)).toBe(0);
-      expect(flareSourceWeight(POST_CONFIG.bloomMaxLuma, true, scale)).toBe(1);
-    }
-  });
-
-  test('沒有太陽的天氣：路燈的燈殼是光源', () => {
-    const lampLuma = LOT_PROPS_CONFIG.lampGlowIntensity.hdr;
-    for (const weather of LAMP_WEATHERS) {
-      const scale = weatherPreset(weather).post.flareSurfaceScale;
-      expect(flareSourceWeight(lampLuma, false, scale)).toBe(1);
-    }
-  });
-
-  test('光源的亮度範圍在泛光的上限之內，而且全滿的亮度高過每一種天氣的泛光門檻', () => {
-    expect(FLARE.sourceMinLuma).toBeGreaterThan(0);
-    expect(FLARE.sourceMaxLuma).toBeGreaterThan(FLARE.sourceMinLuma);
-    expect(FLARE.sourceMaxLuma).toBeLessThan(POST_CONFIG.bloomMaxLuma);
-    for (const level of ['high', 'ultra'] as const) {
-      const bloom = QUALITY_PRESETS[level].bloom;
-      expect(bloom).not.toBeNull();
-      if (bloom === null) {
-        continue;
-      }
-      for (const weather of WEATHER_IDS) {
-        expect(FLARE.sourceMaxLuma).toBeGreaterThanOrEqual(
-          weatherBloom(bloom, weatherPreset(weather).post).threshold,
-        );
-      }
-    }
-  });
-
+describe('鏡頭光暈的強度', () => {
   test('光暈很輕：條紋與鬼影的強度都遠小於 1，ultra 不比 high 弱；low、medium 沒有', () => {
     expect(QUALITY_PRESETS.low.lensFlare).toBeNull();
     expect(QUALITY_PRESETS.medium.lensFlare).toBeNull();
@@ -121,6 +72,59 @@ describe('太陽在畫面上的位置', () => {
     }
     for (const weather of LAMP_WEATHERS) {
       expect(weatherPreset(weather).post.sunFlare, weather).toBe(0);
+    }
+  });
+});
+
+describe('起光暈的路燈', () => {
+  // 鏡頭在原點、離地 2 公尺，往 −Z 平視。
+  function camera(): PerspectiveCamera {
+    const result = new PerspectiveCamera(50, 16 / 9, 0.3, 400);
+    result.position.set(0, 2, 0);
+    result.lookAt(0, 2, -1);
+    result.updateMatrixWorld();
+    return result;
+  }
+
+  test('正前方的燈頭在畫面正中央，距離是沿視線方向的距離', () => {
+    const [source] = lampFlareSources(camera(), [{ x: 0, y: 2, z: -20 }]);
+    expect(source?.x).toBeCloseTo(0.5, 6);
+    expect(source?.y).toBeCloseTo(0.5, 6);
+    expect(source?.viewDistanceM).toBeCloseTo(20, 6);
+  });
+
+  test('鏡頭後面、畫面外的燈不算', () => {
+    expect(lampFlareSources(camera(), [{ x: 0, y: 2, z: 20 }])).toEqual([]);
+    expect(lampFlareSources(camera(), [{ x: 0, y: 2, z: 0 }])).toEqual([]);
+    // 視角 50°：正前方 10 公尺、高出 8 公尺的燈頭在畫面上緣之外。
+    expect(lampFlareSources(camera(), [{ x: 0, y: 10, z: -10 }])).toEqual([]);
+    expect(lampFlareSources(camera(), [{ x: 40, y: 2, z: -10 }])).toEqual([]);
+  });
+
+  test('由近到遠，最多 lampCount 盞', () => {
+    const heads = [60, 10, 40, 25, 80].map((distanceM) => ({ x: 0, y: 3, z: -distanceM }));
+    const sources = lampFlareSources(camera(), heads);
+    expect(sources).toHaveLength(FLARE.lampCount);
+    expect(sources.map((source) => Math.round(source.viewDistanceM))).toEqual(
+      [10, 25, 40, 60, 80].slice(0, FLARE.lampCount),
+    );
+  });
+
+  test('近的燈全亮，遠的照距離反比變淡，不會是 0', () => {
+    const near = lampFlareSources(camera(), [{ x: 0, y: 2, z: -FLARE.lampFullDistanceM / 2 }])[0];
+    const far = lampFlareSources(camera(), [{ x: 0, y: 2, z: -FLARE.lampFullDistanceM * 4 }])[0];
+    expect(near?.strength).toBe(1);
+    expect(far?.strength).toBeCloseTo(0.25, 6);
+  });
+
+  test('只有沒有太陽、路燈亮著的天氣有路燈的光暈', () => {
+    for (const weather of LAMP_WEATHERS) {
+      expect(weatherPreset(weather).lampsOn, weather).toBe(true);
+      expect(weatherPreset(weather).post.lampFlare, weather).toBeGreaterThan(0);
+      expect(weatherPreset(weather).post.lampFlare, weather).toBeLessThanOrEqual(1);
+    }
+    for (const weather of SUN_WEATHERS) {
+      expect(weatherPreset(weather).post.lampFlare, weather).toBe(0);
     }
   });
 });

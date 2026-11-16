@@ -336,14 +336,14 @@ describe('泛光與路燈跟著天氣（PostPreset）', () => {
         bloomThresholdScale: 1,
         bloomStrengthScale: 1,
         lampLightScale: 1,
-        flareSurfaceScale: 1,
+        lampFlare: 1,
         sunFlare: 0,
       });
     }
     for (const weather of ['clear', 'wet', 'dusk'] as const) {
       const post = weatherPreset(weather).post;
-      // 有太陽：車漆與積水上的反光不當鏡頭光暈的光源。
-      expect(post.flareSurfaceScale).toBe(0);
+      // 有太陽：只有太陽起鏡頭光暈，路燈不起。
+      expect(post.lampFlare).toBe(0);
       expect(post.sunFlare).toBeGreaterThan(0);
       expect(post.bloomThresholdScale).toBeGreaterThan(1);
       expect(post.bloomStrengthScale).toBeLessThanOrEqual(1);
@@ -372,7 +372,7 @@ describe('泛光與路燈跟著天氣（PostPreset）', () => {
         bloomThresholdScale: 2,
         bloomStrengthScale: 0.5,
         lampLightScale: 1,
-        flareSurfaceScale: 0,
+        lampFlare: 0,
         sunFlare: 0,
       }),
     ).toEqual({ strength: 0.1, radius: 0.5, threshold: 3.6 });
