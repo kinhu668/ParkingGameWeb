@@ -92,6 +92,7 @@ import {
 } from './groundReflection';
 import { SKIP_GROUND_REFLECTION } from './groundReflectionFlag';
 import { installHeightFog } from './heightFog';
+import { installToneLook } from './renderer';
 import type { ShaftSetup } from './lightShaft';
 import { collectCameraBlockers } from './cameraBlockers';
 import { createOcclusionFade, type Point3, type SightBox } from './occlusionFade';
@@ -520,6 +521,8 @@ export function createGameScene(
 
   // 貼地的霧氣（高度霧）：有水氣的天氣（雨、雷雨、夜晚）才有；要在任何材質編譯之前掛進 three。
   installHeightFog(preset.air);
+  // 這種天氣的色調分級：同樣要在任何材質編譯之前換好。
+  installToneLook(preset.look);
   // 光柱（路燈的光錐、車頭燈的光柱）：亮度跟著天氣，霧氣流動的時間全場景共用一個。
   const shaftTime = { value: 0 };
   const shaftAir = (strength: number): ShaftSetup => ({

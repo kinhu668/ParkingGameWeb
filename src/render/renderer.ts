@@ -10,6 +10,7 @@ import {
 } from 'three';
 import { usesHdrChain, type QualitySettings, type ToneMappingId } from './quality';
 import { RENDERER_CONFIG, TONE_LOOK_CONFIG } from './renderConfig';
+import type { ToneLookPreset } from './weatherPresets';
 
 const TONE_MAPPINGS: Readonly<Record<ToneMappingId, ToneMapping>> = {
   aces: ACESFilmicToneMapping,
@@ -30,11 +31,11 @@ function glslVec3(color: { readonly r: number; readonly g: number; readonly b: n
 }
 
 /**
- * 自訂色調映射的 GLSL：先做 three 內建的 AgX（含曝光），再做黃昏的色調分級。純函式，方便測試。
+ * 自訂色調映射的 GLSL：先做 three 內建的 AgX（含曝光），再做色調分級。純函式，方便測試。
  * 輸入是場景線性亮度，輸出是顯示線性空間（之後 three 才轉成 sRGB）。
+ * @param look 色調分級的數值；不給 = 黃昏（基準畫面，TONE_LOOK_CONFIG）
  */
-export function toneLookShader(): string {
-  const look = TONE_LOOK_CONFIG;
+export function toneLookShader(look: ToneLookPreset = TONE_LOOK_CONFIG): string {
   return /* glsl */ `vec3 CustomToneMapping( vec3 color ) {
 	color = AgXToneMapping( color );
 	const vec3 lumaWeights = vec3( 0.2126, 0.7152, 0.0722 );
@@ -50,21 +51,25 @@ export function toneLookShader(): string {
 }`;
 }
 
+/** 目前掛在 three 裡的自訂色調映射；還沒掛過就是 three 的預設實作。 */
+let installedToneLook = DEFAULT_CUSTOM_TONE_MAPPING;
+
 /**
- * 把黃昏的色調分級掛進 three 的自訂色調映射（改 ShaderChunk 是 three 提供的做法）。
+ * 把色調分級掛進 three 的自訂色調映射（改 ShaderChunk 是 three 提供的做法）。
  * 色調映射在每個材質的著色器裡執行，所以不管是直接畫到畫面上、還是後製鏈最後一步，用的都是這一個函式，
- * 各畫質級別的顏色才會是同一套，而且不必為了調色多一個全螢幕濾鏡。重複呼叫沒有副作用。
+ * 各畫質級別的顏色才會是同一套，而且不必為了調色多一個全螢幕濾鏡。
+ * createRenderer 先掛黃昏的；建立場景時（畫第一幀之前）再換成那種天氣的。與高度霧相同：一個頁面只有一個場景，
+ * 已經編譯好的著色器不會跟著換。重複呼叫沒有副作用。
+ * @param look 色調分級的數值；不給 = 黃昏
  */
-function installToneLook(): void {
+export function installToneLook(look: ToneLookPreset = TONE_LOOK_CONFIG): void {
   const chunk = ShaderChunk.tonemapping_pars_fragment;
-  const shader = toneLookShader();
-  if (chunk.includes(shader)) {
-    return;
+  const shader = toneLookShader(look);
+  if (!chunk.includes(installedToneLook)) {
+    throw new Error('three 的色調映射著色器裡找不到 CustomToneMapping 的實作');
   }
-  if (!chunk.includes(DEFAULT_CUSTOM_TONE_MAPPING)) {
-    throw new Error('three 的色調映射著色器裡找不到 CustomToneMapping 的預設實作');
-  }
-  ShaderChunk.tonemapping_pars_fragment = chunk.replace(DEFAULT_CUSTOM_TONE_MAPPING, shader);
+  ShaderChunk.tonemapping_pars_fragment = chunk.replace(installedToneLook, shader);
+  installedToneLook = shader;
 }
 
 export function createRenderer(canvas: HTMLCanvasElement, quality: QualitySettings): WebGLRenderer {

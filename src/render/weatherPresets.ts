@@ -13,6 +13,7 @@ import {
   HEMISPHERE_LIGHT_CONFIG,
   SKY_CONFIG,
   SUN_CONFIG,
+  TONE_LOOK_CONFIG,
 } from './renderConfig';
 
 /** 天空（three 的程序化 Sky）的參數；意義同 SKY_CONFIG。 */
@@ -107,6 +108,22 @@ export interface AssistViewPreset {
 }
 
 /**
+ * 色調分級，接在 AgX 色調映射之後（數值在顯示線性空間）；意義同 TONE_LOOK_CONFIG。
+ * 併在色調映射的函式裡（renderer.ts），每個畫質級別都有、不花額外的全螢幕濾鏡。
+ */
+export interface ToneLookPreset {
+  /** 暗部加上的顏色（線性 RGB）；越暗加越多。 */
+  readonly shadowLift: { readonly r: number; readonly g: number; readonly b: number };
+  /** 亮部乘上的顏色（線性 RGB 倍率）。 */
+  readonly highlightTint: { readonly r: number; readonly g: number; readonly b: number };
+  /** 飽和度（1 = 不變）。 */
+  readonly saturation: number;
+  /** 對比：以 contrastPivot 為支點的冪次（1 = 不變）。 */
+  readonly contrast: number;
+  readonly contrastPivot: number;
+}
+
+/**
  * 後製與路燈在這種天氣的倍率。泛光的門檻是場景線性亮度：有太陽的天氣，受光的淺色車漆本身就有 1–3，
  * 門檻要拉高到它之上，只留燈殼、太陽的反光；沒有太陽的天氣（雨、雷雨、夜晚）維持級別原本的門檻。
  */
@@ -140,6 +157,8 @@ export interface WeatherPreset {
   readonly assistView: AssistViewPreset;
   /** 泛光與路燈亮度的倍率。 */
   readonly post: PostPreset;
+  /** 這種天氣的色調分級。 */
+  readonly look: ToneLookPreset;
 }
 
 /** 乾淨的空氣：沒有貼地霧氣、沒有頭燈光柱；路燈光錐是基準亮度。 */
@@ -154,7 +173,25 @@ const LAMP_LIT_POST: PostPreset = { bloomThresholdScale: 1, bloomStrengthScale: 
 /** 白天（晴天、雨後）：門檻拉到受太陽光的白車漆之上，只有太陽在車漆、積水上的反光會發光；路燈本來就不亮。 */
 const DAYLIGHT_POST: PostPreset = { bloomThresholdScale: 2.5, bloomStrengthScale: 0.8, lampLightScale: 1 };
 
-/** 黃昏：基準畫面，天空、太陽、霧、補光、地面全部引用既有設定。 */
+/** 白天（晴天）：比黃昏中性，亮部只留一點暖色，藍天與車漆的顏色不被染黃。 */
+const DAYLIGHT_LOOK: ToneLookPreset = {
+  ...TONE_LOOK_CONFIG,
+  highlightTint: { r: 1.0, g: 0.985, b: 0.95 },
+};
+
+/**
+ * 雨與雷雨：顏色淡一點、暗部抬一點灰藍（雨幕裡沒有純黑），亮部不染暖色，對比放軟。
+ * 幅度要小：飽和度再低，車位的琥珀色標記與車漆就褪成一片灰，畫面發悶。
+ */
+const RAIN_LOOK: ToneLookPreset = {
+  shadowLift: { r: 0.002, g: 0.004, b: 0.008 },
+  highlightTint: { r: 0.985, g: 0.99, b: 1.0 },
+  saturation: 1.18,
+  contrast: 1.07,
+  contrastPivot: TONE_LOOK_CONFIG.contrastPivot,
+};
+
+/** 黃昏：基準畫面，天空、太陽、霧、補光、地面、色調分級全部引用既有設定。 */
 const DUSK: WeatherPreset = {
   sky: { ...SKY_CONFIG, overcast: 0 },
   sun: SUN_CONFIG,
@@ -169,6 +206,7 @@ const DUSK: WeatherPreset = {
   assistView: NO_ASSIST_GAIN,
   // 太陽強度 8：受光的白車漆約 2.6，門檻放在它與燈殼（HDR 亮度約 4.6）之間；路燈只開一半。
   post: { bloomThresholdScale: 2, bloomStrengthScale: 0.9, lampLightScale: 0.5 },
+  look: TONE_LOOK_CONFIG,
 };
 
 /** 門檻放在噪聲值域（0–1）之外：整片都不濕。 */
@@ -233,6 +271,7 @@ export const WEATHER_PRESETS: Readonly<Record<WeatherId, WeatherPreset>> = {
     air: CLEAR_AIR,
     assistView: NO_ASSIST_GAIN,
     post: DAYLIGHT_POST,
+    look: DAYLIGHT_LOOK,
   },
   dusk: DUSK,
   // 雨天：灰雲蓋滿、太陽很弱偏冷、近而灰的霧、全面潮濕＋積水、雨絲、路燈亮。
@@ -250,6 +289,7 @@ export const WEATHER_PRESETS: Readonly<Record<WeatherId, WeatherPreset>> = {
     air: { mistDensityPerM: 0.02, mistHeightM: ftToM(13), lampShaft: 2.6, headlightShaft: 1 },
     assistView: { darkGain: 1.5, kneeLuma: 0.3 },
     post: LAMP_LIT_POST,
+    look: RAIN_LOOK,
   },
   // 雨後：雲散了一半、低角度的暖陽、大片潮濕與積水（粗糙度低，逆光看反光明顯）、路燈不亮。
   wet: {
@@ -285,6 +325,8 @@ export const WEATHER_PRESETS: Readonly<Record<WeatherId, WeatherPreset>> = {
     air: CLEAR_AIR,
     assistView: NO_ASSIST_GAIN,
     post: DAYLIGHT_POST,
+    // 雨後的暖陽：亮部的暖色比黃昏輕，濕地的反光才不會一片橘。
+    look: { ...TONE_LOOK_CONFIG, highlightTint: { r: 1.0, g: 0.97, b: 0.915 } },
   },
   // 雷雨：比雨天更暗、霧更近、雨更密，加上閃光。
   storm: {
@@ -301,6 +343,8 @@ export const WEATHER_PRESETS: Readonly<Record<WeatherId, WeatherPreset>> = {
     air: { mistDensityPerM: 0.028, mistHeightM: ftToM(16), lampShaft: 3, headlightShaft: 1.2 },
     assistView: { darkGain: 2.6, kneeLuma: 0.3 },
     post: LAMP_LIT_POST,
+    // 比雨天再淡一點：整張畫面靠路燈與閃電的顏色撐。
+    look: { ...RAIN_LOOK, saturation: 1.12 },
   },
   // 夜晚：很暗的天空（白天的天空壓到很暗）、冷色的弱月光、深藍的近霧、乾地；路燈與車頭燈是主要光源。
   night: {
@@ -326,6 +370,14 @@ export const WEATHER_PRESETS: Readonly<Record<WeatherId, WeatherPreset>> = {
     air: { mistDensityPerM: 0.006, mistHeightM: ftToM(10), lampShaft: 2.4, headlightShaft: 0.6 },
     assistView: { darkGain: 5, kneeLuma: 0.24 },
     post: LAMP_LIT_POST,
+    // 夜晚偏冷：暗部往藍抬多一點，亮部不染暖色（路燈本身已經是暖的），對比略高讓燈下與暗處分得開。
+    look: {
+      shadowLift: { r: 0.0, g: 0.003, b: 0.011 },
+      highlightTint: { r: 0.985, g: 0.99, b: 1.0 },
+      saturation: 1.25,
+      contrast: 1.14,
+      contrastPivot: TONE_LOOK_CONFIG.contrastPivot,
+    },
   },
 };
 
