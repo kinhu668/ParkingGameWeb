@@ -91,8 +91,19 @@ for (const level of ['high', 'ultra'] as const) {
   });
 }
 
+test('?fx=on：軟體算圖上也開景深與鏡頭光暈，定格截圖可重現，而且與沒開的不同', async ({ page }) => {
+  const url = `/?${SHOT_QUERY}&quality=high`;
+  const first = await captureShot(page, `${url}&fx=on`, 'quality-high-fx-1.png');
+  const second = await captureShot(page, `${url}&fx=on`, 'quality-high-fx-2.png');
+  expect(second === first, '兩次截圖必須完全相同').toBe(true);
+  // 軟體算圖預設跳過這幾項（太貴）：不帶 fx=on 的畫面沒有景深。
+  const plain = await captureShot(page, url, 'quality-high-fx-none.png');
+  expect(plain === first, '開了景深的畫面應該不同').toBe(false);
+});
+
+// 帶 fx=on：景深、動態模糊、鏡頭光暈的著色器在軟體算圖上也編譯、每幀都跑（著色器錯誤會是 console error）。
 test('?quality=high 的一般遊戲：後製鏈跟著鏡頭切換與視窗縮放', async ({ page }) => {
-  await page.goto('/?level=prototype&quality=high&view=chase_far&lang=zh-TW');
+  await page.goto('/?level=prototype&quality=high&fx=on&view=chase_far&lang=zh-TW');
   const label = page.locator('#hud-camera');
   await expect(label).toHaveAttribute('data-view', 'chase_far', { timeout: SLOW_READY_MS });
   await expectQuality(page, 'high', 'url');
