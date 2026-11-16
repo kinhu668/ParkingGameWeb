@@ -560,6 +560,23 @@ export const POST_CONFIG = {
   /** 環境光遮蔽的降噪半徑（像素）。 */
   aoDenoiseRadiusPx: 8,
   /**
+   * 景深（render/depthOfField.ts）。清楚的範圍與模糊的速度都以「對焦距離的幾倍」計：
+   * sharpNear–sharpFar 倍之間是清楚的；往遠到 fullFar 倍最模糊；往近到 fullNear 倍最多模糊到 nearStrength。
+   * 跟車鏡頭離車約 8–12 公尺：旁邊車位的車都在清楚的範圍裡，場地外的樓與遠處的路燈才開始柔。
+   */
+  depthOfField: {
+    sharpNear: 0.45,
+    sharpFar: 2,
+    // 到 9 倍才最模糊：場地邊的樓（約 4–5 倍）只柔一點，招牌的字仍然讀得出來。
+    fullNear: 0.12,
+    fullFar: 9,
+    nearStrength: 0.6,
+    /** 對焦距離的下限（公尺）：鏡頭被牆擠到貼著車時，清楚的範圍不會縮到只剩車身。 */
+    minFocusM: ftToM(20),
+    /** 貼在車上的鏡頭（引擎蓋、駕駛座）對焦的距離：車前不遠處，遠處的樓略柔。 */
+    onCarFocusM: ftToM(45),
+  },
+  /**
    * 進泛光的亮度上限（場景線性亮度）：比它亮的像素當作這麼亮。高過每種天氣的門檻與燈殼的亮度，
    * 所以燈照常發光；被壓住的只有太陽在車漆、積水上的反光（可以到幾十）。
    */

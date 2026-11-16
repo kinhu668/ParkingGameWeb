@@ -8,7 +8,8 @@
 //
 // B. 有環境光遮蔽／泛光／SMAA（high、ultra）：後製鏈（EffectComposer），順序是
 //    1. RenderPass        場景 → 半浮點緩衝區（場景線性亮度，還沒做色調映射；多重取樣只開在這一張）
-//    2. GTAOPass          環境光遮蔽
+//    2. GTAOPass          環境光遮蔽（它畫的場景深度，後面的景深也拿來用）
+//    2a. DepthOfFieldPass 景深（render/depthOfField.ts）；這一幀沒有對焦（俯視、展示台）就跳過
 //    3. UnrealBloomPass   泛光；門檻是線性亮度，所以要在色調映射之前。門檻與強度跟著場景的天氣
 //                         （weatherPresets.ts 的 PostPreset），進泛光的亮度有上限（BLOOM_HIGH_PASS_FRAGMENT_SHADER）
 //    4. SMAAPass          ultra
@@ -50,6 +51,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { DEFAULT_SEED } from '../core/gameConfig';
 import { createRng } from '../core/rng';
 import { SKIP_AMBIENT_OCCLUSION } from './ambientOcclusionFlag';
+import { DepthOfFieldPass, type LensFocus } from './depthOfField';
 import { groundReflectionOf } from './groundReflection';
 import {
   effectivePixelRatio,
@@ -60,14 +62,23 @@ import {
 import { POST_CONFIG } from './renderConfig';
 import { scenePostOf, weatherBloom } from './weatherPresets';
 
+/** 這一幀的鏡頭狀態：只有開了景深的畫質級別才用得到。 */
+export interface FrameLens {
+  /** 景深的對焦；null = 這一幀不做景深。 */
+  readonly focus: LensFocus | null;
+}
+
 export interface FramePipeline {
   /**
    * 讓繪圖緩衝區（含後製鏈的每一張）跟上畫布的顯示大小與像素比，並更新鏡頭長寬比。
    * render() 自己會呼叫；要在畫之前先用到 camera.aspect 的地方（展示模式算鏡頭距離）才需要另外呼叫。
    */
   fit(camera: PerspectiveCamera): void;
-  /** 畫一幀。scene 與 camera 每次都可以不同（遊戲鏡頭切換、不同的 ?cam 預設）。 */
-  render(scene: Scene, camera: PerspectiveCamera): void;
+  /**
+   * 畫一幀。scene 與 camera 每次都可以不同（遊戲鏡頭切換、不同的 ?cam 預設）。
+   * @param lens 這一幀的對焦；不給 = 不做景深（展示台、關卡選擇的背景、效能測試）
+   */
+  render(scene: Scene, camera: PerspectiveCamera, lens?: FrameLens): void;
   /**
    * 上一次 render() 的 draw calls：場景、陰影貼圖，加上每個全螢幕濾鏡各一次
    * （環境光遮蔽還會把場景多畫一遍法線）。比「場景裡的物件數」多，這是後製真實的成本。
@@ -426,6 +437,13 @@ export function createFramePipeline(
     composer.addPass(aoPass);
   }
 
+  // 景深要場景的深度：沿用環境光遮蔽那一遍畫的，沒開環境光遮蔽的級別就沒有景深。
+  let dofPass: DepthOfFieldPass | undefined;
+  if (quality.depthOfField !== null && aoPass !== undefined) {
+    dofPass = new DepthOfFieldPass(quality.depthOfField, aoPass.depthTexture);
+    composer.addPass(dofPass);
+  }
+
   let bloomPass: UnrealBloomPass | undefined;
   if (quality.bloom !== null) {
     const bloom = quality.bloom;
@@ -465,7 +483,7 @@ export function createFramePipeline(
 
   return {
     fit,
-    render(scene, camera) {
+    render(scene, camera, lens) {
       fit(camera);
       // 鏡頭每幀都可能換：場景與鏡頭的引用每次重設。
       renderPass.scene = scene;
@@ -474,6 +492,7 @@ export function createFramePipeline(
         aoPass.scene = scene;
         aoPass.camera = camera;
       }
+      dofPass?.setFocus(camera, lens?.focus ?? null);
       if (bloomPass !== undefined && quality.bloom !== null) {
         // 泛光的門檻與強度跟著這個場景的天氣：白天受太陽光的白車漆不進泛光，夜裡的燈照常發光。
         const post = scenePostOf(scene);

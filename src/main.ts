@@ -51,6 +51,7 @@ import {
   type SessionSnapshot,
 } from './level/session';
 import { runBench } from './render/benchMode';
+import { focusForGameView, focusForPreset } from './render/depthOfField';
 import { createPresetCamera } from './render/followCamera';
 import { cameraSnapshot, createGameCamera, type CameraSnapshot } from './render/gameCamera';
 import { resolveQuality } from './render/quality';
@@ -381,7 +382,11 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
     );
     // 目標車位的發光標記：停妥後變綠再淡出，重來後回來（暫停時也照真實時間走）。
     gameScene.updateSpotGlow(session.parked, frameSeconds);
-    pipeline.render(gameScene.scene, gameCamera.camera);
+    // 景深對焦在玩家車上（俯視不做）；沒開景深的畫質級別不會用到。
+    const eye = gameCamera.camera.position;
+    pipeline.render(gameScene.scene, gameCamera.camera, {
+      focus: focusForGameView(gameCamera.view(), Math.hypot(eye.x - pose.x, eye.y, eye.z - pose.z)),
+    });
     hud.update(session, gear);
     // 觸控層只在能開車的時候顯示：暫停、結算、按鍵設定開著時收起來，不擋面板上的按鈕。
     touch.update(
@@ -443,8 +448,14 @@ function runCameraShot(
   // 雨絲平常跟著車；定格的鏡頭可能離車很遠（車位旁、車位正上方），改成以鏡頭為中心才看得到雨。
   gameScene.centerRainOn(camera.position.x, camera.position.z);
 
+  const lens = {
+    focus: focusForPreset(
+      preset,
+      Math.hypot(camera.position.x - vehicle.x, camera.position.y, camera.position.z - vehicle.z),
+    ),
+  };
   const draw = (): void => {
-    pipeline.render(gameScene.scene, camera);
+    pipeline.render(gameScene.scene, camera, lens);
   };
   // 第一次畫：著色器在這裡同步編譯完，畫布上已經是經過整條後製鏈的一幀。
   draw();
