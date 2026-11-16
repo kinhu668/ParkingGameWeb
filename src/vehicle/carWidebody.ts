@@ -36,7 +36,7 @@ const WHEEL = { radiusM: 0.335, widthM: 0.265, rimRadiusM: 0.25 };
 const RIM = { spokes: 10, spokeWidth: 0.42, color: 0x141414 };
 /** 鈑金半寬（車門處）與葉子板再鼓出的量；後視鏡補滿剩下的車寬。 */
 const HALF_WIDTH_M = 0.815;
-const FLARE_M = 0.075;
+const FLARE_M = 0.09;
 const CROWN_M = 0.03;
 /** 車頂最高點：比車高（尾翼的頂端）低一點，整台車最高的是尾翼。 */
 const ROOF_TOP_M = DIMS.heightM - 0.03;
@@ -58,14 +58,16 @@ const BELT: Knots = [
 ];
 const beltAt = spline(BELT);
 
-/** 一個輪拱前後的葉子板外擴。 */
+/** 一個輪拱前後的葉子板外擴：靠車門那一側是一階陡的（外掛寬體的樣子），靠車頭、車尾那一側緩緩收回保險桿。 */
 function flareKnots(axleZM: number): Knots {
-  return [
-    [axleZM - 0.6, 0],
-    [axleZM - 0.32, FLARE_M],
-    [axleZM + 0.32, FLARE_M],
-    [axleZM + 0.6, 0],
+  const toEnd = Math.sign(axleZM);
+  const knots: [number, number][] = [
+    [axleZM - toEnd * 0.54, 0],
+    [axleZM - toEnd * 0.42, FLARE_M],
+    [axleZM + toEnd * 0.34, FLARE_M],
+    [axleZM + toEnd * 0.66, 0],
   ];
+  return toEnd > 0 ? knots : knots.reverse();
 }
 
 export function createWidebodyParts(detail: VehicleDetail): CarModelParts {
@@ -117,16 +119,18 @@ export function createWidebodyParts(detail: VehicleDetail): CarModelParts {
     pieces.push(...geometries.map((geometry): [CarModelPart, BufferGeometry] => [part, geometry]));
   };
 
-  // 車頭：整片黑的梯形大嘴、兩側的小進氣口、往車角上挑的細長頭燈（外端一小段方向燈）、比車身還寬的前下擾流板。
+  // 車頭：整片黑的梯形大嘴（上寬下窄）、兩側的黑色下進氣口、往車角上挑的黑色細長燈殼（裡面一條細燈、外端一小段方向燈）、
+  // 兩層的前下擾流板（中間一層貼著車頭、外面一層退後，跟著收圓的車角）。
   add(
     'trim',
-    createQuadPatch(nose, [[-0.4, 0.16], [0.4, 0.16], [0.47, 0.56], [-0.47, 0.56]], 0.007, 8, 6),
-    bothSides(createQuadPatch(nose, [[0.5, 0.18], [0.69, 0.2], [0.69, 0.3], [0.5, 0.3]], 0.004, 3)),
-    bothSides(createQuadPatch(nose, [[0.48, 0.505], [0.72, 0.53], [0.72, 0.6], [0.48, 0.565]], 0.006, 4)),
-    createWrapBar(0.81, F, 0.4, 0.09, 0.122),
+    createQuadPatch(nose, [[-0.36, 0.15], [0.36, 0.15], [0.45, 0.575], [-0.45, 0.575]], 0.007, 8, 6),
+    bothSides(createQuadPatch(nose, [[0.47, 0.17], [0.7, 0.19], [0.7, 0.34], [0.5, 0.34]], 0.007, 4, 2)),
+    bothSides(createQuadPatch(nose, [[0.46, 0.49], [0.73, 0.54], [0.73, 0.6], [0.46, 0.555]], 0.007, 5)),
+    createWrapBar(0.56, F, 0.3, 0.09, 0.122),
+    createWrapBar(0.81, F + 0.1, 0.32, 0.09, 0.122),
   );
-  add('headlight', bothSides(createQuadPatch(nose, [[0.495, 0.516], [0.62, 0.53], [0.62, 0.582], [0.495, 0.557]], 0.011, 3)));
-  add('indicator', bothSides(createQuadPatch(nose, [[0.63, 0.535], [0.71, 0.543], [0.71, 0.592], [0.63, 0.584]], 0.011, 2)));
+  add('headlight', bothSides(createQuadPatch(nose, [[0.48, 0.52], [0.6, 0.542], [0.6, 0.566], [0.48, 0.544]], 0.011, 3)));
+  add('indicator', bothSides(createQuadPatch(nose, [[0.63, 0.55], [0.71, 0.562], [0.71, 0.584], [0.63, 0.572]], 0.011, 2)));
 
   // 引擎蓋：中間一道橫的散熱槽、兩側各一個斜的散熱孔、一圈接縫。
   add(
@@ -153,7 +157,9 @@ export function createWidebodyParts(detail: VehicleDetail): CarModelParts {
   add('indicator', bothSides(createQuadPatch(side, [[-0.9, 0.7], [-0.82, 0.7], [-0.82, 0.725], [-0.9, 0.725]], 0.004)));
   const skirtLengthM = 2 * (AXLE - shell.archRadiusM) - 0.06;
   add('trim', bothSides(box([0.07, 0.045, skirtLengthM], [HALF_WIDTH_M + 0.02, 0.125, 0])));
-  add('paint', createShellArchLips(shell, WHEEL, DIMS.wheelbaseM, 0.006, 0.02));
+  // 輪拱：烤漆的外擴葉子板邊緣再壓一圈黑色的唇，讓外擴的那一階看得出來。
+  add('paint', createShellArchLips(shell, WHEEL, DIMS.wheelbaseM, 0.004, 0.045));
+  add('trim', createShellArchLips(shell, WHEEL, DIMS.wheelbaseM, 0.008, 0.016));
   const mirrors = createDoorMirrors(DIMS, beltAt(COWL_Z + 0.3) + 0.09, COWL_Z + 0.3);
   add('paint', mirrors.shells);
   add('trim', mirrors.backs);
@@ -172,19 +178,20 @@ export function createWidebodyParts(detail: VehicleDetail): CarModelParts {
   add('chrome', bothSides(createExhaustTip(0.5, 0.215, R - 0.004, 0.045)));
   add('trim', createLidSeams(shell, REAR_BASE_Z + 0.04, shell.tailStartZM - 0.02, 0.03));
 
-  // 尾翼：行李廂蓋兩側各一根黑色支柱，撐起一片比車頂略高的翼片，兩端各一塊黑色端板。
+  // 尾翼：行李廂蓋兩側各一根黑色支柱，撐起一片比車頂略低的翼片，兩端各一塊黑色端板（端板的頂端是整台車最高的地方）。
   const wingZ = R - 0.2;
   const wingHalfSpanM = 0.78;
-  add('paint', createWingBlade(wingHalfSpanM, 0.24, 0.035, DIMS.heightM, wingZ, -0.06));
+  const wingTopM = DIMS.heightM - 0.07;
+  add('paint', createWingBlade(wingHalfSpanM, 0.24, 0.035, wingTopM, wingZ, -0.06));
   add(
     'trim',
     bothSides(
       createLoft([
         rectRing([0.5, shell.topYM(wingZ, 0.5) - 0.01, wingZ - 0.04], 0.03, 0.22),
-        rectRing([0.5, DIMS.heightM - 0.03, wingZ], 0.02, 0.14),
+        rectRing([0.5, wingTopM - 0.03, wingZ], 0.02, 0.14),
       ]),
     ),
-    bothSides(box([0.012, 0.11, 0.3], [wingHalfSpanM, DIMS.heightM - 0.056, wingZ + 0.01])),
+    bothSides(box([0.012, 0.14, 0.3], [wingHalfSpanM, DIMS.heightM - 0.07, wingZ + 0.01])),
   );
 
   const frontPlateY = 0.34;
