@@ -130,7 +130,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = 
     smaa: false,
     depthOfField: { maxBlur: 0.006, resolutionScale: 0.5, taps: 8 },
     motionBlur: { shutter: 0.3, maxBlur: 0.007, taps: 6 },
-    lensFlare: { streak: 0.04, ghosts: 0.06 },
+    lensFlare: { streak: 0.05, ghosts: 0.04 },
     ground: {
       textureSizePx: 1024,
       maxAnisotropy: 8,
@@ -172,7 +172,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = 
     smaa: true,
     depthOfField: { maxBlur: 0.008, resolutionScale: 0.5, taps: 12 },
     motionBlur: { shutter: 0.45, maxBlur: 0.011, taps: 8 },
-    lensFlare: { streak: 0.06, ghosts: 0.09 },
+    lensFlare: { streak: 0.07, ghosts: 0.06 },
     ground: {
       textureSizePx: 2048,
       maxAnisotropy: 16,
