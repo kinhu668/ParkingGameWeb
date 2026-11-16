@@ -311,7 +311,7 @@ export const WEATHER_PRESETS: Readonly<Record<WeatherId, WeatherPreset>> = {
     lampsOn: true,
     surfaceWetness: 0.85,
     // 雨幕：貼地一層水氣，路燈與車燈在雨裡打出看得見的光柱。
-    air: { mistDensityPerM: 0.024, mistHeightM: ftToM(13), lampShaft: 3.1, headlightShaft: 1.2 },
+    air: { mistDensityPerM: 0.022, mistHeightM: ftToM(13), lampShaft: 3.1, headlightShaft: 1.2 },
     assistView: { darkGain: 1.5, kneeLuma: 0.3 },
     post: LAMP_LIT_POST,
     look: RAIN_LOOK,
@@ -365,7 +365,7 @@ export const WEATHER_PRESETS: Readonly<Record<WeatherId, WeatherPreset>> = {
     lampsOn: true,
     surfaceWetness: 1,
     // 比雨天更濃、更厚的水氣；光柱最明顯。
-    air: { mistDensityPerM: 0.033, mistHeightM: ftToM(16), lampShaft: 3.6, headlightShaft: 1.4 },
+    air: { mistDensityPerM: 0.03, mistHeightM: ftToM(16), lampShaft: 3.6, headlightShaft: 1.4 },
     assistView: { darkGain: 2.6, kneeLuma: 0.3 },
     post: LAMP_LIT_POST,
     // 比雨天再淡一點：整張畫面靠路燈與閃電的顏色撐。
@@ -392,7 +392,7 @@ export const WEATHER_PRESETS: Readonly<Record<WeatherId, WeatherPreset>> = {
     lampsOn: true,
     surfaceWetness: 0,
     // 乾的夜晚：只有薄薄一層夜霧；光柱看得到，但比雨裡淡。
-    air: { mistDensityPerM: 0.008, mistHeightM: ftToM(10), lampShaft: 2.8, headlightShaft: 0.8 },
+    air: { mistDensityPerM: 0.007, mistHeightM: ftToM(10), lampShaft: 2.8, headlightShaft: 0.8 },
     assistView: { darkGain: 5, kneeLuma: 0.24 },
     post: LAMP_LIT_POST,
     // 夜晚偏冷：暗部往藍抬多一點，亮部不染暖色（路燈本身已經是暖的），對比略高讓燈下與暗處分得開。
