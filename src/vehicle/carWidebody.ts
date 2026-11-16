@@ -191,7 +191,7 @@ export function createWidebodyParts(detail: VehicleDetail): CarModelParts {
         rectRing([0.5, wingTopM - 0.03, wingZ], 0.02, 0.14),
       ]),
     ),
-    bothSides(box([0.012, 0.14, 0.3], [wingHalfSpanM, DIMS.heightM - 0.07, wingZ + 0.01])),
+    bothSides(box([0.012, 0.14, 0.3], [wingHalfSpanM, wingTopM, wingZ + 0.01])),
   );
 
   const frontPlateY = 0.34;

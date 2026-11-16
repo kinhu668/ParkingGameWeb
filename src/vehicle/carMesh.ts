@@ -74,7 +74,7 @@ function shadowMesh(geometry: BufferGeometry, material: Material): Mesh {
 }
 
 /** 輪胎的材質：胎面的人字溝與胎壁的稜線、凸字繞著輪軸鋪（材質庫的 tire，圓柱座標）。 */
-export function createTireMaterial(): MeshStandardMaterial {
+function createTireMaterial(): MeshStandardMaterial {
   return createSurfaceMaterial('tire', {
     space: 'radial',
     color: VISUAL.tireColor,
@@ -84,7 +84,7 @@ export function createTireMaterial(): MeshStandardMaterial {
 }
 
 /** 輪圈的材質：拋光的合金（材質庫的 chrome，用輪圈的顏色與粗糙度）。 */
-export function createRimMaterial(): MeshStandardMaterial {
+function createRimMaterial(): MeshStandardMaterial {
   return createSurfaceMaterial('chrome', {
     space: 'local',
     color: VISUAL.rimColor,

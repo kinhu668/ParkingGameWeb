@@ -241,11 +241,8 @@ export function createScoop(
     readonly frontZM: number;
     readonly rearZM: number;
     readonly heightM: number;
-    /** 開口的中線 x（預設在車身中線）。 */
-    readonly centerXM?: number;
   },
 ): { skin: BufferGeometry; mouth: BufferGeometry } {
-  const centerXM = size.centerXM ?? 0;
   /** 鼓包在某一站的斷面：從左緣貼著引擎蓋、抬到頂、再回到右緣。 */
   const section = (t: number): Point3[] => {
     const zM = size.frontZM + (size.rearZM - size.frontZM) * t;
@@ -261,19 +258,19 @@ export function createScoop(
         [1, 0],
       ] as const
     ).map(([across, up]): Point3 => {
-      const xM = centerXM + across * halfWidthM;
+      const xM = across * halfWidthM;
       return [xM, shell.topYM(zM, xM) - 0.004 + up * (liftM + 0.004), zM];
     });
   };
   const front = section(0);
   return {
     skin: new FacetBuilder()
-      .grid([0, 0.3, 0.65, 1].map(section), (center) => [center.x - centerXM, 0.5, 0])
+      .grid([0, 0.3, 0.65, 1].map(section), (center) => [center.x, 0.5, 0])
       .build(),
     mouth: new FacetBuilder()
       .fan(
         front.map(([xM, yM, zM]): Point3 => [xM, yM, zM + 0.012]),
-        [centerXM, shell.topYM(size.frontZM, centerXM), size.frontZM + 0.012],
+        [0, shell.topYM(size.frontZM, 0), size.frontZM + 0.012],
         [0, 0, -1],
       )
       .build(),
@@ -363,7 +360,7 @@ export function createDoorMirrors(
 }
 
 /** 一根排氣尾管（鍍鉻）：管口朝後，在 zM。 */
-export function createExhaustTip(xM: number, yM: number, zM: number, radiusM = 0.03): BufferGeometry {
+export function createExhaustTip(xM: number, yM: number, zM: number, radiusM: number): BufferGeometry {
   const lengthM = 0.14;
   return normalized(
     new CylinderGeometry(radiusM, radiusM, lengthM, 10)

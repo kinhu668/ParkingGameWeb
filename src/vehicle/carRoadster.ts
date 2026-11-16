@@ -40,6 +40,8 @@ const RIM = { spokes: 5, spokeWidth: 1, color: 0xc8ccd0 };
 /** 鈑金半寬（車門處）與葉子板再鼓出的量；後視鏡補滿剩下的車寬。 */
 const HALF_WIDTH_M = 0.8;
 const FLARE_M = 0.022;
+/** 前軸處的鈑金半寬（車頭比車門處略窄）。 */
+const FRONT_HALF_WIDTH_M = 0.795;
 const CROWN_M = 0.035;
 /** 前擋下緣（玻璃落在引擎蓋上的地方）、門前緣那一站、前擋上緣的 z；座艙口的前後緣；防滾籠的 z。 */
 const SCREEN_Z = -0.72;
@@ -217,7 +219,7 @@ export function createRoadsterParts(detail: VehicleDetail): CarModelParts {
     halfWidth: [
       [F, 0.68],
       [F + 0.35, 0.74],
-      [-AXLE, 0.795],
+      [-AXLE, FRONT_HALF_WIDTH_M],
       [AXLE, HALF_WIDTH_M],
       [R - 0.3, 0.76],
       [R, 0.72],
@@ -316,7 +318,7 @@ export function createRoadsterParts(detail: VehicleDetail): CarModelParts {
     shell,
     pieces,
     WHEEL,
-    [0.795 + FLARE_M - 0.012 - WHEEL.widthM / 2, HALF_WIDTH_M + FLARE_M - 0.012 - WHEEL.widthM / 2],
+    [FRONT_HALF_WIDTH_M + FLARE_M - 0.012 - WHEEL.widthM / 2, HALF_WIDTH_M + FLARE_M - 0.012 - WHEEL.widthM / 2],
     RIM,
     {
       front: { yM: frontPlateY, zM: F + PLATE_TEXT_PROUD_M },

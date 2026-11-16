@@ -330,7 +330,8 @@ export function createCarShell(spec: ShellSpec): CarShell {
     // 二分法找出這一點剛好落在哪個縮放比例的那一圈上。
     let outer = 1;
     let inner = 0;
-    for (let step = 0; step < 20 && inside(1); step += 1) {
+    const reachable = inside(1);
+    for (let step = 0; step < 20 && reachable; step += 1) {
       const middle = (outer + inner) / 2;
       if (inside(middle)) {
         outer = middle;
