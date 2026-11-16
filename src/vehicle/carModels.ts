@@ -33,7 +33,7 @@ export const CAR_MODEL_DIMS_FT: Readonly<Record<CarModelId, CarModelDimsFt>> = {
   /** 1960 年代的斜背肌肉車：長車頭、矮車頂。 */
   fastback: { lengthFt: 15, widthFt: 5.9, heightFt: 4.25, wheelbaseFt: 9 },
   /** 兩座敞篷小跑車：最短、最矮。 */
-  roadster: { lengthFt: 13, widthFt: 5.7, heightFt: 4.05, wheelbaseFt: 7.6 },
+  roadster: { lengthFt: 13, widthFt: 5.7, heightFt: 3.85, wheelbaseFt: 7.6 },
 };
 
 /** 一款車的外框與軸距（公尺）。 */

@@ -1,5 +1,5 @@
 // 小型雙座敞篷跑車（停放用）：低矮圓潤的車身、長引擎蓋短車尾、敞開的座艙（兩張座椅、中央鞍座、儀表台）、
-// 低而後仰的前擋玻璃與細的黑框、頭枕後方一對矮的防滾籠與車身色的整流罩、躺在葉子板上往後掃的水滴形頭燈、
+// 短而後仰、兩側往後包的前擋玻璃與細的黑框、頭枕後方一對矮的防滾籠與車身色的整流罩、躺在葉子板上往後掃的水滴形頭燈、
 // 引擎蓋中央微微鼓起、圓尾燈、銀色五輻輪圈。
 // 車殼由 carShell.ts 放樣（沒有車艙、頂面開一個座艙口），配件用 carModelKit.ts 貼上去。
 import type { BufferGeometry } from 'three';
@@ -44,7 +44,10 @@ const CROWN_M = 0.035;
 /** 前擋下緣（玻璃落在引擎蓋上的地方）、門前緣那一站、前擋上緣的 z；座艙口的前後緣；防滾籠的 z。 */
 const SCREEN_Z = -0.72;
 const COWL_Z = -0.52;
-const HEADER_Z = -0.06;
+const HEADER_Z = -0.36;
+/** 前擋中間那片佔半寬的比例、兩側那片的外緣往後包的量。 */
+const SCREEN_CENTRE_T = 0.72;
+const SCREEN_WRAP_M = 0.06;
 const COCKPIT_Z = [-0.3, 0.84] as const;
 const HOOP_Z = 0.93;
 /** 座艙地板的高度、座椅中線的 x。 */
@@ -159,8 +162,18 @@ function onNoseCorner(shell: CarShell): Place {
       : top(xM, shell.noseStartZM + vM, proudM);
 }
 
+/** 前擋的一條橫帶斷面（俯視逆時針）：從 (x0, z0) 到 (x1, z1)，z 方向厚 depthM。 */
+function screenBand(x0M: number, z0M: number, x1M: number, z1M: number, yM: number, depthM: number): Point3[] {
+  return [
+    [x0M, yM, z0M - depthM / 2],
+    [x0M, yM, z0M + depthM / 2],
+    [x1M, yM, z1M + depthM / 2],
+    [x1M, yM, z1M - depthM / 2],
+  ];
+}
+
 /**
- * 前擋：很往後仰的一片玻璃，兩根細的 A 柱與上面細的橫框。橫框的頂端就是車高。
+ * 前擋：短而後仰的玻璃（中間一片、兩側各一片往後包的窄片），兩根細的 A 柱與上面細的橫框。橫框的頂端就是車高。
  * @returns glass：玻璃；frame：黑色的框
  */
 function createWindscreen(shell: CarShell): { glass: BufferGeometry; frame: BufferGeometry } {
@@ -168,19 +181,28 @@ function createWindscreen(shell: CarShell): { glass: BufferGeometry; frame: Buff
   const topXM = baseXM - 0.11;
   const baseYM = shell.topYM(SCREEN_Z, baseXM) - 0.03;
   const frameM = 0.022;
+  const glassTopYM = DIMS.heightM - frameM;
+  /** 上下兩道橫帶：中間一段直的，加右側往後包的一段。 */
+  const centre = (halfXM: number, yM: number, zM: number, depthM: number): Point3[] =>
+    screenBand(-SCREEN_CENTRE_T * halfXM, zM, SCREEN_CENTRE_T * halfXM, zM, yM, depthM);
+  const wing = (halfXM: number, yM: number, zM: number, depthM: number): Point3[] =>
+    screenBand(SCREEN_CENTRE_T * halfXM, zM, halfXM, zM + SCREEN_WRAP_M, yM, depthM);
   return {
-    glass: createLoft([
-      rectRing([0, baseYM, SCREEN_Z], 2 * baseXM, 0.008),
-      rectRing([0, DIMS.heightM - frameM, HEADER_Z], 2 * topXM, 0.008),
+    glass: merged([
+      createLoft([centre(baseXM, baseYM, SCREEN_Z, 0.008), centre(topXM, glassTopYM, HEADER_Z, 0.008)]),
+      bothSides(createLoft([wing(baseXM, baseYM, SCREEN_Z, 0.008), wing(topXM, glassTopYM, HEADER_Z, 0.008)])),
     ]),
     frame: merged([
       bothSides(
-        createLoft([
-          rectRing([baseXM, baseYM, SCREEN_Z], frameM, 0.03),
-          rectRing([topXM, DIMS.heightM, HEADER_Z], frameM, 0.03),
+        merged([
+          createLoft([
+            rectRing([baseXM, baseYM, SCREEN_Z + SCREEN_WRAP_M], frameM, 0.03),
+            rectRing([topXM, DIMS.heightM, HEADER_Z + SCREEN_WRAP_M], frameM, 0.03),
+          ]),
+          createLoft([wing(topXM, glassTopYM, HEADER_Z, 0.03), wing(topXM, DIMS.heightM, HEADER_Z, 0.03)]),
         ]),
       ),
-      box([2 * topXM, frameM, 0.03], [0, DIMS.heightM - frameM / 2, HEADER_Z]),
+      createLoft([centre(topXM, glassTopYM, HEADER_Z, 0.03), centre(topXM, DIMS.heightM, HEADER_Z, 0.03)]),
     ]),
   };
 }
