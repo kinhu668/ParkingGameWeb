@@ -10,6 +10,7 @@
 //    1. RenderPass        場景 → 半浮點緩衝區（場景線性亮度，還沒做色調映射；多重取樣只開在這一張）
 //    2. GTAOPass          環境光遮蔽（它畫的場景深度，後面的景深也拿來用）
 //    2a. DepthOfFieldPass 景深（render/depthOfField.ts）；這一幀沒有對焦（俯視、展示台）就跳過
+//    2b. MotionBlurPass   動態模糊（render/motionBlur.ts）；只有一般遊戲的畫面才做，定格一律跳過
 //    3. UnrealBloomPass   泛光；門檻是線性亮度，所以要在色調映射之前。門檻與強度跟著場景的天氣
 //                         （weatherPresets.ts 的 PostPreset），進泛光的亮度有上限（BLOOM_HIGH_PASS_FRAGMENT_SHADER）
 //    4. SMAAPass          ultra
@@ -53,6 +54,7 @@ import { createRng } from '../core/rng';
 import { SKIP_AMBIENT_OCCLUSION } from './ambientOcclusionFlag';
 import { DepthOfFieldPass, type LensFocus } from './depthOfField';
 import { groundReflectionOf } from './groundReflection';
+import { MotionBlurPass } from './motionBlur';
 import {
   effectivePixelRatio,
   usesHdrChain,
@@ -66,6 +68,8 @@ import { scenePostOf, weatherBloom } from './weatherPresets';
 export interface FrameLens {
   /** 景深的對焦；null = 這一幀不做景深。 */
   readonly focus: LensFocus | null;
+  /** 這一幀可不可以有動態模糊：連續畫面（一般遊戲）才可以；定格（`?cam`）不行，否則截圖無法重現。不給 = 不行。 */
+  readonly motion?: boolean;
 }
 
 export interface FramePipeline {
@@ -437,11 +441,17 @@ export function createFramePipeline(
     composer.addPass(aoPass);
   }
 
-  // 景深要場景的深度：沿用環境光遮蔽那一遍畫的，沒開環境光遮蔽的級別就沒有景深。
+  // 景深與動態模糊要場景的深度：沿用環境光遮蔽那一遍畫的，沒開環境光遮蔽的級別就沒有這兩項。
   let dofPass: DepthOfFieldPass | undefined;
   if (quality.depthOfField !== null && aoPass !== undefined) {
     dofPass = new DepthOfFieldPass(quality.depthOfField, aoPass.depthTexture);
     composer.addPass(dofPass);
+  }
+
+  let motionPass: MotionBlurPass | undefined;
+  if (quality.motionBlur !== null && aoPass !== undefined) {
+    motionPass = new MotionBlurPass(quality.motionBlur, aoPass.depthTexture);
+    composer.addPass(motionPass);
   }
 
   let bloomPass: UnrealBloomPass | undefined;
@@ -493,6 +503,11 @@ export function createFramePipeline(
         aoPass.camera = camera;
       }
       dofPass?.setFocus(camera, lens?.focus ?? null);
+      if (motionPass !== undefined) {
+        // 鏡頭的世界矩陣要是這一幀的（composer 畫場景時才會更新，這裡先更新一次）。
+        camera.updateMatrixWorld();
+        motionPass.setCamera(camera, lens?.motion === true);
+      }
       if (bloomPass !== undefined && quality.bloom !== null) {
         // 泛光的門檻與強度跟著這個場景的天氣：白天受太陽光的白車漆不進泛光，夜裡的燈照常發光。
         const post = scenePostOf(scene);
