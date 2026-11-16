@@ -1,56 +1,91 @@
 // 輪子：有胎紋的輪胎（封閉的環面，胎面有兩道縱溝、胎肩有交錯的花塊）、有深度的五輻輪圈（唇、桶身、立體輪輻、螺帽）、
 // 輪圈後面的深色底盤。
 // 幾何的輪軸沿本地 X、外側面朝 +X，中心在原點；左側的輪子由 carMesh.ts 轉半圈。
+// 尺寸與輪輻的樣式預設是轎車的；停放用的其他車款（carModelKit.ts）給自己的。
 import { BufferAttribute, BufferGeometry, CircleGeometry, CylinderGeometry } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { CAR_VISUAL_CONFIG as VISUAL } from '../render/renderConfig';
 import { FacetBuilder, type Point3 } from './facetBuilder';
 
-const RADIUS_M = VISUAL.wheelRadiusM;
-const RIM_M = VISUAL.rimRadiusM;
-const HALF_WIDTH_M = VISUAL.wheelWidthM / 2;
-const SIDEWALL_M = RADIUS_M - RIM_M;
+/** 一顆輪子的尺寸：輪胎半徑、胎寬、輪圈半徑。 */
+export interface WheelSize {
+  readonly radiusM: number;
+  readonly widthM: number;
+  readonly rimRadiusM: number;
+}
+
+const SEDAN_WHEEL: WheelSize = {
+  radiusM: VISUAL.wheelRadiusM,
+  widthM: VISUAL.wheelWidthM,
+  rimRadiusM: VISUAL.rimRadiusM,
+};
+
+/** 輪圈的樣式：尺寸、輪輻數、輪輻的寬度（1 = 轎車那種粗的五輻；多輻的給小一點）。 */
+export interface RimStyle {
+  readonly size: WheelSize;
+  readonly spokes: number;
+  readonly spokeWidth: number;
+}
+
+const SEDAN_RIM: RimStyle = { size: SEDAN_WHEEL, spokes: VISUAL.rimSpokes, spokeWidth: 1 };
+
 const GROOVE_M = VISUAL.treadDepthM;
+
+/**
+ * 停放的車的輪胎與輪圈一圈的段數（偶數），依擺設的細分。輪胎是沒有胎紋的光面（橫截面的點數少四成），
+ * 所以 high 的 20 段比有胎紋的 12 段面數還少一點，輪廓卻圓得多。
+ */
+export const PARKED_WHEEL_SEGMENTS = { low: 12, high: 20 } as const;
 
 /**
  * 輪胎橫截面（繞輪軸一圈的封閉輪廓）：[沿輪軸的位置, 半徑, 是不是胎肩花塊]。
  * 從內側胎唇繞過胎面到外側胎唇，最後沿輪圈的位置回到起點。胎面中央那一點的半徑剛好是輪胎半徑。
+ * @param tread false = 沒有縱溝與花塊（背景車用）：遠看與有胎紋的一樣，點數少四成，省下來的面數拿去把輪胎做圓。
  */
-const TIRE_PROFILE: readonly (readonly [number, number, boolean])[] = [
-  [-0.8 * HALF_WIDTH_M, RIM_M, false],
-  [-0.98 * HALF_WIDTH_M, RIM_M + 0.3 * SIDEWALL_M, false],
-  [-HALF_WIDTH_M, RIM_M + 0.62 * SIDEWALL_M, false],
-  [-0.93 * HALF_WIDTH_M, RADIUS_M - 2 * GROOVE_M, false],
-  [-0.84 * HALF_WIDTH_M, RADIUS_M - 0.5 * GROOVE_M, true],
-  [-0.5 * HALF_WIDTH_M, RADIUS_M, true],
-  [-0.42 * HALF_WIDTH_M, RADIUS_M, false],
-  [-0.39 * HALF_WIDTH_M, RADIUS_M - GROOVE_M, false],
-  [-0.29 * HALF_WIDTH_M, RADIUS_M - GROOVE_M, false],
-  [-0.26 * HALF_WIDTH_M, RADIUS_M, false],
-  [0, RADIUS_M, false],
-  [0.26 * HALF_WIDTH_M, RADIUS_M, false],
-  [0.29 * HALF_WIDTH_M, RADIUS_M - GROOVE_M, false],
-  [0.39 * HALF_WIDTH_M, RADIUS_M - GROOVE_M, false],
-  [0.42 * HALF_WIDTH_M, RADIUS_M, false],
-  [0.5 * HALF_WIDTH_M, RADIUS_M, true],
-  [0.84 * HALF_WIDTH_M, RADIUS_M - 0.5 * GROOVE_M, true],
-  [0.93 * HALF_WIDTH_M, RADIUS_M - 2 * GROOVE_M, false],
-  [HALF_WIDTH_M, RIM_M + 0.62 * SIDEWALL_M, false],
-  [0.98 * HALF_WIDTH_M, RIM_M + 0.3 * SIDEWALL_M, false],
-  [0.8 * HALF_WIDTH_M, RIM_M, false],
-];
-
-/** 沒有縱溝與花塊的輪胎橫截面（背景車用）：遠看與有胎紋的一樣，點數少四成，省下來的面數拿去把輪胎做圓。 */
-const PLAIN_TIRE_PROFILE = TIRE_PROFILE.filter(
-  ([axialM]) => Math.abs(axialM) > 0.45 * HALF_WIDTH_M || axialM === 0,
-).map(([axialM, radiusM]) => [axialM, radiusM, false] as const);
+function tireProfile(
+  size: WheelSize,
+  tread: boolean,
+): readonly (readonly [number, number, boolean])[] {
+  const radiusM = size.radiusM;
+  const rimM = size.rimRadiusM;
+  const halfWidthM = size.widthM / 2;
+  const sidewallM = radiusM - rimM;
+  const profile: readonly (readonly [number, number, boolean])[] = [
+    [-0.8 * halfWidthM, rimM, false],
+    [-0.98 * halfWidthM, rimM + 0.3 * sidewallM, false],
+    [-halfWidthM, rimM + 0.62 * sidewallM, false],
+    [-0.93 * halfWidthM, radiusM - 2 * GROOVE_M, false],
+    [-0.84 * halfWidthM, radiusM - 0.5 * GROOVE_M, true],
+    [-0.5 * halfWidthM, radiusM, true],
+    [-0.42 * halfWidthM, radiusM, false],
+    [-0.39 * halfWidthM, radiusM - GROOVE_M, false],
+    [-0.29 * halfWidthM, radiusM - GROOVE_M, false],
+    [-0.26 * halfWidthM, radiusM, false],
+    [0, radiusM, false],
+    [0.26 * halfWidthM, radiusM, false],
+    [0.29 * halfWidthM, radiusM - GROOVE_M, false],
+    [0.39 * halfWidthM, radiusM - GROOVE_M, false],
+    [0.42 * halfWidthM, radiusM, false],
+    [0.5 * halfWidthM, radiusM, true],
+    [0.84 * halfWidthM, radiusM - 0.5 * GROOVE_M, true],
+    [0.93 * halfWidthM, radiusM - 2 * GROOVE_M, false],
+    [halfWidthM, rimM + 0.62 * sidewallM, false],
+    [0.98 * halfWidthM, rimM + 0.3 * sidewallM, false],
+    [0.8 * halfWidthM, rimM, false],
+  ];
+  return tread
+    ? profile
+    : profile
+        .filter(([axialM]) => Math.abs(axialM) > 0.45 * halfWidthM || axialM === 0)
+        .map(([axialM, radiusM]) => [axialM, radiusM, false] as const);
+}
 
 /**
  * 把一條橫截面（[沿輪軸的位置, 半徑]）繞輪軸（本地 X）轉一圈。法線朝「沿橫截面前進方向的左手邊」：
  * 往 +X 走的那一段朝外（遠離輪軸），往輪軸走的那一段朝 +X。重複的點是摺線（兩側各有自己的法線）。
  * @param closed 橫截面的頭尾是不是相接（輪胎是封閉的環面）
  */
-function revolve(
+export function revolve(
   profile: readonly (readonly [number, number])[],
   segments: number,
   closed: boolean,
@@ -91,8 +126,12 @@ function revolve(
  * 第 segments/2 段剛好在正下方，所以輪胎最低點離輪軸剛好一個輪胎半徑。
  * @param tread false = 沒有縱溝與花塊的光面輪胎（背景車用）
  */
-export function createTireGeometry(segments: number, tread = true): BufferGeometry {
-  const profile = tread ? TIRE_PROFILE : PLAIN_TIRE_PROFILE;
+export function createTireGeometry(
+  segments: number,
+  tread = true,
+  size: WheelSize = SEDAN_WHEEL,
+): BufferGeometry {
+  const profile = tireProfile(size, tread);
   return revolve(
     profile.map(([axialM, radiusM]) => [axialM, radiusM] as const),
     segments,
@@ -102,33 +141,36 @@ export function createTireGeometry(segments: number, tread = true): BufferGeomet
   );
 }
 
-/** 輪圈正面（輪輻、輪轂蓋）在輪軸方向的位置，以及輪圈的桶身往內多深。 */
-const RIM_FACE_X_M = 0.72 * HALF_WIDTH_M;
+/** 輪圈正面（輪輻、輪轂蓋）在輪軸方向的位置（半個胎寬的比例），以及輪圈的桶身往內多深。 */
+const RIM_FACE_SHARE = 0.72;
 const RIM_BARREL_DEPTH_M = 0.07;
 /** 一圈至少這麼多段才加螺帽與煞車碟盤（玩家車的高細分）；背景車與低細分不加。 */
 const DETAILED_RIM_SEGMENTS = 32;
-/** 輪轂（輪輻的根部）的半徑，以及中央蓋子的半徑。 */
-const HUB_RADIUS_M = 0.27 * RIM_M;
-const CAP_RADIUS_M = 0.11 * RIM_M;
+/** 輪轂（輪輻的根部）的半徑，以及中央蓋子的半徑（輪圈半徑的比例）。 */
+const HUB_RADIUS_SHARE = 0.27;
+const CAP_RADIUS_SHARE = 0.11;
 
 /**
  * 輪圈：捲邊的唇、往內凹的桶身、從輪轂斜向桶身的立體輪輻（正面有一道稜）、輪轂上的螺帽與中央的蓋子，合併成一個幾何。
  * 段數夠多（玩家車）時，輪輻後面還有一片煞車碟盤。
  */
-export function createRimGeometry(segments: number): BufferGeometry {
-  const faceXM = RIM_FACE_X_M;
+export function createRimGeometry(segments: number, style: RimStyle = SEDAN_RIM): BufferGeometry {
+  const rimM = style.size.rimRadiusM;
+  const hubRadiusM = HUB_RADIUS_SHARE * rimM;
+  const capRadiusM = CAP_RADIUS_SHARE * rimM;
+  const faceXM = (RIM_FACE_SHARE * style.size.widthM) / 2;
   const backXM = faceXM - RIM_BARREL_DEPTH_M;
   /** 桶身內壁的半徑（唇的內緣再往內一階）。 */
-  const barrelM = RIM_M - 0.026;
+  const barrelM = rimM - 0.026;
   // 唇與桶身：從胎唇外側捲過來，折進桶身，一路到底。
   const barrel = revolve(
     [
-      [faceXM - 0.014, RIM_M + 0.004],
-      [faceXM + 0.004, RIM_M + 0.004],
-      [faceXM + 0.011, RIM_M - 0.003],
-      [faceXM + 0.009, RIM_M - 0.013],
-      [faceXM - 0.004, RIM_M - 0.02],
-      [faceXM - 0.004, RIM_M - 0.02],
+      [faceXM - 0.014, rimM + 0.004],
+      [faceXM + 0.004, rimM + 0.004],
+      [faceXM + 0.011, rimM - 0.003],
+      [faceXM + 0.009, rimM - 0.013],
+      [faceXM - 0.004, rimM - 0.02],
+      [faceXM - 0.004, rimM - 0.02],
       [faceXM - 0.012, barrelM],
       [backXM, barrelM - 0.006],
     ],
@@ -138,15 +180,15 @@ export function createRimGeometry(segments: number): BufferGeometry {
   // 輪轂：從輪輻根部的錐面到正面的平台（鎖螺帽的地方），再到中央略凸的蓋子。
   const hub = revolve(
     [
-      [backXM + 0.02, 1.25 * HUB_RADIUS_M],
-      [faceXM - 0.006, HUB_RADIUS_M],
-      [faceXM + 0.002, 0.86 * HUB_RADIUS_M],
-      [faceXM + 0.002, 0.86 * HUB_RADIUS_M],
-      [faceXM + 0.003, CAP_RADIUS_M + 0.004],
-      [faceXM + 0.003, CAP_RADIUS_M + 0.004],
-      [faceXM + 0.01, CAP_RADIUS_M],
-      [faceXM + 0.01, CAP_RADIUS_M],
-      [faceXM + 0.013, 0.5 * CAP_RADIUS_M],
+      [backXM + 0.02, 1.25 * hubRadiusM],
+      [faceXM - 0.006, hubRadiusM],
+      [faceXM + 0.002, 0.86 * hubRadiusM],
+      [faceXM + 0.002, 0.86 * hubRadiusM],
+      [faceXM + 0.003, capRadiusM + 0.004],
+      [faceXM + 0.003, capRadiusM + 0.004],
+      [faceXM + 0.01, capRadiusM],
+      [faceXM + 0.01, capRadiusM],
+      [faceXM + 0.013, 0.5 * capRadiusM],
       [faceXM + 0.014, 0],
     ],
     Math.max(Math.round(segments / 2), 10),
@@ -156,8 +198,8 @@ export function createRimGeometry(segments: number): BufferGeometry {
   // 輪輻：根部寬、往輪圈收窄，正面從輪轂往桶身略往內斜，中間鼓起一道稜；斷面的法線是平滑的（圓潤的鑄造輪輻）。
   const spokes = new FacetBuilder();
   const thicknessM = 0.03;
-  for (let spoke = 0; spoke < VISUAL.rimSpokes; spoke += 1) {
-    const angleRad = (2 * Math.PI * spoke) / VISUAL.rimSpokes;
+  for (let spoke = 0; spoke < style.spokes; spoke += 1) {
+    const angleRad = (2 * Math.PI * spoke) / style.spokes;
     const radial = [Math.cos(angleRad), Math.sin(angleRad)] as const;
     const across = [-Math.sin(angleRad), Math.cos(angleRad)] as const;
     /** 輪輻在某個半徑的斷面：背面左緣 → 正面左緣 → 稜 → 正面右緣 → 背面右緣。 */
@@ -182,8 +224,18 @@ export function createRimGeometry(segments: number): BufferGeometry {
       ]);
     spokes.grid(
       [
-        section(0.8 * HUB_RADIUS_M, faceXM, 0.2 * RIM_M, 0.24 * RIM_M),
-        section(barrelM + 0.004, faceXM - 0.01, 0.1 * RIM_M, 0.13 * RIM_M),
+        section(
+          0.8 * hubRadiusM,
+          faceXM,
+          0.2 * rimM * style.spokeWidth,
+          0.24 * rimM * style.spokeWidth,
+        ),
+        section(
+          barrelM + 0.004,
+          faceXM - 0.01,
+          0.1 * rimM * style.spokeWidth,
+          0.13 * rimM * style.spokeWidth,
+        ),
       ],
       // 第一格是輪輻的左側面：朝左（−across），略朝外。
       [0.3, -across[0], -across[1]],
@@ -193,9 +245,9 @@ export function createRimGeometry(segments: number): BufferGeometry {
   const parts: BufferGeometry[] = [barrel, hub, spokes.build()];
   if (segments >= DETAILED_RIM_SEGMENTS) {
     // 螺帽：輪轂平台上、兩根輪輻之間各一顆。
-    const lugCircleM = (0.86 * HUB_RADIUS_M + CAP_RADIUS_M) / 2;
-    for (let lug = 0; lug < VISUAL.rimSpokes; lug += 1) {
-      const angleRad = (2 * Math.PI * (lug + 0.5)) / VISUAL.rimSpokes;
+    const lugCircleM = (0.86 * hubRadiusM + capRadiusM) / 2;
+    for (let lug = 0; lug < style.spokes; lug += 1) {
+      const angleRad = (2 * Math.PI * (lug + 0.5)) / style.spokes;
       const nut = new CylinderGeometry(0.006, 0.007, 0.01, 6)
         .rotateZ(-Math.PI / 2)
         .translate(faceXM + 0.007, lugCircleM * Math.cos(angleRad), lugCircleM * Math.sin(angleRad));
@@ -223,19 +275,24 @@ export function createRimGeometry(segments: number): BufferGeometry {
 
 /** 輪圈後面的深色圓盤（輪圈內側的底），從輪輻之間看進去不會穿到車底另一邊。 */
 export function createBrakeDiscGeometry(segments: number): BufferGeometry {
-  return new CircleGeometry(RIM_M, segments)
+  return new CircleGeometry(SEDAN_WHEEL.rimRadiusM, segments)
     .rotateY(Math.PI / 2)
-    .translate(RIM_FACE_X_M - RIM_BARREL_DEPTH_M + 0.004, 0, 0);
+    .translate((RIM_FACE_SHARE * SEDAN_WHEEL.widthM) / 2 - RIM_BARREL_DEPTH_M + 0.004, 0, 0);
 }
 
 /** 低細分的背景車用的輪蓋：一片略凸的圓盤蓋住整個輪圈（沒有輪輻），用輪圈的材質畫。 */
-export function createHubcapGeometry(segments: number): BufferGeometry {
+export function createHubcapGeometry(
+  segments: number,
+  size: WheelSize = SEDAN_WHEEL,
+): BufferGeometry {
+  const rimM = size.rimRadiusM;
+  const faceXM = (RIM_FACE_SHARE * size.widthM) / 2;
   return revolve(
     [
-      [RIM_FACE_X_M - 0.012, RIM_M],
-      [RIM_FACE_X_M, 0.9 * RIM_M],
-      [RIM_FACE_X_M + 0.008, 0.3 * RIM_M],
-      [RIM_FACE_X_M + 0.01, 0],
+      [faceXM - 0.012, rimM],
+      [faceXM, 0.9 * rimM],
+      [faceXM + 0.008, 0.3 * rimM],
+      [faceXM + 0.01, 0],
     ],
     segments,
     false,

@@ -163,7 +163,7 @@ export function plateText(seed: number): string {
 }
 
 /** 只留位置與法線、而且有索引：所有配件與車殼的屬性一致，才併得起來。 */
-function normalized(geometry: BufferGeometry): BufferGeometry {
+export function normalized(geometry: BufferGeometry): BufferGeometry {
   geometry.deleteAttribute('uv');
   if (geometry.getIndex() === null) {
     const count = geometry.getAttribute('position').count;
@@ -172,11 +172,11 @@ function normalized(geometry: BufferGeometry): BufferGeometry {
   return geometry;
 }
 
-function box(size: Point3, center: Point3): BufferGeometry {
+export function box(size: Point3, center: Point3): BufferGeometry {
   return normalized(new BoxGeometry(...size).translate(...center));
 }
 
-function steps(fromM: number, toM: number, count: number): number[] {
+export function steps(fromM: number, toM: number, count: number): number[] {
   return Array.from({ length: count + 1 }, (_, index) => fromM + ((toM - fromM) * index) / count);
 }
 
@@ -244,7 +244,7 @@ export function createBeamGeometry(a: Point3, b: Point3, thicknessM: number): Bu
 }
 
 /** 沿一串點的折線（每段一根方條）。 */
-function polyline(points: readonly Point3[], thicknessM: number): BufferGeometry[] {
+export function polyline(points: readonly Point3[], thicknessM: number): BufferGeometry[] {
   const beams: BufferGeometry[] = [];
   for (let index = 0; index + 1 < points.length; index += 1) {
     const a = points[index];
@@ -256,12 +256,12 @@ function polyline(points: readonly Point3[], thicknessM: number): BufferGeometry
   return beams;
 }
 
-function merged(geometries: readonly BufferGeometry[]): BufferGeometry {
+export function merged(geometries: readonly BufferGeometry[]): BufferGeometry {
   return mergeGeometries([...geometries]);
 }
 
 /** 把車頭那一端的幾何繞 Y 轉半圈，變成車尾那一端的。 */
-function turnedToRear(geometry: BufferGeometry): BufferGeometry {
+export function turnedToRear(geometry: BufferGeometry): BufferGeometry {
   return geometry.rotateY(Math.PI);
 }
 
@@ -269,7 +269,7 @@ function turnedToRear(geometry: BufferGeometry): BufferGeometry {
  * 保險桿之類包住車頭的一條：俯視是前緣兩角收圓的 U 形實心板，沿高度擠出，上下緣倒角。
  * 以車頭為準建立（正面在 frontZM、往 +Z 包 wrapM）；車尾的用 turnedToRear 轉過去。
  */
-function createWrapBar(
+export function createWrapBar(
   halfWidthM: number,
   frontZM: number,
   wrapM: number,
@@ -324,7 +324,7 @@ function sideXM(zM: number, yM: number): number {
 }
 
 /** 車牌：牌面（淺色的薄板）與字（黑色的點陣小方塊）。outwardZ 是牌面朝向（−1 朝前、+1 朝後），faceZM 是牌面的 Z。 */
-function createPlate(
+export function createPlate(
   text: string,
   centerYM: number,
   faceZM: number,
@@ -458,13 +458,37 @@ function createLampClusters(
   return { housing: merged(housing), lenses: lenses.map(merged), bezel: merged(bezel) };
 }
 
-/** 輪拱唇：四個輪拱各一圈凸出鈑金的折邊（唇面朝外、內緣往輪拱裡折、外緣一道斜面接回鈑金）。 */
-function createArchLips(segments: number): BufferGeometry {
-  const lip = FIT.archLipM;
-  const radiusM = L.archRadiusM;
-  const axleYM = VISUAL.wheelRadiusM;
+/** 輪拱唇要知道的車身尺寸：輪拱半徑、輪軸的高度與 z、鈑金在某一站的半寬，以及唇的斷面（FIT.archLipM 的那幾項）。 */
+export interface ArchLayout {
+  readonly radiusM: number;
+  readonly axleYM: number;
+  readonly axlesZM: readonly number[];
+  readonly sheetHalfWidthM: (zM: number) => number;
+  readonly lip: {
+    readonly proud: number;
+    readonly face: number;
+    readonly chamfer: number;
+    readonly returnDepth: number;
+    readonly legBottom: number;
+  };
+}
+
+const SEDAN_ARCHES: ArchLayout = {
+  radiusM: L.archRadiusM,
+  axleYM: VISUAL.wheelRadiusM,
+  axlesZM: [-VEHICLE_CONFIG_SI.wheelbaseM / 2, VEHICLE_CONFIG_SI.wheelbaseM / 2],
+  sheetHalfWidthM,
+  lip: FIT.archLipM,
+};
+
+/**
+ * 輪拱唇：四個輪拱各一圈凸出鈑金的折邊（唇面朝外、內緣往輪拱裡折、外緣一道斜面接回鈑金）。
+ * @param arches 預設是轎車的；其他車款給自己的輪拱
+ */
+export function createArchLips(segments: number, arches: ArchLayout = SEDAN_ARCHES): BufferGeometry {
+  const { lip, radiusM, axleYM } = arches;
   const builder = new FacetBuilder();
-  for (const axleZM of [-VEHICLE_CONFIG_SI.wheelbaseM / 2, VEHICLE_CONFIG_SI.wheelbaseM / 2]) {
+  for (const axleZM of arches.axlesZM) {
     /** 沿輪拱走的一串點：[輪拱邊緣上的 z, y, 往外（遠離輪軸）的方向 dz, dy]；兩端是往下的直邊。 */
     const path: (readonly [number, number, number, number])[] = [
       [axleZM - radiusM, lip.legBottom, -1, 0],
@@ -482,7 +506,7 @@ function createArchLips(segments: number): BufferGeometry {
       /** 這一圈上、離輪拱邊緣 outM（往外為正）、比鈑金凸出 proudM 的點。 */
       const row = (outM: number, proudM: number): Point3[] =>
         path.map(([zM, yM, dz, dy]): Point3 => [
-          side * (sheetHalfWidthM(zM) - 0.004 + proudM),
+          side * (arches.sheetHalfWidthM(zM) - 0.004 + proudM),
           yM + dy * outM,
           zM + dz * outM,
         ]);

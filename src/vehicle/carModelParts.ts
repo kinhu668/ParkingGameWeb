@@ -8,7 +8,13 @@ import { CAR_VISUAL_CONFIG as VISUAL } from '../render/renderConfig';
 import { BODY_LAYOUT } from './carBody';
 import { createBodyGeometries, createPlateTextGeometry } from './carFittings';
 import type { CarModelId } from './carModels';
-import { createHubcapGeometry, createRimGeometry, createTireGeometry } from './carWheel';
+import {
+  createHubcapGeometry,
+  createRimGeometry,
+  createTireGeometry,
+  PARKED_WHEEL_SEGMENTS,
+} from './carWheel';
+import { createRallyParts } from './carRally';
 import type { Point3 } from './facetBuilder';
 import { VEHICLE_CONFIG_SI } from './vehicleConfig';
 
@@ -53,12 +59,6 @@ export interface CarModelParts {
   readonly plateText: (text: string) => BufferGeometry;
 }
 
-/**
- * 輪胎與輪圈一圈的段數（偶數），依擺設的細分。輪胎是沒有胎紋的光面（橫截面的點數少四成），
- * 所以 high 的 20 段比有胎紋的 12 段面數還少一點，輪廓卻圓得多。
- */
-export const PARKED_WHEEL_SEGMENTS = { low: 12, high: 20 } as const;
-
 /** 轎車：玩家車的車殼（低細分）併入後視鏡、拿掉車牌上的字與車艙內襯。 */
 function createSedanParts(detail: VehicleDetail): CarModelParts {
   const body = new Map<CarModelPart, BufferGeometry>();
@@ -91,7 +91,7 @@ function createSedanParts(detail: VehicleDetail): CarModelParts {
 const BUILDERS: Readonly<Record<CarModelId, (detail: VehicleDetail) => CarModelParts>> = {
   sedan: createSedanParts,
   // 四款新車建模完成前先用轎車頂著（關卡還不會擺出這四款）。
-  rally: createSedanParts,
+  rally: createRallyParts,
   widebody: createSedanParts,
   fastback: createSedanParts,
   roadster: createSedanParts,
