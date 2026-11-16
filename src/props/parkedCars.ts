@@ -1,5 +1,5 @@
 // 停放的車（場地裡的背景車與關卡 JSON 的 parked_car）：每一款車的幾何來自 vehicle/carModelParts.ts，
-// 同一款的車整批用 InstancedMesh 畫（每個材質分區一個 draw call）。
+// 同一款的車整批用 InstancedMesh 畫：烤漆、第二車色各一個（每台車自己的顏色），其餘全部併成一個頂點著色的網格。
 // 靜態、純視覺：輪子不轉、沒有內裝（玻璃不透明）、車燈不亮；碰撞由關卡的碰撞盒負責。
 // 每台車的車牌號碼不同（固定種子）：全部車牌的字併成一個網格，只多一個 draw call。
 import {
@@ -28,42 +28,45 @@ import {
   PARKED_CAR_PAINTS,
 } from '../render/renderConfig';
 import { plateText } from '../vehicle/carFittings';
-import { createRimMaterial, createTireMaterial } from '../vehicle/carMesh';
 import {
   createCarModelParts,
   type CarModelPart,
   type CarModelParts,
 } from '../vehicle/carModelParts';
 import { CAR_MODEL_IDS, carModelDimsM, type CarModelId } from '../vehicle/carModels';
-import type { PropPlacement } from './lotLayout';
+import type { ParkedCar, PropPlacement } from './lotLayout';
 import { occluderBox, registerOccluders, type OccluderPart } from './occluders';
 
-/** 停放的一台車：擺放位置加上車款。 */
-export interface ParkedCar extends PropPlacement {
-  readonly model: CarModelId;
+/** 併進 rest 的一塊：顏色（sRGB）、粗糙度、金屬度，都寫在頂點上。 */
+interface RestLook {
+  readonly color: number;
+  readonly roughness: number;
+  readonly metalness: number;
 }
 
-/** 併成一個頂點著色網格的小分區（燈殼、牌面、敞篷車的座椅）：一款車只多一個 draw call，不是六個。 */
-const DETAIL_PARTS = [
-  'headlight',
-  'taillight',
-  'reverseLight',
-  'indicator',
-  'plate',
-  'upholstery',
-] as const satisfies readonly CarModelPart[];
+/** 燈殼（沒亮）、牌面、座椅的粗糙度。 */
+const LAMP_ROUGHNESS = 0.35;
 
-const DETAIL_COLORS: Readonly<Record<(typeof DETAIL_PARTS)[number], number>> = {
-  headlight: VISUAL.headlightColor,
-  taillight: VISUAL.taillightColor,
-  reverseLight: VISUAL.reverseLightOffColor,
-  indicator: VISUAL.indicatorColor,
-  plate: VISUAL.plateColor,
-  upholstery: LOT.carUpholsteryColor,
+/** 烤漆與第二車色以外的分區：每款車全部併成一個 rest 網格，各自的顏色與光澤如下。 */
+const REST_LOOKS: Readonly<Record<Exclude<CarModelPart, 'paint' | 'accent'>, RestLook>> = {
+  glass: { color: VISUAL.glassColor, roughness: VISUAL.minGlossRoughness, metalness: 0 },
+  trim: { color: VISUAL.trimColor, roughness: VISUAL.trimRoughness, metalness: 0 },
+  chrome: { color: VISUAL.chromeColor, roughness: VISUAL.chromeRoughness, metalness: 1 },
+  headlight: { color: VISUAL.headlightColor, roughness: LAMP_ROUGHNESS, metalness: 0 },
+  taillight: { color: VISUAL.taillightColor, roughness: LAMP_ROUGHNESS, metalness: 0 },
+  reverseLight: { color: VISUAL.reverseLightOffColor, roughness: LAMP_ROUGHNESS, metalness: 0 },
+  indicator: { color: VISUAL.indicatorColor, roughness: LAMP_ROUGHNESS, metalness: 0 },
+  plate: { color: VISUAL.plateColor, roughness: LAMP_ROUGHNESS, metalness: 0 },
+  upholstery: { color: LOT.carUpholsteryColor, roughness: LAMP_ROUGHNESS, metalness: 0 },
+};
+const TIRE_LOOK: RestLook = {
+  color: VISUAL.tireColor,
+  roughness: VISUAL.tireRoughness,
+  metalness: 0,
 };
 
-/** 一款車各自畫成一個 InstancedMesh 的分區（依這個順序）；其餘的小分區併進 detail。 */
-const INSTANCED_PARTS = ['paint', 'accent', 'glass', 'trim', 'chrome'] as const satisfies readonly CarModelPart[];
+/** 每款車各自用實例顏色的分區（依這個順序）。 */
+const PAINTED_PARTS = ['paint', 'accent'] as const satisfies readonly CarModelPart[];
 
 const UNIT_SCALE = new Vector3(1, 1, 1);
 
@@ -122,34 +125,90 @@ function instanced(
   return mesh;
 }
 
-/** 小分區併成一個帶頂點顏色的幾何（只留位置與法線）；這款車一個小分區都沒有就回傳 undefined。 */
-function createDetailGeometry(body: CarModelParts['body']): BufferGeometry | undefined {
-  const pieces: BufferGeometry[] = [];
-  for (const part of DETAIL_PARTS) {
-    const source = body.get(part);
-    if (source === undefined) {
-      continue;
-    }
-    const flat = source.index === null ? source : source.toNonIndexed();
-    const piece = new BufferGeometry();
-    piece.setAttribute('position', flat.getAttribute('position'));
-    piece.setAttribute('normal', flat.getAttribute('normal'));
-    const color = new Color(DETAIL_COLORS[part]);
-    const count = flat.getAttribute('position').count;
-    const colors = new Float32Array(count * 3);
-    for (let vertex = 0; vertex < count; vertex += 1) {
-      color.toArray(colors, vertex * 3);
-    }
-    piece.setAttribute('color', new BufferAttribute(colors, 3));
-    pieces.push(piece);
+/**
+ * rest 的一塊：只留位置與法線（可以先擺到車上的某個位置），加上頂點顏色與 gloss（粗糙度、金屬度）。
+ * 一律帶索引，原本共用的頂點照樣共用。
+ */
+function restPiece(source: BufferGeometry, look: RestLook, matrix?: Matrix4): BufferGeometry {
+  const piece = new BufferGeometry();
+  const positions = source.getAttribute('position').clone();
+  const normals = source.getAttribute('normal').clone();
+  piece.setAttribute('position', positions);
+  piece.setAttribute('normal', normals);
+  piece.setIndex(
+    source.getIndex()?.clone() ?? Array.from({ length: positions.count }, (_, index) => index),
+  );
+  if (matrix !== undefined) {
+    piece.applyMatrix4(matrix);
   }
-  return pieces.length === 0 ? undefined : mergeGeometries(pieces);
+  const color = new Color(look.color);
+  const colors = new Float32Array(positions.count * 3);
+  const gloss = new Float32Array(positions.count * 2);
+  for (let vertex = 0; vertex < positions.count; vertex += 1) {
+    color.toArray(colors, vertex * 3);
+    gloss[vertex * 2] = look.roughness;
+    gloss[vertex * 2 + 1] = look.metalness;
+  }
+  piece.setAttribute('color', new BufferAttribute(colors, 3));
+  piece.setAttribute('gloss', new BufferAttribute(gloss, 2));
+  return piece;
+}
+
+/**
+ * 一款車烤漆以外的全部東西（玻璃、黑飾條、鍍鉻、燈殼、牌面、座椅、四個輪胎與輪圈）併成一個幾何：
+ * 每多一款車只多一個 draw call，不是八個。輪子不轉，所以直接擺在輪心；幾何的外側面朝 +X，左側的轉半圈。
+ */
+function createRestGeometry(parts: CarModelParts): BufferGeometry {
+  const pieces: BufferGeometry[] = [];
+  for (const [part, geometry] of parts.body) {
+    if (part !== 'paint' && part !== 'accent') {
+      pieces.push(restPiece(geometry, REST_LOOKS[part]));
+    }
+  }
+  const { wheel } = parts;
+  const rimLook: RestLook = {
+    color: wheel.rimColor,
+    roughness: VISUAL.rimRoughness,
+    metalness: VISUAL.rimMetalness,
+  };
+  for (const side of [-1, 1]) {
+    for (const [xM, yM, zM] of wheel.centers) {
+      const matrix = new Matrix4().compose(
+        new Vector3(side * xM, yM, zM),
+        new Quaternion().setFromEuler(new Euler(0, side < 0 ? Math.PI : 0, 0)),
+        UNIT_SCALE,
+      );
+      pieces.push(restPiece(wheel.tire, TIRE_LOOK, matrix), restPiece(wheel.rim, rimLook, matrix));
+    }
+  }
+  return mergeGeometries(pieces);
+}
+
+/** rest 的材質：顏色、粗糙度、金屬度都讀頂點上的值（color、gloss 兩個屬性）。 */
+function createRestMaterial(): MeshStandardMaterial {
+  const material = new MeshStandardMaterial({ vertexColors: true });
+  material.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec2 gloss;\nvarying vec2 vGloss;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGloss = gloss;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec2 vGloss;')
+      .replace(
+        '#include <roughnessmap_fragment>',
+        '#include <roughnessmap_fragment>\nroughnessFactor = vGloss.x;',
+      )
+      .replace(
+        '#include <metalnessmap_fragment>',
+        '#include <metalnessmap_fragment>\nmetalnessFactor = vGloss.y;',
+      );
+  };
+  return material;
 }
 
 /**
  * 建立全部停放的車。回傳的群組用車位本地座標，要加進車位的座標框裡。
- * 每一款有車的車款各自一組 InstancedMesh（`parkedCars:<車款>:<分區>`：烤漆、第二車色、玻璃、黑飾條、鍍鉻、
- * 併在一起的小分區 detail、輪胎 tire、輪圈 rim），加上一個裝全部車牌號碼的網格；只有烤漆投影。
+ * 每一款有車的車款各自最多三個 InstancedMesh（`parkedCars:<車款>:paint`、`:accent`、`:rest`），
+ * 加上一個裝全部車牌號碼的網格；只有烤漆投影。
  * @param detail low：輪圈只是一片輪蓋、輪胎 12 段；high：有輪輻的輪圈、輪胎 20 段。
  */
 export function createParkedCars(cars: readonly ParkedCar[], detail: VehicleDetail = 'high'): Group {
@@ -159,38 +218,21 @@ export function createParkedCars(cars: readonly ParkedCar[], detail: VehicleDeta
     return group;
   }
 
-  // 與玩家車同一套庫材質（物件座標取樣）；停放的車不開清漆（省一層反射的計算），車色是每台各自的實例顏色。
+  // 烤漆與玩家車同一套庫材質（物件座標取樣）；停放的車不開清漆（省一層反射的計算），車色是每台各自的實例顏色。
+  const paintMaterial = createSurfaceMaterial('carPaint', {
+    space: 'local',
+    color: 0xffffff,
+    roughness: LOT.carRoughness,
+    metalness: LOT.carMetalness,
+    clearcoat: 0,
+  });
+  const restMaterial = createRestMaterial();
+  // 車牌上的字：與玩家車的黑飾條同一種塑膠。
   const trim = createSurfaceMaterial('plastic', {
     space: 'local',
     color: VISUAL.trimColor,
     roughness: VISUAL.trimRoughness,
   });
-  const paint = (): Material =>
-    createSurfaceMaterial('carPaint', {
-      space: 'local',
-      color: 0xffffff,
-      roughness: LOT.carRoughness,
-      metalness: LOT.carMetalness,
-      clearcoat: 0,
-    });
-  const materials: Readonly<Record<(typeof INSTANCED_PARTS)[number], Material>> = {
-    paint: paint(),
-    accent: paint(),
-    glass: createSurfaceMaterial('glass', {
-      space: 'local',
-      color: VISUAL.glassColor,
-      roughness: VISUAL.minGlossRoughness,
-    }),
-    trim,
-    chrome: createSurfaceMaterial('chrome', {
-      space: 'local',
-      color: VISUAL.chromeColor,
-      roughness: VISUAL.chromeRoughness,
-      metalness: 1,
-    }),
-  };
-  // 燈殼沒亮、牌面、座椅：顏色在頂點上。
-  const detailMaterial = new MeshStandardMaterial({ vertexColors: true, roughness: 0.35 });
 
   const carMatrices = cars.map(carMatrix);
   const plates = parkedCarPlates(cars.length);
@@ -215,51 +257,19 @@ export function createParkedCars(cars: readonly ParkedCar[], detail: VehicleDeta
       return mesh;
     };
 
-    for (const part of INSTANCED_PARTS) {
+    for (const part of PAINTED_PARTS) {
       const geometry = parts.body.get(part);
       if (geometry === undefined) {
         continue;
       }
-      const mesh = add(part, geometry, materials[part]);
+      const mesh = add(part, geometry, paintMaterial);
       mesh.castShadow = part === 'paint';
-      if (part === 'paint' || part === 'accent') {
-        members.forEach((car, instance) => {
-          mesh.setColorAt(instance, parkedCarPaint(model, cars[car]?.variant ?? 0)[part]);
-        });
-      }
+      members.forEach((car, instance) => {
+        mesh.setColorAt(instance, parkedCarPaint(model, cars[car]?.variant ?? 0)[part]);
+      });
     }
-    const detailGeometry = createDetailGeometry(parts.body);
-    if (detailGeometry !== undefined) {
-      add('detail', detailGeometry, detailMaterial);
-    }
-
-    // 輪子：每台車四個。幾何的外側面朝 +X，左側的轉半圈。
-    const { wheel } = parts;
-    const wheelMatrices: Matrix4[] = [];
-    for (const car of matrices) {
-      for (const side of [-1, 1]) {
-        for (const [xM, yM, zM] of wheel.centers) {
-          const local = new Matrix4().compose(
-            new Vector3(side * xM, yM, zM),
-            new Quaternion().setFromEuler(new Euler(0, side < 0 ? Math.PI : 0, 0)),
-            UNIT_SCALE,
-          );
-          wheelMatrices.push(car.clone().multiply(local));
-        }
-      }
-    }
-    const tires = instanced(wheel.tire, createTireMaterial(wheel), wheelMatrices);
-    tires.name = `parkedCars:${model}:tire`;
-    const rims = instanced(wheel.rim, createRimMaterial(wheel.rimColor), wheelMatrices);
-    rims.name = `parkedCars:${model}:rim`;
-    group.add(tires, rims);
-    members.forEach((car, instance) => {
-      for (let corner = 0; corner < 4; corner += 1) {
-        fadeParts[car]?.push(
-          { mesh: tires, index: instance * 4 + corner },
-          { mesh: rims, index: instance * 4 + corner },
-        );
-      }
+    add('rest', createRestGeometry(parts), restMaterial);
+    members.forEach((car) => {
       plateGeometries[car] = parts
         .plateText(plates[car] ?? '')
         .applyMatrix4(carMatrices[car] ?? new Matrix4());
@@ -300,7 +310,7 @@ export function createParkedCars(cars: readonly ParkedCar[], detail: VehicleDeta
   plateTexts.userData.plates = plates;
   group.add(plateTexts);
 
-  // 擋到跟車鏡頭時整台一起淡：車身各分區、四個輪胎與輪圈；車牌上的字藏起來。擋住鏡頭的範圍就是這款車的外框。
+  // 擋到跟車鏡頭時整台一起淡（烤漆、第二車色、rest）；車牌上的字藏起來。擋住鏡頭的範圍就是這款車的外框。
   registerOccluders(
     group,
     cars.map((car, index) => {

@@ -336,17 +336,28 @@ describe('場景裡的物件換成了庫材質', () => {
     expect(glass.opacity).toBeLessThan(1);
   });
 
-  test('背景車：與玩家車同一套表面，車色仍是每台各自的實例顏色，烤漆不開清漆', () => {
+  test('背景車：烤漆與玩家車同一種表面，車色仍是每台各自的實例顏色，烤漆不開清漆；其餘併成一個頂點著色的網格', () => {
     const cars = createParkedCars(
       [0.1, 0.5, 0.9].map((variant, index) => ({
         x: index * 4, y: 0, z: 0, headingRad: 0, sizeX: 1.8, sizeY: 0, sizeZ: 4.6, variant, model: 'sedan' as const,
       })),
       'high',
     );
-    const surfaces = surfacesIn(cars);
-    for (const id of ['carPaint', 'glass', 'plastic', 'chrome', 'tire'] as const) {
-      expect(surfaces, id).toContain(id);
+    expect(surfacesIn(cars)).toEqual(new Set(['carPaint', 'plastic']));
+    // rest：玻璃、鍍鉻、輪胎…各自的光澤寫在頂點上（粗糙度、金屬度），鍍鉻是全金屬、輪胎最粗。
+    const rest = cars.getObjectByName('parkedCars:sedan:rest');
+    if (!(rest instanceof InstancedMesh)) {
+      expect.fail('rest 要是 InstancedMesh');
     }
+    const gloss = rest.geometry.getAttribute('gloss');
+    expect(gloss.count).toBe(rest.geometry.getAttribute('position').count);
+    const looks = new Set<string>();
+    for (let vertex = 0; vertex < gloss.count; vertex += 1) {
+      looks.add(`${gloss.getX(vertex).toFixed(2)}/${gloss.getY(vertex).toFixed(2)}`);
+    }
+    expect(looks).toContain(`${CAR_VISUAL_CONFIG.chromeRoughness.toFixed(2)}/1.00`);
+    expect(looks).toContain(`${CAR_VISUAL_CONFIG.tireRoughness.toFixed(2)}/0.00`);
+    expect(looks).toContain(`${CAR_VISUAL_CONFIG.minGlossRoughness.toFixed(2)}/0.00`);
     const paint = cars.getObjectByName('parkedCars:sedan:paint');
     expect(paint).toBeInstanceOf(InstancedMesh);
     const mesh = paint as InstancedMesh;

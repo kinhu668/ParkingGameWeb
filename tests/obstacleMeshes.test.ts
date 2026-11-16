@@ -16,6 +16,7 @@ import {
   type ModelObstacleType,
 } from '../src/props/obstacleMeshes';
 import { SHOWCASE_IDS, createShowcaseObject } from '../src/render/showcase';
+import { CAR_MODEL_DIMS_FT } from '../src/vehicle/carModels';
 
 function requireLevel(id: string): LevelDefinition {
   const level = levelById(id);
@@ -134,7 +135,7 @@ describe.each(LEVELS.map((level) => [level.id, level] as const))('%s 的障礙�
     }
   });
 
-  test('停放車輛：用背景車那一套轎車，位置與方向就是碰撞盒，車身外框對得上 6 × 15 ft', () => {
+  test('停放車輛：每一台畫成關卡指定的那款車，位置與方向就是碰撞盒，碰撞盒就是那款車的外框', () => {
     const cars = group.children.find((child) => child.name === 'parkedCars');
     const expected = level.obstaclesFt.filter((obstacle) => obstacle.type === 'parked_car').length;
     if (expected === 0) {
@@ -144,32 +145,48 @@ describe.each(LEVELS.map((level) => [level.id, level] as const))('%s 的障礙�
     expect(cars).toBeInstanceOf(Group);
     const indices = cars?.userData.obstacleIndices as readonly number[];
     expect(indices).toHaveLength(expected);
-    const bodies = cars?.children.filter(
-      (child): child is InstancedMesh => child instanceof InstancedMesh && child.name !== 'parkedCars:sedan:tire' && child.name !== 'parkedCars:sedan:rim',
-    );
-    const paint = bodies?.find((body) => body.name === 'parkedCars:sedan:paint');
-    expect(paint?.count).toBe(expected);
-    // 全部車殼分區合起來的外框（車的本地座標）。
-    const shell = new Box3();
-    for (const body of bodies ?? []) {
-      body.geometry.computeBoundingBox();
-      shell.union(body.geometry.boundingBox ?? new Box3());
-    }
-    const size = shell.getSize(new Vector3());
-    expect(Math.abs(mToFt(size.x) - 6) / 2).toBeLessThan(0.25);
-    expect(Math.abs(mToFt(size.z) - 15) / 2).toBeLessThan(0.25);
-    indices.forEach((obstacleIndex, instance) => {
+    /** 每一款的烤漆網格裡已經對過幾台。 */
+    const seen = new Map<string, number>();
+    for (const obstacleIndex of indices) {
+      const obstacle = level.obstaclesFt[obstacleIndex];
+      const model = obstacle?.model;
+      if (obstacle === undefined || model === undefined) {
+        expect.fail('停放車輛要有車款');
+      }
+      expect([obstacle.widthFt, obstacle.lengthFt]).toEqual([
+        CAR_MODEL_DIMS_FT[model].widthFt,
+        CAR_MODEL_DIMS_FT[model].lengthFt,
+      ]);
+      const instance = seen.get(model) ?? 0;
+      seen.set(model, instance + 1);
       const box = boxes[obstacleIndex];
-      const matrix = new Matrix4();
-      paint?.getMatrixAt(instance, matrix);
-      const position = new Vector3().setFromMatrixPosition(matrix);
-      expect(position.x).toBeCloseTo(box?.x ?? NaN, 5);
-      expect(position.z).toBeCloseTo(box?.z ?? NaN, 5);
-      // 車頭（本地 −Z）朝碰撞盒的 heading。
-      const nose = new Vector3(0, 0, -1).transformDirection(matrix);
-      expect(nose.x).toBeCloseTo(Math.sin(box?.headingRad ?? NaN), 9);
-      expect(nose.z).toBeCloseTo(-Math.cos(box?.headingRad ?? NaN), 9);
-    });
+      for (const part of ['paint', 'rest']) {
+        const mesh = cars?.getObjectByName(`parkedCars:${model}:${part}`);
+        if (!(mesh instanceof InstancedMesh)) {
+          expect.fail(`找不到 ${model} 的 ${part}`);
+        }
+        const matrix = new Matrix4();
+        mesh.getMatrixAt(instance, matrix);
+        const position = new Vector3().setFromMatrixPosition(matrix);
+        expect(position.x).toBeCloseTo(box?.x ?? NaN, 5);
+        expect(position.z).toBeCloseTo(box?.z ?? NaN, 5);
+        // 車頭（本地 −Z）朝碰撞盒的 heading。
+        const nose = new Vector3(0, 0, -1).transformDirection(matrix);
+        expect(nose.x).toBeCloseTo(Math.sin(box?.headingRad ?? NaN), 9);
+        expect(nose.z).toBeCloseTo(-Math.cos(box?.headingRad ?? NaN), 9);
+      }
+    }
+    // 每一款的實例數就是這一關那一款有幾台，沒有多畫的車。
+    for (const [model, count] of seen) {
+      const paint = cars?.getObjectByName(`parkedCars:${model}:paint`);
+      expect(paint instanceof InstancedMesh ? paint.count : NaN).toBe(count);
+    }
+    const drawn = (cars?.children ?? []).reduce(
+      (total, child) =>
+        total + (child instanceof InstancedMesh && child.name.endsWith(':paint') ? child.count : 0),
+      0,
+    );
+    expect(drawn).toBe(expected);
   });
 
   test('邊界：四面，內緣貼齊可行駛範圍', () => {

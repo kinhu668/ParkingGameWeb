@@ -3,6 +3,7 @@
 // 座標約定（規格第 6 節）：pos 是 [x, y, z]（英尺），heading 0 朝 −Z、從上方看順時針為正（度）。
 import { PARKING_RULES } from '../core/gameConfig';
 import { degToRad, ftToM } from '../core/units';
+import { CAR_MODEL_DIMS_FT, carModelMix, type CarModelId } from '../vehicle/carModels';
 import { boundsWallsFt, obbFromFt } from './collision';
 import { defaultObstacleSizeFt, isObstacleType, type ObstacleType } from './obstacleTypes';
 import { parkingSpotFromFt, type ParkingSpotFt } from './parkingJudge';
@@ -71,6 +72,8 @@ export interface LevelObstacleFt {
   readonly widthFt: number;
   /** 縱向（沿 heading）的長度。 */
   readonly lengthFt: number;
+  /** 停放車輛（parked_car）是哪一款車：碰撞盒就是這款車的外框。其他類型沒有這個欄位。 */
+  readonly model?: CarModelId;
 }
 
 /** 解析、驗證過的一關。選填欄位已補上預設值。 */
@@ -302,6 +305,9 @@ function readObstacle(value: unknown, at: Cursor): LevelObstacleFt {
   if (!isObstacleType(typeName)) {
     return fail(typeField.at, `是不認得的障礙物類型，${got(typeName)}`);
   }
+  if (typeName === 'parked_car' && size !== undefined) {
+    return fail(size.at, '不能用在 parked_car：碰撞盒就是車款的外框');
+  }
   const center = readGroundPos(pos.value, pos.at);
   const footprint =
     size === undefined ? defaultObstacleSizeFt(typeName) : readSize(size.value, size.at);
@@ -319,12 +325,30 @@ function readObstacle(value: unknown, at: Cursor): LevelObstacleFt {
   };
 }
 
-function readObstacles(value: unknown, at: Cursor): readonly LevelObstacleFt[] {
+/**
+ * 障礙物清單。停放車輛的車款由關卡 id 決定（固定種子，同一關永遠是同一組），碰撞盒換成那款車的外框：
+ * 看到的車有多大，會撞到的範圍就有多大。
+ */
+function readObstacles(value: unknown, at: Cursor, levelId: string): readonly LevelObstacleFt[] {
   if (!Array.isArray(value)) {
     return fail(at, `必須是陣列（可以是空的），${got(value)}`);
   }
   const items: readonly unknown[] = value;
-  return items.map((item, index) => readObstacle(item, child(at, index)));
+  const obstacles = items.map((item, index) => readObstacle(item, child(at, index)));
+  const models = carModelMix(
+    levelId,
+    obstacles.filter((obstacle) => obstacle.type === 'parked_car').length,
+  );
+  let parked = 0;
+  return obstacles.map((obstacle) => {
+    if (obstacle.type !== 'parked_car') {
+      return obstacle;
+    }
+    const model = models[parked] ?? 'sedan';
+    parked += 1;
+    const { widthFt, lengthFt } = CAR_MODEL_DIMS_FT[model];
+    return { ...obstacle, widthFt, lengthFt, model };
+  });
 }
 
 /**
@@ -401,7 +425,7 @@ export function parseLevel(raw: unknown, source: string): LevelDefinition {
   const spotFt = readTarget(target.value, target.at, angleToleranceDeg);
   const maxCollisionCount = readInteger(maxCollisions.value, maxCollisions.at, 0, Infinity);
   const boundsFt = bounds === undefined ? undefined : readBounds(bounds.value, bounds.at);
-  const obstaclesFt = readObstacles(obstacles.value, obstacles.at);
+  const obstaclesFt = readObstacles(obstacles.value, obstacles.at, levelId);
 
   return {
     id: levelId,

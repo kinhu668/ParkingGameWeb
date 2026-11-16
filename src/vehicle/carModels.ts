@@ -2,6 +2,7 @@
 // 所以「看到的車有多大」與「會撞到的範圍」是同一組數字。
 // 外框 = 整台車最外緣（含車外後視鏡、保險桿、尾翼、輪胎）；模型必須剛好填滿長與寬。
 // 每一款的長寬都不超過轎車（15 × 6 ft）：關卡 JSON 的 parked_car 換成別款只會變小，原本開得過的路線仍然開得過。
+import { createRng } from '../core/rng';
 import { ftToM } from '../core/units';
 import { VEHICLE_CONFIG_US } from './vehicleConfig';
 
@@ -55,4 +56,38 @@ export function carModelDimsM(model: CarModelId): CarModelDimsM {
 
 export function isCarModelId(value: string): value is CarModelId {
   return (CAR_MODEL_IDS as readonly string[]).includes(value);
+}
+
+/** 字串 → 32 位元種子（FNV-1a）：演算法本身的常數，不是可調數值。 */
+function seedOf(key: string): number {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < key.length; index += 1) {
+    hash = Math.imul(hash ^ key.charCodeAt(index), 0x01000193);
+  }
+  return hash >>> 0;
+}
+
+/**
+ * 一批停放車輛各是哪一款：同一個 key 永遠得到同一串，而且前面幾台不因為 count 變大而改變。
+ * 每五台剛好五款各一台（一輪一輪洗牌），相鄰兩台不同款：就算只有兩三台也不會全是同一款。
+ * @param key 這一批車的名字（關卡 id 之類）；不同的 key 洗出不同的順序
+ */
+export function carModelMix(key: string, count: number): CarModelId[] {
+  const rng = createRng(seedOf(key));
+  const mix: CarModelId[] = [];
+  while (mix.length < count) {
+    const round: CarModelId[] = [...CAR_MODEL_IDS];
+    for (let index = round.length - 1; index > 0; index -= 1) {
+      const other = Math.floor(rng() * (index + 1));
+      const moved = round[index] ?? 'sedan';
+      round[index] = round[other] ?? 'sedan';
+      round[other] = moved;
+    }
+    // 這一輪的第一台與上一輪的最後一台同款：把它挪到這一輪的最後。
+    if (round[0] === mix[mix.length - 1]) {
+      round.push(round.shift() ?? 'sedan');
+    }
+    mix.push(...round);
+  }
+  return mix.slice(0, count);
 }

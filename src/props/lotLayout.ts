@@ -14,6 +14,7 @@ import {
   SUN_CONFIG,
   WHEEL_STOP_CONFIG,
 } from '../render/renderConfig';
+import { carModelDimsM, carModelMix, type CarModelId } from '../vehicle/carModels';
 import { VEHICLE_CONFIG_SI } from '../vehicle/vehicleConfig';
 import { curbInnerBounds, wheelStopFootprint, type LocalRect } from './lotEdges';
 
@@ -62,8 +63,31 @@ export interface PropPlacement {
   readonly variant: number;
 }
 
+/** 停放的一台車：擺放位置加上車款；sizeX、sizeY、sizeZ 是這款車的外框。 */
+export interface ParkedCar extends PropPlacement {
+  readonly model: CarModelId;
+}
+
 /** 整個場地的擺設。 */
-export type LotLayout = Readonly<Record<PropCategory, readonly PropPlacement[]>>;
+export type LotLayout = Readonly<
+  Record<Exclude<PropCategory, 'parkedCars'>, readonly PropPlacement[]>
+> & {
+  readonly parkedCars: readonly ParkedCar[];
+};
+
+/**
+ * 給一批停車位置配上車款（carModelMix：固定種子，前面幾台不因為後面多了幾台而改變），佔地換成那款車的外框。
+ * 車款都不比轎車大，所以原本放得下轎車的位置一定放得下。
+ * @param key 這一批車的名字（關卡 id 之類）
+ */
+export function withCarModels(cars: readonly PropPlacement[], key: string): ParkedCar[] {
+  const models = carModelMix(key, cars.length);
+  return cars.map((car, index) => {
+    const model = models[index] ?? 'sedan';
+    const dims = carModelDimsM(model);
+    return { ...car, sizeX: dims.widthM, sizeY: dims.heightM, sizeZ: dims.lengthM, model };
+  });
+}
 
 /** 禁區（車位本地座標）：這些範圍裡不放任何擺設。 */
 export interface KeepOutZones {
@@ -427,7 +451,7 @@ export function createLotLayout(
     y: VEHICLE_CONFIG_SI.heightM,
     z: VEHICLE_CONFIG_SI.lengthM,
   };
-  const carCandidates = stalls
+  const carPlacements = stalls
     .filter((stall) => stall.index >= aisleFirstStall)
     .map((stall) => {
       const priority = stall.row.parkingWeight + 0.12 * stall.index + 2.6 * carRng();
@@ -442,8 +466,8 @@ export function createLotLayout(
       };
     })
     .sort((a, b) => a.priority - b.priority)
-    .map((candidate) => candidate.placement)
-    .filter(allowed);
+    .map((candidate) => candidate.placement);
+  const carCandidates = withCarModels(carPlacements, `lot:${seed}`).filter(allowed);
 
   // ── 假車位的標線與車擋 ─────────────────────────────────
   const lineWidthM = SPOT_MARKING_CONFIG.lineWidthM;

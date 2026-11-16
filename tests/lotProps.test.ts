@@ -29,6 +29,7 @@ import {
   spotLocalToWorld,
   worldToSpotLocal,
   type LotLayout,
+  type ParkedCar,
   type PropCategory,
   type PropPlacement,
 } from '../src/props/lotLayout';
@@ -40,7 +41,7 @@ import {
   createTrunkGeometry,
   lampHeadPosition,
 } from '../src/props/lotProps';
-import { createParkedCars, parkedCarPlates, type ParkedCar } from '../src/props/parkedCars';
+import { createParkedCars, parkedCarPlates } from '../src/props/parkedCars';
 import { SKIP_AMBIENT_OCCLUSION } from '../src/render/ambientOcclusionFlag';
 import { QUALITY_LEVELS, usesHdrChain, type QualityLevel } from '../src/render/quality';
 import {
@@ -58,6 +59,8 @@ import {
   createPlateTextGeometry,
   plateText,
 } from '../src/vehicle/carFittings';
+import { createCarModelParts } from '../src/vehicle/carModelParts';
+import { CAR_MODEL_IDS } from '../src/vehicle/carModels';
 import { VEHICLE_CONFIG_SI } from '../src/vehicle/vehicleConfig';
 
 const LOGIC_SOURCES: Record<string, string> = import.meta.glob(
@@ -383,7 +386,7 @@ describe('擺設的網格', () => {
       expect(mesh.name).not.toBe('');
       counts.set(mesh.name, mesh instanceof InstancedMesh ? mesh.count : 0);
     }
-    // 背景車每一款各自一組網格：各款加起來是全部的車、每台四個輪子。
+    // 背景車每一款各自一組網格：各款加起來是全部的車。
     const carsIn = (part: string): number =>
       [...counts].reduce(
         (total, [name, count]) =>
@@ -391,7 +394,7 @@ describe('擺設的網格', () => {
         0,
       );
     expect(carsIn('paint')).toBe(layout.parkedCars.length);
-    expect(carsIn('tire')).toBe(layout.parkedCars.length * 4);
+    expect(carsIn('rest')).toBe(layout.parkedCars.length);
     expect(counts.get('lampPosts')).toBe(layout.lamps.length);
     expect(counts.get('lampLenses')).toBe(layout.lamps.length);
     expect(counts.get('concrete')).toBe(layout.pillars.length + layout.beams.length);
@@ -404,8 +407,10 @@ describe('擺設的網格', () => {
     expect(counts.get('wheelStops')).toBe(layout.wheelStops.length);
     expect(counts.get('trafficCones')).toBe(layout.trafficCones.length);
     // 一類一個 draw call：網格數不隨實例數成長（背景車的車牌號碼全部併成一個網格，只佔其中一個）。
-    // 背景車的琥珀色方向燈是一個材質分區，佔一個。
-    expect(meshes.length).toBeLessThanOrEqual(28);
+    // 背景車每一款最多三個（烤漆、第二車色、其餘併成一個）：五款都在場最多 15 個，轎車時代是 7 個。
+    const carMeshes = meshes.filter((mesh) => mesh.name.startsWith('parkedCars:')).length;
+    expect(carMeshes).toBeLessThanOrEqual(3 * CAR_MODEL_IDS.length + 1);
+    expect(meshes.length - carMeshes).toBeLessThanOrEqual(20);
     expect(meshes.filter((mesh) => !(mesh instanceof InstancedMesh)).length).toBeLessThanOrEqual(1);
   });
 
@@ -479,15 +484,14 @@ describe('擺設的網格', () => {
     }
     expect(text.userData.plates).toEqual(plates);
     expect(text.castShadow).toBe(false);
-    // 共用的車殼裡不再有車牌的字（否則每台車都疊著同一個號碼），牌面還在（併在小分區的網格裡，是牌面的米白色）。
-    const trim = group.getObjectByName('parkedCars:sedan:trim');
-    const detail = group.getObjectByName('parkedCars:sedan:detail');
-    if (!(trim instanceof InstancedMesh) || !(detail instanceof InstancedMesh)) {
-      expect.fail('飾條與小分區要是 InstancedMesh');
-    }
-    const trimFittings: unknown = trim.geometry.userData.fittings;
+    // 共用的車殼裡不再有車牌的字（否則每台車都疊著同一個號碼），牌面還在（併在 rest 網格裡，是牌面的米白色）。
+    const trimFittings: unknown = createCarModelParts('sedan', 'high').body.get('trim')?.userData.fittings;
     expect(trimFittings).not.toContain('plate:front:text');
     expect(trimFittings).not.toContain('plate:rear:text');
+    const detail = group.getObjectByName('parkedCars:sedan:rest');
+    if (!(detail instanceof InstancedMesh)) {
+      expect.fail('rest 要是 InstancedMesh');
+    }
     const plateColor = new Color(CAR_VISUAL_CONFIG.plateColor);
     const detailColors = detail.geometry.getAttribute('color');
     let plateVertices = 0;
@@ -518,18 +522,13 @@ describe('擺設的網格', () => {
     expect(createBodyGeometries('low').get('trim')?.userData.fittings).toContain('plate:front:text');
   });
 
-  test('背景車：重用轎車的車殼，一款車 7 個 InstancedMesh（燈殼與牌面併成一個），車色不只一種，只有烤漆投影', () => {
+  test('背景車：重用轎車的車殼，一款車只有烤漆與 rest 兩個 InstancedMesh，車色不只一種，只有烤漆投影', () => {
     const cars = sedans(LAYOUTS.ultra.parkedCars);
     const meshes = meshesOf(createParkedCars(cars, 'high'));
-    // 烤漆、玻璃、黑飾條、鍍鉻、小分區、輪胎、輪圈，加上一個裝全部車牌號碼的網格。
+    // 烤漆、其餘全部（玻璃、黑飾條、鍍鉻、燈殼、牌面、輪胎、輪圈），加上一個裝全部車牌號碼的網格。
     expect(meshes.map((mesh) => mesh.name)).toEqual([
       'parkedCars:sedan:paint',
-      'parkedCars:sedan:glass',
-      'parkedCars:sedan:trim',
-      'parkedCars:sedan:chrome',
-      'parkedCars:sedan:detail',
-      'parkedCars:sedan:tire',
-      'parkedCars:sedan:rim',
+      'parkedCars:sedan:rest',
       'parkedCars:plateText',
     ]);
     const paint = meshes.find((mesh) => mesh.name === 'parkedCars:sedan:paint');

@@ -19,11 +19,20 @@ import {
 } from '../render/renderConfig';
 import type { SurfaceId } from '../materials/surfaces';
 import { VEHICLE_CONFIG_SI } from '../vehicle/vehicleConfig';
-import { PROP_CATEGORIES, type LotLayout, type PropCategory, type PropPlacement } from './lotLayout';
+import {
+  PROP_CATEGORIES,
+  withCarModels,
+  type LotLayout,
+  type ParkedCar,
+  type PropCategory,
+  type PropPlacement,
+} from './lotLayout';
 import type { SignPlacement, SignStyleId } from './signs';
 
 /** 算環境佈局要用到的關卡資料。LevelDefinition 本身就符合這個形狀。 */
 export interface EnvironmentSource {
+  /** 關卡 id：背景車的車款組合用它當種子，每一關的組合不同。 */
+  readonly id: string;
   readonly environment: LevelEnvironment;
   readonly boundsFt?: BoundsFt;
   readonly startFt: { readonly xFt: number; readonly zFt: number; readonly headingDeg: number };
@@ -1238,10 +1247,10 @@ export function footprintsTooClose(a: PropPlacement, b: PropPlacement, clearance
  * 路燈桿之間的空隙不到 PARKED_CAR_CLEARANCE_FT 的就不要。
  */
 function withoutCrowdedCars(
-  cars: readonly PropPlacement[],
+  cars: readonly ParkedCar[],
   source: EnvironmentSource,
   lamps: readonly PropPlacement[],
-): PropPlacement[] {
+): ParkedCar[] {
   const clearanceM = ftToM(PARKED_CAR_CLEARANCE_FT);
   const fixed: PropPlacement[] = [
     ...lamps,
@@ -1258,7 +1267,7 @@ function withoutCrowdedCars(
         variant: 0,
       })),
   ];
-  const kept: PropPlacement[] = [];
+  const kept: ParkedCar[] = [];
   for (const car of cars) {
     if (![...fixed, ...kept].some((other) => footprintsTooClose(car, other, clearanceM))) {
       kept.push(car);
@@ -1356,8 +1365,13 @@ export function createEnvironmentLayout(
   };
   const lot: LotLayout = {
     ...builder.lot,
+    // 由近到遠配車款：離車位最近的五台剛好五款各一台。
     parkedCars: take(
-      withoutCrowdedCars(nearestFirst(builder.lot.parkedCars, spotX, spotZ), source, builder.lot.lamps),
+      withoutCrowdedCars(
+        withCarModels(nearestFirst(builder.lot.parkedCars, spotX, spotZ), `${source.id}:lot`),
+        source,
+        builder.lot.lamps,
+      ),
       props.parkedCars,
     ),
     lamps,

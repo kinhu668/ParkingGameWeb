@@ -1,6 +1,6 @@
 // 關卡的障礙物與邊界（會撞到的東西）的模型：盒、圓柱、細桿的組合，全部程序化。
 // 每一種一個 InstancedMesh（一個 draw call）；模型在本地座標的外框會被縮放成剛好等於碰撞盒的底面，
-// 所以看到的佔地就是會撞到的範圍。停放車輛交給 createParkedCars（與背景車同一套轎車與車牌）。
+// 所以看到的佔地就是會撞到的範圍。停放車輛交給 createParkedCars（與背景車同一套車款與車牌）。
 // 碰撞只看 level/collision.ts，不看這裡。
 import {
   BoxGeometry,
@@ -20,6 +20,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { forward, headingToRotationY } from '../core/heading';
 import { degToRad, ftToM } from '../core/units';
 import type { BoundsFt, ObbFt } from '../level/collision';
+import type { CarModelId } from '../vehicle/carModels';
 import { signText } from '../level/environmentSigns';
 import type { LevelEnvironment } from '../level/levelSchema';
 import {
@@ -38,12 +39,17 @@ import {
   registerOccluders,
   type Occluder,
 } from './occluders';
-import { createParkedCars, type ParkedCar } from './parkedCars';
+import type { ParkedCar } from './lotLayout';
+import { createParkedCars } from './parkedCars';
 import { createSignMesh } from './signs';
 
 /** 要畫的東西：關卡的障礙物、（選填的）可行駛範圍與環境。LevelDefinition 本身就符合這個形狀。 */
 export interface ObstacleSource {
-  readonly obstaclesFt: readonly (ObbFt & { readonly type: ObstacleType })[];
+  /** model：停放車輛的車款（關卡解析時決定）；不給 = 轎車。 */
+  readonly obstaclesFt: readonly (ObbFt & {
+    readonly type: ObstacleType;
+    readonly model?: CarModelId;
+  })[];
   readonly boundsFt?: BoundsFt;
   /** 決定牆與邊界畫成什麼樣子；不給 = 停車場。 */
   readonly environment?: LevelEnvironment;
@@ -557,7 +563,7 @@ export function createObstacleMeshes(source: ObstacleSource, detail: VehicleDeta
     list.push(index);
     indicesByType.set(obstacle.type, list);
   });
-  const obstacleAt = (index: number): ObbFt => {
+  const obstacleAt = (index: number): ObstacleSource['obstaclesFt'][number] => {
     const obstacle = source.obstaclesFt[index];
     if (obstacle === undefined) {
       throw new Error(`沒有第 ${index} 個障礙物`);
@@ -571,7 +577,7 @@ export function createObstacleMeshes(source: ObstacleSource, detail: VehicleDeta
       continue;
     }
     if (type === 'parked_car') {
-      // 與背景車同一套轎車；車色由障礙物在 JSON 裡的索引決定（固定，不用亂數）。
+      // 與背景車同一套車款；車色由障礙物在 JSON 裡的索引決定（固定，不用亂數）。
       const placements: ParkedCar[] = indices.map((index) => {
         const car = obstacleAt(index);
         return {
@@ -583,7 +589,7 @@ export function createObstacleMeshes(source: ObstacleSource, detail: VehicleDeta
           sizeY: 0,
           sizeZ: ftToM(car.lengthFt),
           variant: ((index * 0.381966 + 0.07) % 1 + 1) % 1,
-          model: 'sedan',
+          model: car.model ?? 'sedan',
         };
       });
       const cars = createParkedCars(placements, detail);

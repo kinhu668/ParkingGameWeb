@@ -925,12 +925,7 @@ export function createLotProps(
     );
   };
 
-  frame.add(
-    createParkedCars(
-      layout.parkedCars.map((car) => ({ ...car, model: 'sedan' })),
-      props.meshDetail,
-    ),
-  );
+  frame.add(createParkedCars(layout.parkedCars, props.meshDetail));
   addLamps(frame, layout.lamps, props, hdr, lampsLit, lampStyle, shafts);
 
   // 混凝土柱與柱頂的橫梁：同一個材質，一個 draw call。

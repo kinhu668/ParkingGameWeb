@@ -15,6 +15,12 @@ import {
   defaultObstacleSizeFt,
   isObstacleType,
 } from '../src/level/obstacleTypes';
+import {
+  CAR_MODEL_DIMS_FT,
+  CAR_MODEL_IDS,
+  carModelDimsM,
+  carModelMix,
+} from '../src/vehicle/carModels';
 import { VEHICLE_CONFIG_US } from '../src/vehicle/vehicleConfig';
 
 const SOURCE = 'sample.json';
@@ -115,10 +121,20 @@ describe('parseLevel：合法關卡', () => {
     });
   });
 
-  test('障礙物：heading 不填 = 0，size 不填 = 該類型的預設碰撞盒', () => {
+  test('障礙物：heading 不填 = 0，size 不填 = 該類型的預設碰撞盒；停放車輛的碰撞盒是它那款車的外框', () => {
     const { obstaclesFt } = parseLevel(sample(), SOURCE);
+    const model = obstaclesFt[0]?.model ?? 'sedan';
+    expect(CAR_MODEL_IDS).toContain(obstaclesFt[0]?.model);
     expect(obstaclesFt).toEqual([
-      { type: 'parked_car', centerXFt: 20, centerZFt: 4, headingDeg: 90, widthFt: 6, lengthFt: 15 },
+      {
+        type: 'parked_car',
+        centerXFt: 20,
+        centerZFt: 4,
+        headingDeg: 90,
+        widthFt: CAR_MODEL_DIMS_FT[model].widthFt,
+        lengthFt: CAR_MODEL_DIMS_FT[model].lengthFt,
+        model,
+      },
       { type: 'cone', centerXFt: -9, centerZFt: 13, headingDeg: 0, widthFt: 1.2, lengthFt: 1.2 },
       { type: 'wall', centerXFt: 0, centerZFt: 44, headingDeg: 90, widthFt: 1, lengthFt: 56 },
     ]);
@@ -126,10 +142,44 @@ describe('parseLevel：合法關卡', () => {
 
   test('障礙物的 size 可以覆蓋預設碰撞盒', () => {
     const level = parseLevel(
-      sampleWith({ obstacles: [{ type: 'parked_car', pos: [0, 0, 20], size: [6.5, 17] }] }),
+      sampleWith({ obstacles: [{ type: 'dumpster', pos: [0, 0, 20], size: [6.5, 17] }] }),
       SOURCE,
     );
     expect(level.obstaclesFt[0]).toMatchObject({ widthFt: 6.5, lengthFt: 17 });
+    expect(level.obstaclesFt[0]?.model).toBeUndefined();
+  });
+
+  test('停放車輛：車款由關卡 id 決定，同一份 JSON 每次都一樣；會撞到的矩形（公尺）就是車款的外框', () => {
+    const cars = Array.from({ length: 7 }, (_, index) => ({
+      type: 'parked_car',
+      pos: [index * 12, 0, 60],
+    }));
+    const level = parseLevel(sampleWith({ obstacles: cars }), SOURCE);
+    const models = level.obstaclesFt.map((obstacle) => obstacle.model);
+    expect(models).toEqual(carModelMix(level.id, cars.length));
+    expect(parseLevel(sampleWith({ obstacles: cars }), SOURCE).obstaclesFt).toEqual(level.obstaclesFt);
+    // 換一個關卡 id 就是另一組。
+    const other = parseLevel(sampleWith({ id: 'another_level', obstacles: cars }), SOURCE);
+    expect(other.obstaclesFt.map((obstacle) => obstacle.model)).not.toEqual(models);
+    level.obstaclesFt.forEach((obstacle, index) => {
+      const dims = carModelDimsM(obstacle.model ?? 'sedan');
+      expect(level.layout.obstacles?.[index]?.halfWidthM).toBeCloseTo(dims.widthM / 2, 12);
+      expect(level.layout.obstacles?.[index]?.halfLengthM).toBeCloseTo(dims.lengthM / 2, 12);
+    });
+    // 不是停放車輛的障礙物不佔車款的名額：中間插一個交通錐，車的車款不變。
+    const mixed = parseLevel(
+      sampleWith({ obstacles: [cars[0], { type: 'cone', pos: [0, 0, 30] }, ...cars.slice(1)] }),
+      SOURCE,
+    );
+    expect(
+      mixed.obstaclesFt.filter((obstacle) => obstacle.type === 'parked_car').map((car) => car.model),
+    ).toEqual(models);
+  });
+
+  test('停放車輛不能自己給 size：看到的車多大，碰撞盒就多大', () => {
+    expect(
+      errorOf(sampleWith({ obstacles: [{ type: 'parked_car', pos: [0, 0, 20], size: [6.5, 17] }] })),
+    ).toBe(`${SOURCE}: obstacles[0].size 不能用在 parked_car：碰撞盒就是車款的外框`);
   });
 
   test('weather 不填 = clear', () => {
