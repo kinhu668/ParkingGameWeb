@@ -147,19 +147,29 @@ const FRAGMENT_SHADER = /* glsl */ `
     return edge.x * edge.y;
   }
 
-  // 太陽露出來幾成：太陽的位置與四周共五個點有幾個是天空。
+  // 這個位置畫到的表面沿視線方向的距離，是不是不比 nearest 近。
+  float openAt( vec2 uv, float nearest ) {
+    float depth = texture2D( tDepth, uv ).x;
+    return step( nearest, cameraNear * cameraFar / ( cameraFar - depth * ( cameraFar - cameraNear ) ) );
+  }
+
+  // 太陽、燈頭露出來幾成：它的位置與四周共五個點，有幾個沒被更近的東西擋住；靠近畫面邊緣時淡掉。
+  // 一個樹梢、一根燈桿掃過去時光暈是漸漸暗下去，不是一幀就消失。
   float sunVisibility() {
-    vec2 r = vec2( ${glslFloat(FLARE.sunProbeRadius)} / aspect, ${glslFloat(FLARE.sunProbeRadius)} );
+    vec2 r = vec2( ${glslFloat(FLARE.probeRadius)} / aspect, ${glslFloat(FLARE.probeRadius)} );
     float sky = skyAt( sun.xy ) + skyAt( sun.xy + vec2( r.x, 0.0 ) ) + skyAt( sun.xy - vec2( r.x, 0.0 ) )
       + skyAt( sun.xy + vec2( 0.0, r.y ) ) + skyAt( sun.xy - vec2( 0.0, r.y ) );
     return sky / 5.0 * edgeFade( sun.xy );
   }
 
-  // 燈頭有沒有露出來：那個位置畫到的表面沿視線方向的距離，不比燈頭近（留一點餘裕：燈殼自己就在那裡）。
+  // 燈頭的距離留一點餘裕：燈殼自己就畫在那裡。
   float lampVisibility( vec4 lamp ) {
-    float depth = texture2D( tDepth, lamp.xy ).x;
-    float sceneDistance = cameraNear * cameraFar / ( cameraFar - depth * ( cameraFar - cameraNear ) );
-    return step( lamp.w * ${glslFloat(FLARE.lampDepthSlack)}, sceneDistance ) * edgeFade( lamp.xy );
+    vec2 r = vec2( ${glslFloat(FLARE.probeRadius)} / aspect, ${glslFloat(FLARE.probeRadius)} );
+    float nearest = lamp.w * ${glslFloat(FLARE.lampDepthSlack)};
+    float open = openAt( lamp.xy, nearest ) + openAt( lamp.xy + vec2( r.x, 0.0 ), nearest )
+      + openAt( lamp.xy - vec2( r.x, 0.0 ), nearest ) + openAt( lamp.xy + vec2( 0.0, r.y ), nearest )
+      + openAt( lamp.xy - vec2( 0.0, r.y ), nearest );
+    return open / 5.0 * edgeFade( lamp.xy );
   }
 
   // 一個邊緣柔的圓（以畫面高度為 1 的座標）。

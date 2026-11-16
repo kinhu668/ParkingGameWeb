@@ -448,14 +448,11 @@ describe('景深、動態模糊、鏡頭光暈的畫質矩陣', () => {
     expect(usesHdrChain({ ...QUALITY_PRESETS.medium, depthOfField, motionBlur, lensFlare })).toBe(false);
   });
 
-  test('開了這三項的級別都有它們需要的東西：深度來自環境光遮蔽，光源來自泛光', () => {
+  test('開了這三項的級別都有它們需要的東西：深度來自環境光遮蔽', () => {
     for (const level of QUALITY_LEVELS) {
       const settings = QUALITY_PRESETS[level];
-      if (settings.depthOfField !== null || settings.motionBlur !== null) {
+      if (LENS_EFFECTS.some((effect) => settings[effect] !== null)) {
         expect(settings.ambientOcclusion, level).not.toBeNull();
-      }
-      if (settings.lensFlare !== null) {
-        expect(settings.bloom, level).not.toBeNull();
       }
     }
   });

@@ -144,7 +144,7 @@ const COMPOSITE_FRAGMENT_SHADER = /* glsl */ `
 
 /** 後製鏈裡的景深。每幀畫之前用 setFocus 給鏡頭與對焦；對焦是 null 的那一幀整個跳過。 */
 export class DepthOfFieldPass extends Pass {
-  private readonly blurTarget = new WebGLRenderTarget(1, 1, { type: HalfFloatType });
+  private readonly blurTarget = new WebGLRenderTarget(1, 1, { type: HalfFloatType, depthBuffer: false });
   /** 兩個著色器共用的 uniform（同一組物件，設一次兩邊都生效）。 */
   private readonly lens = {
     cameraNear: { value: 1 },

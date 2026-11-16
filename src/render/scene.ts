@@ -529,7 +529,9 @@ export function createGameScene(
   // 光柱（路燈的光錐、車頭燈的光柱）：亮度跟著天氣，霧氣流動的時間全場景共用一個。
   const shaftTime = { value: 0 };
   // 場景的深度（high、ultra）：framePipeline 每幀填，光柱被車與樓擋住的那一段才切得掉。
-  const shaftDepth = quality.lightShafts.depthFade ? createShaftDepth() : undefined;
+  // 這種天氣有光柱（路燈亮著，或空氣裡有水氣、車頭燈照得出光束）才需要場景的深度。
+  const hasShafts = preset.lampsOn || preset.air.headlightShaft > 0;
+  const shaftDepth = quality.lightShafts.depthFade && hasShafts ? createShaftDepth() : undefined;
   const shaftAir = (strength: number): ShaftSetup => ({
     air: { strength, fogNearM: preset.fog.nearM, fogFarM: preset.fog.farM, time: shaftTime },
     quality: quality.lightShafts,

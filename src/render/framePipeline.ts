@@ -67,7 +67,7 @@ import {
 import { POST_CONFIG } from './renderConfig';
 import { scenePostOf, weatherBloom } from './weatherPresets';
 
-/** 這一幀的鏡頭狀態：只有開了景深的畫質級別才用得到。 */
+/** 這一幀的鏡頭狀態：只有開了景深或動態模糊的畫質級別才用得到。 */
 export interface FrameLens {
   /** 景深的對焦；null = 這一幀不做景深。 */
   readonly focus: LensFocus | null;
@@ -86,7 +86,7 @@ export interface FramePipeline {
   fit(camera: PerspectiveCamera): void;
   /**
    * 畫一幀。scene 與 camera 每次都可以不同（遊戲鏡頭切換、不同的 ?cam 預設）。
-   * @param lens 這一幀的對焦；不給 = 不做景深（展示台、關卡選擇的背景、效能測試）
+   * @param lens 這一幀的對焦與動態模糊的主體；不給 = 兩樣都不做（定格、展示台、關卡選擇的背景、效能測試）
    */
   render(scene: Scene, camera: PerspectiveCamera, lens?: FrameLens): void;
   /**
@@ -533,16 +533,13 @@ export function createFramePipeline(
         aoPass.camera = camera;
       }
       dofPass?.setFocus(camera, lens?.focus ?? null);
-      if (motionPass !== undefined) {
+      const post = scenePostOf(scene);
+      if (motionPass !== undefined || flarePass !== undefined) {
         // 鏡頭的世界矩陣要是這一幀的（composer 畫場景時才會更新，這裡先更新一次）。
         camera.updateMatrixWorld();
-        motionPass.setCamera(camera, lens?.motion ?? null);
-      }
-      const post = scenePostOf(scene);
-      if (flarePass !== undefined) {
+        motionPass?.setCamera(camera, lens?.motion ?? null);
         // 沒登記天氣的場景（展示台）沒有太陽也沒有路燈：沒有光暈。
-        camera.updateMatrixWorld();
-        flarePass.setScene(scene, camera, post?.sunFlare ?? 0, post?.lampFlare ?? 0);
+        flarePass?.setScene(scene, camera, post?.sunFlare ?? 0, post?.lampFlare ?? 0);
       }
       if (bloomPass !== undefined && quality.bloom !== null) {
         // 泛光的門檻與強度跟著這個場景的天氣：白天受太陽光的白車漆不進泛光，夜裡的燈照常發光。
@@ -562,6 +559,8 @@ export function createFramePipeline(
         aoPass !== undefined &&
         beginShaftDepth(scene, depthScene === scene ? aoPass.depthTexture : null, size, camera);
       composer.render();
+      // 下面補畫的那一遍不算進 draw calls：只有第一幀與剛換大小時才有，不是每幀的成本。
+      drawCalls = renderer.info.render.calls;
       if (aoPass !== undefined && shaftsReadDepth && depthScene !== scene) {
         // 還沒有這個場景的深度（第一幀、剛換大小或換場景）：剛畫完的這一遍留下了，馬上用它重畫一遍。
         // 定格與視窗大小改變後的重畫才會跟連續畫面一致，進關的第一幀光柱也不會跳一下。
@@ -572,7 +571,6 @@ export function createFramePipeline(
       }
       endShaftDepth(scene);
       depthScene = aoPass === undefined ? undefined : scene;
-      drawCalls = renderer.info.render.calls;
     },
     drawCalls: () => drawCalls,
     ready,

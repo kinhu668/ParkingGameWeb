@@ -216,7 +216,7 @@ export interface QualitySettings {
   readonly depthOfField: DepthOfFieldSettings | null;
   /** 動態模糊；null = 不開。條件同景深。 */
   readonly motionBlur: MotionBlurSettings | null;
-  /** 鏡頭光暈；null = 不開。要有泛光（光源從泛光的緩衝區取）。 */
+  /** 鏡頭光暈；null = 不開。條件同景深（光源有沒有被擋住看那一張深度）。 */
   readonly lensFlare: LensFlareSettings | null;
   /** 地面（柏油）的細節。 */
   readonly ground: GroundQualitySettings;

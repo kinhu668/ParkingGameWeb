@@ -97,15 +97,18 @@ const FRAGMENT_SHADER = /* glsl */ `
     vec2 motion = ( clip.xy - previous.xy / previous.w ) * 0.5 * vec2( aspect, 1.0 );
     float displacement = length( motion );
     float ramp = smoothstep( ${glslFloat(MOTION.startDisplacement)}, ${glslFloat(MOTION.fullDisplacement)}, displacement );
-    float blur = displacement < ${glslFloat(MOTION.cutDisplacement)} ? min( displacement * shutter * ramp, maxBlur ) : 0.0;
+    // 前一幀在鏡頭後面的點（previous.w ≤ 0）沒有前一幀的位置：不拖。
+    float blur = previous.w > 0.0 && displacement < ${glslFloat(MOTION.cutDisplacement)}
+      ? min( displacement * shutter * ramp, maxBlur )
+      : 0.0;
     // 主體（玩家車）周圍不拖（同 subjectBlurScale）。
     vec4 world = clipToWorld * clip;
     blur *= smoothstep( subject.w, subject.w * ${glslFloat(MOTION.subjectFeather)}, distance( world.xyz / world.w, subject.xyz ) );
     vec3 color = texture2D( tDiffuse, vUv ).rgb;
     if ( blur > 0.0 ) {
-      vec2 step = motion / displacement * blur / vec2( aspect, 1.0 ) / float( MOTION_TAPS );
+      vec2 stride = motion / displacement * blur / vec2( aspect, 1.0 ) / float( MOTION_TAPS );
       for ( int i = 1; i <= MOTION_TAPS; i ++ ) {
-        color += texture2D( tDiffuse, vUv - step * float( i ) ).rgb;
+        color += texture2D( tDiffuse, vUv - stride * float( i ) ).rgb;
       }
       color /= float( MOTION_TAPS + 1 );
     }

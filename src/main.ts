@@ -383,12 +383,18 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
     );
     // 目標車位的發光標記：停妥後變綠再淡出，重來後回來（暫停時也照真實時間走）。
     gameScene.updateSpotGlow(session.parked, frameSeconds);
-    // 景深對焦在玩家車上（俯視不做），鏡頭移動時有很輕的動態模糊；沒開這兩項的畫質級別不會用到。
+    // 景深對焦在玩家車上（俯視不做），鏡頭移動時有很輕的動態模糊；沒開這兩項的畫質級別不算這些。
     const eye = gameCamera.camera.position;
-    pipeline.render(gameScene.scene, gameCamera.camera, {
-      focus: focusForGameView(gameCamera.view(), Math.hypot(eye.x - pose.x, eye.y, eye.z - pose.z)),
-      motion: motionSubjectAt(pose.x, pose.z),
-    });
+    pipeline.render(
+      gameScene.scene,
+      gameCamera.camera,
+      quality.depthOfField === null && quality.motionBlur === null
+        ? undefined
+        : {
+            focus: focusForGameView(gameCamera.view(), Math.hypot(eye.x - pose.x, eye.y, eye.z - pose.z)),
+            motion: motionSubjectAt(pose.x, pose.z),
+          },
+    );
     hud.update(session, gear);
     // 觸控層只在能開車的時候顯示：暫停、結算、按鍵設定開著時收起來，不擋面板上的按鈕。
     touch.update(
