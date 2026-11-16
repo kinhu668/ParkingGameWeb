@@ -73,34 +73,21 @@ function shadowMesh(geometry: BufferGeometry, material: Material): Mesh {
   return mesh;
 }
 
-/** 輪胎的尺寸：材質的圓柱座標要知道胎寬、輪圈與輪胎的半徑。 */
-export interface TireSize {
-  readonly widthM: number;
-  readonly rimRadiusM: number;
-  readonly radiusM: number;
-}
-
-const SEDAN_TIRE: TireSize = {
-  widthM: VISUAL.wheelWidthM,
-  rimRadiusM: VISUAL.rimRadiusM,
-  radiusM: VISUAL.wheelRadiusM,
-};
-
 /** 輪胎的材質：胎面的人字溝與胎壁的稜線、凸字繞著輪軸鋪（材質庫的 tire，圓柱座標）。 */
-export function createTireMaterial(size: TireSize = SEDAN_TIRE): MeshStandardMaterial {
+export function createTireMaterial(): MeshStandardMaterial {
   return createSurfaceMaterial('tire', {
     space: 'radial',
     color: VISUAL.tireColor,
     roughness: VISUAL.tireRoughness,
-    radial: [TIRE_PATTERN_REPEATS, size.widthM / 2, size.rimRadiusM, size.radiusM],
+    radial: [TIRE_PATTERN_REPEATS, VISUAL.wheelWidthM / 2, VISUAL.rimRadiusM, VISUAL.wheelRadiusM],
   });
 }
 
 /** 輪圈的材質：拋光的合金（材質庫的 chrome，用輪圈的顏色與粗糙度）。 */
-export function createRimMaterial(color: number = VISUAL.rimColor): MeshStandardMaterial {
+export function createRimMaterial(): MeshStandardMaterial {
   return createSurfaceMaterial('chrome', {
     space: 'local',
-    color,
+    color: VISUAL.rimColor,
     roughness: VISUAL.rimRoughness,
     metalness: VISUAL.rimMetalness,
   });

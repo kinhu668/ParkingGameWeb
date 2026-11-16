@@ -54,10 +54,6 @@ export function carModelDimsM(model: CarModelId): CarModelDimsM {
   };
 }
 
-export function isCarModelId(value: string): value is CarModelId {
-  return (CAR_MODEL_IDS as readonly string[]).includes(value);
-}
-
 /** 字串 → 32 位元種子（FNV-1a）：演算法本身的常數，不是可調數值。 */
 function seedOf(key: string): number {
   let hash = 0x811c9dc5;

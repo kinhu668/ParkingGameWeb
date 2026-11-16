@@ -6,16 +6,12 @@ import {
   CAR_MODEL_IDS,
   carModelDimsM,
   carModelMix,
-  isCarModelId,
 } from '../src/vehicle/carModels';
 import { VEHICLE_CONFIG_SI, VEHICLE_CONFIG_US } from '../src/vehicle/vehicleConfig';
 
 describe('車款表', () => {
   test('有轎車與四款新車，轎車排第一', () => {
     expect(CAR_MODEL_IDS).toEqual(['sedan', 'rally', 'widebody', 'fastback', 'roadster']);
-    expect(isCarModelId('roadster')).toBe(true);
-    expect(isCarModelId('truck')).toBe(false);
-    expect(isCarModelId('toString')).toBe(false);
   });
 
   test('轎車的尺寸就是玩家車的 VehicleConfig', () => {

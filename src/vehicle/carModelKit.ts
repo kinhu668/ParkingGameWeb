@@ -291,7 +291,7 @@ export function createSideSeam(shell: CarShell, zM: number): BufferGeometry {
 }
 
 /** 頂面上的一條縫：沿一串 (x, z) 走，貼著頂面。 */
-export function createTopSeam(
+function createTopSeam(
   shell: CarShell,
   path: readonly (readonly [number, number])[],
 ): BufferGeometry {

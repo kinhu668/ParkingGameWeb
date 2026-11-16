@@ -85,7 +85,7 @@ function tireProfile(
  * 往 +X 走的那一段朝外（遠離輪軸），往輪軸走的那一段朝 +X。重複的點是摺線（兩側各有自己的法線）。
  * @param closed 橫截面的頭尾是不是相接（輪胎是封閉的環面）
  */
-export function revolve(
+function revolve(
   profile: readonly (readonly [number, number])[],
   segments: number,
   closed: boolean,

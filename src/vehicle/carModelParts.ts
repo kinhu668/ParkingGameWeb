@@ -93,7 +93,6 @@ function createSedanParts(detail: VehicleDetail): CarModelParts {
 
 const BUILDERS: Readonly<Record<CarModelId, (detail: VehicleDetail) => CarModelParts>> = {
   sedan: createSedanParts,
-  // 四款新車建模完成前先用轎車頂著（關卡還不會擺出這四款）。
   rally: createRallyParts,
   widebody: createWidebodyParts,
   fastback: createFastbackParts,
