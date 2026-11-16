@@ -8,8 +8,8 @@ import {
   parseShowAngles,
   parseUnlockAllParam,
   parseUrlMode,
-  parseLensFxParam,
 } from '../src/core/urlParams';
+import { parseLensFxParam } from '../src/render/quality';
 
 describe('parseUrlMode：各模式', () => {
   test.each(['', '?', '?foo=1', '?t=3'])('%j → 一般遊戲', (search) => {

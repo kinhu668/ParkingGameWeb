@@ -31,7 +31,6 @@ const LEVEL_PARAM = 'level';
 const UNLOCK_PARAM = 'unlock';
 const FX_PARAM = 'fx';
 const FX_OFF_VALUE = 'off';
-const FX_ON_VALUE = 'on';
 /** `?unlock=` 只認這個值。 */
 const UNLOCK_ALL_VALUE = 'all';
 
@@ -92,21 +91,11 @@ export function parseUnlockAllParam(urlSearch: string): boolean {
 
 /**
  * `?fx=off`：不建立會自己動的環境效果（落葉、雨絲、閃電），也不做跟車鏡頭的遮擋半透明，
- * 畫面在車不動時每一幀都相同（e2e 逐像素比對用）。景深、動態模糊、鏡頭光暈也一併關掉（parseLensFxParam）。
+ * 畫面在車不動時每一幀都相同（e2e 逐像素比對用）。景深、動態模糊、鏡頭光暈也一併關掉（render/quality.ts 的 parseLensFxParam）。
  * 其他的值當作沒給。不是啟動模式，不影響 parseUrlMode。
  */
 export function parseFxOffParam(urlSearch: string): boolean {
   return new URLSearchParams(urlSearch).get(FX_PARAM) === FX_OFF_VALUE;
-}
-
-/**
- * `?fx=` 對景深、動態模糊、鏡頭光暈的意思（畫質決議用，render/quality.ts）：
- * `off` 一律關（連同上面那些會自己動的效果）；`on` 一律照畫質級別給，手機與軟體算圖也不例外（截圖、驗收用）；
- * 沒給或其他的值回傳 undefined，由裝置決定。
- */
-export function parseLensFxParam(urlSearch: string): 'on' | 'off' | undefined {
-  const value = new URLSearchParams(urlSearch).get(FX_PARAM);
-  return value === FX_ON_VALUE || value === FX_OFF_VALUE ? value : undefined;
 }
 
 /** `?show=` 展示台的鏡頭角度（度）；沒給的那一項用展示台的預設值。 */

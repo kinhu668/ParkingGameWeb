@@ -1,7 +1,6 @@
 // 畫質級別：級別 id、`?quality=` 解析、自動選擇、各級別的開關與數值。
 // 不碰 DOM、不 import three：查詢字串與裝置線索（hints）由呼叫端傳入，全部可以純函式測試。
 // `?quality=` 不是啟動模式，所以不在 urlParams.parseUrlMode 裡處理，可與任何模式並用。
-import { parseLensFxParam } from '../core/urlParams';
 import type { MaterialQualitySettings } from '../materials/surfaces';
 import { QUALITY_PRESETS } from './renderConfig';
 
@@ -254,6 +253,7 @@ export interface ResolvedQuality {
 }
 
 const QUALITY_PARAM = 'quality';
+const FX_PARAM = 'fx';
 
 /** 顯示卡名稱含這些字（不分大小寫）就是 CPU 軟體算圖。 */
 const SOFTWARE_RENDERER_MARKERS = [
@@ -284,6 +284,16 @@ function isQualityLevel(value: string): value is QualityLevel {
 export function parseQualityParam(urlSearch: string): QualityLevel | undefined {
   const requested = new URLSearchParams(urlSearch).get(QUALITY_PARAM)?.trim().toLowerCase();
   return requested !== undefined && isQualityLevel(requested) ? requested : undefined;
+}
+
+/**
+ * `?fx=` 對景深、動態模糊、鏡頭光暈的意思：`off` 一律關（連同會自己動的環境效果，見 urlParams.parseFxOffParam）；
+ * `on` 一律照畫質級別給，手機與軟體算圖也不例外（截圖、驗收用）；沒給或其他的值回傳 undefined，由裝置決定。
+ * 放在這裡而不是 urlParams.ts：這個檔案不能 import 它（e2e 的規格檔直接 import 這裡，而 urlParams 會帶進語系的 JSON）。
+ */
+export function parseLensFxParam(urlSearch: string): 'on' | 'off' | undefined {
+  const value = new URLSearchParams(urlSearch).get(FX_PARAM);
+  return value === 'on' || value === 'off' ? value : undefined;
 }
 
 /** 顯示卡名稱看起來是不是 CPU 軟體算圖（SwiftShader、llvmpipe、softpipe、Microsoft Basic Render Driver…）。 */
