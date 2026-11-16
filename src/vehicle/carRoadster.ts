@@ -1,5 +1,6 @@
 // 小型雙座敞篷跑車（停放用）：低矮圓潤的車身、長引擎蓋短車尾、敞開的座艙（兩張座椅、中央鞍座、儀表台）、
-// 前擋玻璃與黑色的框、座椅後方一對防滾籠、橢圓頭燈與圓尾燈、銀色五輻輪圈。
+// 低而後仰的前擋玻璃與細的黑框、頭枕後方一對矮的防滾籠與車身色的整流罩、躺在葉子板上往後掃的水滴形頭燈、
+// 引擎蓋中央微微鼓起、圓尾燈、銀色五輻輪圈。
 // 車殼由 carShell.ts 放樣（沒有車艙、頂面開一個座艙口），配件用 carModelKit.ts 貼上去。
 import type { BufferGeometry } from 'three';
 import type { VehicleDetail } from '../render/quality';
@@ -17,9 +18,11 @@ import {
   createSideSeam,
   onFace,
   onSide,
+  onTop,
   PLATE_TEXT_PROUD_M,
   PLATE_THICKNESS_M,
   rectRing,
+  type Place,
 } from './carModelKit';
 import { carModelDimsM } from './carModels';
 import type { CarModelPart, CarModelParts } from './carModelParts';
@@ -38,7 +41,8 @@ const RIM = { spokes: 5, spokeWidth: 1, color: 0xc8ccd0 };
 const HALF_WIDTH_M = 0.8;
 const FLARE_M = 0.022;
 const CROWN_M = 0.035;
-/** 前擋下緣、前擋上緣的 z；座艙口的前後緣；防滾籠的 z。 */
+/** 前擋下緣（玻璃落在引擎蓋上的地方）、門前緣那一站、前擋上緣的 z；座艙口的前後緣；防滾籠的 z。 */
+const SCREEN_Z = -0.72;
 const COWL_Z = -0.52;
 const HEADER_Z = -0.06;
 const COCKPIT_Z = [-0.3, 0.84] as const;
@@ -114,46 +118,69 @@ function createSeat(): BufferGeometry {
   ]);
 }
 
-/** 右側的防滾籠：行李廂蓋前緣立起來的一個拱。 */
+/** 防滾籠的頂端：跟頭枕差不多高。 */
+const HOOP_TOP_Y = 1.1;
+
+/** 右側的防滾籠：行李廂蓋前緣立起來的一個矮拱，頂端跟頭枕差不多高。 */
 function createRollHoop(shell: CarShell): BufferGeometry {
   const baseYM = shell.topYM(HOOP_Z, SEAT_X) - 0.03;
   return merged(
     polyline(
       [
-        [SEAT_X - 0.17, baseYM, HOOP_Z],
-        [SEAT_X - 0.17, 1.09, HOOP_Z],
-        [SEAT_X - 0.11, 1.15, HOOP_Z],
-        [SEAT_X + 0.11, 1.15, HOOP_Z],
-        [SEAT_X + 0.17, 1.09, HOOP_Z],
-        [SEAT_X + 0.17, baseYM, HOOP_Z],
+        [SEAT_X - 0.16, baseYM, HOOP_Z],
+        [SEAT_X - 0.16, HOOP_TOP_Y - 0.05, HOOP_Z],
+        [SEAT_X - 0.11, HOOP_TOP_Y, HOOP_Z],
+        [SEAT_X + 0.11, HOOP_TOP_Y, HOOP_Z],
+        [SEAT_X + 0.16, HOOP_TOP_Y - 0.05, HOOP_Z],
+        [SEAT_X + 0.16, baseYM, HOOP_Z],
       ],
-      0.036,
+      0.03,
     ),
   );
 }
 
+/** 右側防滾籠後面的整流罩：從拱的頂端往後斜到行李廂蓋上的一個車身色鼓包。 */
+function createHoopFairing(shell: CarShell): BufferGeometry {
+  const baseYM = shell.topYM(HOOP_Z, SEAT_X) - 0.03;
+  return createLoft([
+    rectRing([SEAT_X, baseYM, HOOP_Z + 0.2], 0.32, 0.36),
+    rectRing([SEAT_X, (baseYM + HOOP_TOP_Y) / 2 + 0.03, HOOP_Z + 0.12], 0.29, 0.2),
+    rectRing([SEAT_X, HOOP_TOP_Y - 0.035, HOOP_Z + 0.06], 0.2, 0.07),
+  ]);
+}
+
+/** 車角上的頭燈貼的面：u = x，v 是沿著車身往後走的距離，v < 0 在車頭端面上（往下）、v > 0 在葉子板頂面上（往後）。 */
+function onNoseCorner(shell: CarShell): Place {
+  const face = onFace(shell, true);
+  const top = onTop(shell);
+  return (xM, vM, proudM) =>
+    vM < 0
+      ? face(xM, shell.topYM(shell.noseStartZM, xM) + vM, proudM)
+      : top(xM, shell.noseStartZM + vM, proudM);
+}
+
 /**
- * 前擋：往後仰的一片玻璃，兩根 A 柱與上面的橫框。橫框的頂端就是車高。
+ * 前擋：很往後仰的一片玻璃，兩根細的 A 柱與上面細的橫框。橫框的頂端就是車高。
  * @returns glass：玻璃；frame：黑色的框
  */
 function createWindscreen(shell: CarShell): { glass: BufferGeometry; frame: BufferGeometry } {
-  const baseXM = shell.topEdgeXM(COWL_Z) - 0.02;
-  const topXM = baseXM - 0.08;
-  const baseYM = shell.topYM(COWL_Z, baseXM) - 0.03;
-  const frameM = 0.04;
+  const baseXM = shell.topEdgeXM(SCREEN_Z) - 0.02;
+  const topXM = baseXM - 0.11;
+  const baseYM = shell.topYM(SCREEN_Z, baseXM) - 0.03;
+  const frameM = 0.022;
   return {
     glass: createLoft([
-      rectRing([0, baseYM, COWL_Z], 2 * baseXM, 0.012),
-      rectRing([0, DIMS.heightM - frameM, HEADER_Z], 2 * topXM, 0.012),
+      rectRing([0, baseYM, SCREEN_Z], 2 * baseXM, 0.008),
+      rectRing([0, DIMS.heightM - frameM, HEADER_Z], 2 * topXM, 0.008),
     ]),
     frame: merged([
       bothSides(
         createLoft([
-          rectRing([baseXM, baseYM, COWL_Z], frameM, 0.05),
-          rectRing([topXM, DIMS.heightM, HEADER_Z], frameM, 0.05),
+          rectRing([baseXM, baseYM, SCREEN_Z], frameM, 0.03),
+          rectRing([topXM, DIMS.heightM, HEADER_Z], frameM, 0.03),
         ]),
       ),
-      box([2 * topXM, frameM, 0.05], [0, DIMS.heightM - frameM / 2, HEADER_Z]),
+      box([2 * topXM, frameM, 0.03], [0, DIMS.heightM - frameM / 2, HEADER_Z]),
     ]),
   };
 }
@@ -191,15 +218,16 @@ export function createRoadsterParts(detail: VehicleDetail): CarModelParts {
     pieces.push(...geometries.map((geometry): [CarModelPart, BufferGeometry] => [part, geometry]));
   };
 
-  // 車頭：車角上往後掃的橢圓頭燈（裡面兩顆圓燈、外側琥珀色方向燈）、下方寬的進氣口與兩側的小霧燈、下唇。
-  add('trim', bothSides(createRoundPatch(nose, [0.5, 0.53], [0.2, 0.08], 0.003, 14)));
-  add('chrome', bothSides(createRoundPatch(nose, [0.5, 0.53], [0.185, 0.067], 0.008, 14)));
+  // 車頭：躺在車角與葉子板上、往後往外收尖的水滴形頭燈（深色燈座、兩顆圓燈、尾端琥珀色方向燈），
+  // 下方寬的進氣口與兩側的小霧燈、下唇。
+  const corner = onNoseCorner(shell);
+  add('trim', bothSides(createQuadPatch(corner, [[0.3, -0.04], [0.6, -0.03], [0.62, 0.34], [0.5, 0.26]], 0.006, 4, 6)));
   add(
     'headlight',
-    bothSides(createRoundPatch(nose, [0.5, 0.53], [0.052, 0.052], 0.014, 10)),
-    bothSides(createRoundPatch(nose, [0.385, 0.525], [0.04, 0.04], 0.014, 10)),
+    bothSides(createRoundPatch(corner, [0.51, 0.075], [0.05, 0.05], 0.012, 10)),
+    bothSides(createRoundPatch(corner, [0.41, 0.05], [0.036, 0.036], 0.012, 10)),
   );
-  add('indicator', bothSides(createRoundPatch(nose, [0.62, 0.535], [0.04, 0.045], 0.014, 8)));
+  add('indicator', bothSides(createQuadPatch(corner, [[0.53, 0.16], [0.6, 0.16], [0.61, 0.31], [0.53, 0.25]], 0.012, 2, 3)));
   add(
     'trim',
     createQuadPatch(nose, [[-0.36, 0.22], [0.36, 0.22], [0.4, 0.33], [-0.4, 0.33]], 0.012, 12, 2),
@@ -207,10 +235,20 @@ export function createRoadsterParts(detail: VehicleDetail): CarModelParts {
   );
   add('indicator', bothSides(createQuadPatch(nose, [[0.5, 0.23], [0.6, 0.23], [0.6, 0.3], [0.5, 0.3]], 0.006, 2)));
 
-  // 引擎蓋與行李廂蓋的接縫。
+  // 引擎蓋與行李廂蓋的接縫，引擎蓋中央往前收窄的一道淺鼓包。
+  add(
+    'paint',
+    createQuadPatch(
+      onTop(shell),
+      [[-0.17, shell.noseStartZM + 0.1], [0.17, shell.noseStartZM + 0.1], [0.3, SCREEN_Z - 0.12], [-0.3, SCREEN_Z - 0.12]],
+      0.012,
+      4,
+      4,
+    ),
+  );
   add(
     'trim',
-    createLidSeams(shell, shell.noseStartZM + 0.04, COWL_Z - 0.06, 0.03),
+    createLidSeams(shell, shell.noseStartZM + 0.04, SCREEN_Z - 0.05, 0.03),
     createLidSeams(shell, HOOP_Z + 0.12, shell.tailStartZM - 0.02, 0.03),
   );
 
@@ -225,7 +263,8 @@ export function createRoadsterParts(detail: VehicleDetail): CarModelParts {
     box([1.1, 0.16, 0.12], [0, beltAt(COCKPIT_Z[0]) - 0.1, COCKPIT_Z[0] + 0.06]),
     box([0.3, 0.3, 0.03], [-SEAT_X, beltAt(COCKPIT_Z[0]) - 0.1, COCKPIT_Z[0] + 0.2]),
   );
-  add('chrome', bothSides(createRollHoop(shell)));
+  add('trim', bothSides(createRollHoop(shell)));
+  add('paint', bothSides(createHoopFairing(shell)));
 
   // 側面：門縫、門把、葉子板上的側方向燈、輪拱唇、後視鏡。
   const doorRearZ = AXLE - shell.archRadiusM - 0.12;
