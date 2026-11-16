@@ -1,6 +1,6 @@
 // 動態模糊的純函式：位移 → 拖影長度。不開 WebGL。
 import { describe, expect, test } from 'vitest';
-import { motionBlurLength } from '../src/render/motionBlur';
+import { motionBlurLength, subjectBlurScale } from '../src/render/motionBlur';
 import { POST_CONFIG, QUALITY_PRESETS } from '../src/render/renderConfig';
 
 const MOTION = POST_CONFIG.motionBlur;
@@ -50,5 +50,28 @@ describe('motionBlurLength：位移 → 拖影長度', () => {
         expect(motionBlurLength(d, preset), `${level} ${d}`).toBeLessThanOrEqual(0.02);
       }
     }
+  });
+});
+
+describe('鏡頭跟著的車不拖影', () => {
+  const radius = POST_CONFIG.motionBlur.subjectRadiusM;
+
+  test('半徑以內是 0，往外平滑地回到 1，之後一直是 1', () => {
+    expect(subjectBlurScale(0, radius)).toBe(0);
+    expect(subjectBlurScale(radius, radius)).toBe(0);
+    expect(subjectBlurScale(radius * POST_CONFIG.motionBlur.subjectFeather, radius)).toBe(1);
+    expect(subjectBlurScale(100, radius)).toBe(1);
+    let previous = 0;
+    for (let distance = 0; distance <= radius * 2; distance += 0.1) {
+      const scale = subjectBlurScale(distance, radius);
+      expect(scale).toBeGreaterThanOrEqual(previous);
+      previous = scale;
+    }
+  });
+
+  test('半徑蓋得住整台車（半個車長），但不到旁邊車位的車', () => {
+    expect(radius).toBeGreaterThan(2.3);
+    expect(radius).toBeLessThan(3.5);
+    expect(POST_CONFIG.motionBlur.subjectFeather).toBeGreaterThan(1);
   });
 });

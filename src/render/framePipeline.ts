@@ -54,7 +54,7 @@ import { createRng } from '../core/rng';
 import { SKIP_AMBIENT_OCCLUSION } from './ambientOcclusionFlag';
 import { DepthOfFieldPass, type LensFocus } from './depthOfField';
 import { groundReflectionOf } from './groundReflection';
-import { MotionBlurPass } from './motionBlur';
+import { MotionBlurPass, type MotionSubject } from './motionBlur';
 import {
   effectivePixelRatio,
   usesHdrChain,
@@ -68,8 +68,11 @@ import { scenePostOf, weatherBloom } from './weatherPresets';
 export interface FrameLens {
   /** 景深的對焦；null = 這一幀不做景深。 */
   readonly focus: LensFocus | null;
-  /** 這一幀可不可以有動態模糊：連續畫面（一般遊戲）才可以；定格（`?cam`）不行，否則截圖無法重現。不給 = 不行。 */
-  readonly motion?: boolean;
+  /**
+   * 動態模糊：鏡頭跟著的主體（玩家車，它不拖影）。連續畫面（一般遊戲）才給；
+   * 定格（`?cam`）不給，否則截圖無法重現。不給 = 這一幀沒有動態模糊。
+   */
+  readonly motion?: MotionSubject;
 }
 
 export interface FramePipeline {
@@ -506,7 +509,7 @@ export function createFramePipeline(
       if (motionPass !== undefined) {
         // 鏡頭的世界矩陣要是這一幀的（composer 畫場景時才會更新，這裡先更新一次）。
         camera.updateMatrixWorld();
-        motionPass.setCamera(camera, lens?.motion === true);
+        motionPass.setCamera(camera, lens?.motion ?? null);
       }
       if (bloomPass !== undefined && quality.bloom !== null) {
         // 泛光的門檻與強度跟著這個場景的天氣：白天受太陽光的白車漆不進泛光，夜裡的燈照常發光。

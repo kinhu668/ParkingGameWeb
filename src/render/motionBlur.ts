@@ -1,8 +1,10 @@
 // 動態模糊：只算鏡頭自己的移動造成的位移（由深度與前一幀的鏡頭矩陣重建），沿位移方向取幾個樣本。
+// 鏡頭跟著的那台車是跟鏡頭一起動的，在畫面上幾乎不動：車身周圍一個球的範圍內不拖（subjectBlurScale）。
 // 位移 → 拖影長度的式子（motionBlurLength）與著色器裡的相同，可以不開 WebGL 測。
 import {
   Matrix4,
   ShaderMaterial,
+  Vector4,
   type PerspectiveCamera,
   type Texture,
   type WebGLRenderTarget,
@@ -37,6 +39,28 @@ export function motionBlurLength(displacement: number, settings: MotionBlurSetti
   return Math.min(displacement * settings.shutter * ramp, settings.maxBlur);
 }
 
+/** 鏡頭跟著的主體（玩家車）：世界座標的中心與半徑（公尺）。這個球裡的東西不拖影。 */
+export interface MotionSubject {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  readonly radiusM: number;
+}
+
+/** 玩家車在地面上的位置（公尺）→ 動態模糊的主體：球心在車身的高度，半徑蓋住整台車。 */
+export function motionSubjectAt(x: number, z: number): MotionSubject {
+  return { x, y: MOTION.subjectHeightM, z, radiusM: MOTION.subjectRadiusM };
+}
+
+/**
+ * 離主體中心 distanceM 的像素，拖影長度乘上的比例：半徑以內是 0（車身清楚），
+ * 到半徑的 subjectFeather 倍平滑地回到 1。與著色器裡的式子相同。
+ */
+export function subjectBlurScale(distanceM: number, radiusM: number): number {
+  const t = Math.min(Math.max((distanceM - radiusM) / (radiusM * (MOTION.subjectFeather - 1)), 0), 1);
+  return t * t * (3 - 2 * t);
+}
+
 const VERTEX_SHADER = /* glsl */ `
   varying vec2 vUv;
   void main() {
@@ -58,6 +82,9 @@ const FRAGMENT_SHADER = /* glsl */ `
   uniform sampler2D tDiffuse;
   uniform sampler2D tDepth;
   uniform mat4 reprojection;
+  uniform mat4 clipToWorld;
+  // 主體：xyz = 世界座標的中心，w = 半徑。
+  uniform vec4 subject;
   uniform float aspect;
   uniform float shutter;
   uniform float maxBlur;
@@ -71,6 +98,9 @@ const FRAGMENT_SHADER = /* glsl */ `
     float displacement = length( motion );
     float ramp = smoothstep( ${glslFloat(MOTION.startDisplacement)}, ${glslFloat(MOTION.fullDisplacement)}, displacement );
     float blur = displacement < ${glslFloat(MOTION.cutDisplacement)} ? min( displacement * shutter * ramp, maxBlur ) : 0.0;
+    // 主體（玩家車）周圍不拖（同 subjectBlurScale）。
+    vec4 world = clipToWorld * clip;
+    blur *= smoothstep( subject.w, subject.w * ${glslFloat(MOTION.subjectFeather)}, distance( world.xyz / world.w, subject.xyz ) );
     vec3 color = texture2D( tDiffuse, vUv ).rgb;
     if ( blur > 0.0 ) {
       vec2 step = motion / displacement * blur / vec2( aspect, 1.0 ) / float( MOTION_TAPS );
@@ -93,6 +123,8 @@ export class MotionBlurPass extends Pass {
   private readonly viewProjection = new Matrix4();
   private readonly previousViewProjection = new Matrix4();
   private readonly reprojection = new Matrix4();
+  private readonly clipToWorld = new Matrix4();
+  private readonly subject = new Vector4();
   private hasPrevious = false;
 
   /**
@@ -108,6 +140,8 @@ export class MotionBlurPass extends Pass {
         tDiffuse: { value: null },
         tDepth: { value: depthTexture },
         reprojection: { value: this.reprojection },
+        clipToWorld: { value: this.clipToWorld },
+        subject: { value: this.subject },
         aspect: { value: 1 },
         shutter: { value: settings.shutter },
         maxBlur: { value: settings.maxBlur },
@@ -120,16 +154,19 @@ export class MotionBlurPass extends Pass {
     this.quad = new FullScreenQuad(this.material);
   }
 
-  /** 這一幀的鏡頭（世界矩陣要已經更新）；active = 這一幀可不可以拖影。 */
-  setCamera(camera: PerspectiveCamera, active: boolean): void {
+  /**
+   * 這一幀的鏡頭（世界矩陣要已經更新）。
+   * @param subject 鏡頭跟著的主體；null = 這一幀不可以拖影（定格、沒有前一幀可比）
+   */
+  setCamera(camera: PerspectiveCamera, subject: MotionSubject | null): void {
+    const active = subject !== null;
     this.viewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     this.enabled = active && this.hasPrevious;
-    if (this.enabled) {
+    if (this.enabled && subject !== null) {
       // 這一幀的裁切座標 → 世界 → 前一幀的裁切座標。
-      this.reprojection
-        .copy(this.viewProjection)
-        .invert()
-        .premultiply(this.previousViewProjection);
+      this.clipToWorld.copy(this.viewProjection).invert();
+      this.reprojection.multiplyMatrices(this.previousViewProjection, this.clipToWorld);
+      this.subject.set(subject.x, subject.y, subject.z, subject.radiusM);
       setUniformValue(this.material, 'aspect', camera.aspect);
     }
     this.previousViewProjection.copy(this.viewProjection);

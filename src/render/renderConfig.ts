@@ -129,7 +129,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = 
     lens: { vignette: 0.4, chromaticAberration: 0.0012 },
     smaa: false,
     depthOfField: { maxBlur: 0.006, resolutionScale: 0.5, taps: 8 },
-    motionBlur: { shutter: 0.3, maxBlur: 0.012, taps: 6 },
+    motionBlur: { shutter: 0.3, maxBlur: 0.007, taps: 6 },
     lensFlare: { streak: 0.05, ghosts: 0.03 },
     ground: {
       textureSizePx: 1024,
@@ -171,7 +171,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = 
     lens: { vignette: 0.4, chromaticAberration: 0.0012 },
     smaa: true,
     depthOfField: { maxBlur: 0.008, resolutionScale: 0.5, taps: 12 },
-    motionBlur: { shutter: 0.45, maxBlur: 0.018, taps: 8 },
+    motionBlur: { shutter: 0.45, maxBlur: 0.011, taps: 8 },
     lensFlare: { streak: 0.07, ghosts: 0.045 },
     ground: {
       textureSizePx: 2048,
@@ -585,6 +585,11 @@ export const POST_CONFIG = {
     startDisplacement: 0.004,
     fullDisplacement: 0.012,
     cutDisplacement: 0.3,
+    /** 玩家車周圍這個半徑（公尺）之內不拖影，到半徑的 subjectFeather 倍才完全照算。 */
+    subjectRadiusM: ftToM(9),
+    /** 那個球的球心離地多高（車身的一半高）。 */
+    subjectHeightM: ftToM(2.3),
+    subjectFeather: 1.6,
   },
   /**
    * 進泛光的亮度上限（場景線性亮度）：比它亮的像素當作這麼亮。高過每種天氣的門檻與燈殼的亮度，
