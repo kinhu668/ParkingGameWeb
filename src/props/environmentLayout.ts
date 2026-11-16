@@ -1365,7 +1365,7 @@ export function createEnvironmentLayout(
   };
   const lot: LotLayout = {
     ...builder.lot,
-    // 由近到遠配車款：離車位最近的五台剛好五款各一台。
+    // 由近到遠配車款，五款輪著來；之後才拿掉太擠的車、依畫質取前幾台，所以留下的車不保證五款都有。
     parkedCars: take(
       withoutCrowdedCars(
         withCarModels(nearestFirst(builder.lot.parkedCars, spotX, spotZ), `${source.id}:lot`),

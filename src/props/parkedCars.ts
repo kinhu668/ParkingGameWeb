@@ -103,7 +103,7 @@ export function parkedCarPlates(count: number): string[] {
 }
 
 /** 車的擺放矩陣（車位本地座標）。 */
-function carMatrix(placement: PropPlacement): Matrix4 {
+function carMatrix(placement: Pick<PropPlacement, 'x' | 'y' | 'z' | 'headingRad'>): Matrix4 {
   return new Matrix4().compose(
     new Vector3(placement.x, placement.y, placement.z),
     new Quaternion().setFromEuler(new Euler(0, headingToRotationY(placement.headingRad), 0)),
@@ -211,7 +211,10 @@ function createRestMaterial(): MeshStandardMaterial {
  * 加上一個裝全部車牌號碼的網格；只有烤漆投影。
  * @param detail low：輪圈只是一片輪蓋、輪胎 12 段；high：有輪輻的輪圈、輪胎 20 段。
  */
-export function createParkedCars(cars: readonly ParkedCar[], detail: VehicleDetail = 'high'): Group {
+export function createParkedCars(
+  cars: readonly Pick<ParkedCar, 'x' | 'y' | 'z' | 'headingRad' | 'variant' | 'model'>[],
+  detail: VehicleDetail = 'high',
+): Group {
   const group = new Group();
   group.name = 'parkedCars';
   if (cars.length === 0) {

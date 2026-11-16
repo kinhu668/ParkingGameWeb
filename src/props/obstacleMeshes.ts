@@ -39,7 +39,6 @@ import {
   registerOccluders,
   type Occluder,
 } from './occluders';
-import type { ParkedCar } from './lotLayout';
 import { createParkedCars } from './parkedCars';
 import { createSignMesh } from './signs';
 
@@ -578,16 +577,13 @@ export function createObstacleMeshes(source: ObstacleSource, detail: VehicleDeta
     }
     if (type === 'parked_car') {
       // 與背景車同一套車款；車色由障礙物在 JSON 裡的索引決定（固定，不用亂數）。
-      const placements: ParkedCar[] = indices.map((index) => {
+      const placements = indices.map((index) => {
         const car = obstacleAt(index);
         return {
           x: ftToM(car.centerXFt),
           z: ftToM(car.centerZFt),
           y: 0,
           headingRad: degToRad(car.headingDeg),
-          sizeX: ftToM(car.widthFt),
-          sizeY: 0,
-          sizeZ: ftToM(car.lengthFt),
           variant: ((index * 0.381966 + 0.07) % 1 + 1) % 1,
           model: car.model ?? 'sedan',
         };

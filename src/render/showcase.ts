@@ -87,7 +87,7 @@ const SHOWCASE_OBJECTS: ReadonlyMap<string, (detail: VehicleDetail) => Object3D>
         `car_${model}`,
         (detail: VehicleDetail): Object3D =>
           createParkedCars(
-            [{ x: 0, y: 0, z: 0, headingRad: 0, sizeX: 0, sizeY: 0, sizeZ: 0, variant: 0, model }],
+            [{ x: 0, y: 0, z: 0, headingRad: 0, variant: 0, model }],
             detail,
           ),
       ] as const,

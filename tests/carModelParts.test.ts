@@ -201,7 +201,7 @@ describe('四款新車', () => {
     }
   });
 
-  test.each(NEW_MODELS)('%s：low 的面數不比 high 多，車身外框相同', (model) => {
+  test.each(NEW_MODELS)('%s：low 的面數不比 high 多', (model) => {
     const low = createCarModelParts(model, 'low');
     const high = createCarModelParts(model, 'high');
     expect(totalTriangles(low)).toBeLessThanOrEqual(totalTriangles(high));
