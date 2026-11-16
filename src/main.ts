@@ -21,6 +21,7 @@ import {
   parseAssistOffParam,
   parseFxOffParam,
   parseLevelParam,
+  parseShowAngles,
   parseTouchParam,
   parseUnlockAllParam,
   parseUrlMode,
@@ -538,7 +539,7 @@ function startWithLevel(run: (level: LevelDefinition) => void): void {
 const mode = parseUrlMode(window.location.search);
 switch (mode.kind) {
   case 'show':
-    runShowcase(renderContext, mode.id);
+    runShowcase(renderContext, mode.id, parseShowAngles(window.location.search));
     break;
   case 'cam':
     startWithLevel((level) => {

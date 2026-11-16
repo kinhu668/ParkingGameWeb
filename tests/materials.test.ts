@@ -339,7 +339,7 @@ describe('場景裡的物件換成了庫材質', () => {
   test('背景車：與玩家車同一套表面，車色仍是每台各自的實例顏色，烤漆不開清漆', () => {
     const cars = createParkedCars(
       [0.1, 0.5, 0.9].map((variant, index) => ({
-        x: index * 4, y: 0, z: 0, headingRad: 0, sizeX: 1.8, sizeY: 0, sizeZ: 4.6, variant,
+        x: index * 4, y: 0, z: 0, headingRad: 0, sizeX: 1.8, sizeY: 0, sizeZ: 4.6, variant, model: 'sedan' as const,
       })),
       'high',
     );
@@ -347,7 +347,7 @@ describe('場景裡的物件換成了庫材質', () => {
     for (const id of ['carPaint', 'glass', 'plastic', 'chrome', 'tire'] as const) {
       expect(surfaces, id).toContain(id);
     }
-    const paint = cars.getObjectByName('parkedCars:paint');
+    const paint = cars.getObjectByName('parkedCars:sedan:paint');
     expect(paint).toBeInstanceOf(InstancedMesh);
     const mesh = paint as InstancedMesh;
     expect(mesh.material instanceof MeshPhysicalMaterial).toBe(false);

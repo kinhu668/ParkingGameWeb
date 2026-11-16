@@ -421,7 +421,7 @@ describe('w1_l04：推車回收架', () => {
 
 describe('背景車', () => {
   test('擋住的那一台整台淡（車殼各分區＋四個輪胎與輪圈），車牌上的字藏起來；旁邊那一台不動', () => {
-    const size = { sizeX: ftToM(6), sizeY: 0, sizeZ: ftToM(15) };
+    const size = { sizeX: ftToM(6), sizeY: 0, sizeZ: ftToM(15), model: 'sedan' as const };
     // 第 0 台橫在鏡頭與車之間，第 1 台在 30 ft 外。
     const cars = createParkedCars([
       { x: 0, z: ftToM(13), y: 0, headingRad: Math.PI / 2, variant: 0.1, ...size },
@@ -443,7 +443,7 @@ describe('背景車', () => {
       (child): child is InstancedMesh => child instanceof InstancedMesh,
     );
     for (const mesh of instancedMeshes) {
-      const perCar = mesh.name === 'parkedCars:tire' || mesh.name === 'parkedCars:rim' ? 4 : 1;
+      const perCar = mesh.name === 'parkedCars:sedan:tire' || mesh.name === 'parkedCars:sedan:rim' ? 4 : 1;
       expect(standIns(mesh)).toHaveLength(perCar);
       for (let index = 0; index < perCar; index += 1) {
         expect(instanceScale(mesh, index)).toBe(0);
@@ -451,7 +451,7 @@ describe('背景車', () => {
       }
     }
     // 烤漆的替身帶著這台車自己的車色。
-    const paint = cars.getObjectByName('parkedCars:paint');
+    const paint = cars.getObjectByName('parkedCars:sedan:paint');
     const paintStandIn = paint instanceof InstancedMesh ? standIns(paint)[0] : undefined;
     const tint = (paintStandIn?.material as MeshStandardMaterial).color;
     expect(tint.r + tint.g + tint.b).toBeLessThan(3);
@@ -506,7 +506,7 @@ describe('w1_l07：起點的近距離跟車鏡頭', () => {
     expect(fadedIn('environmentSlabs')).toBe(0);
     expect(fadedIn('buildings')).toBe(0);
     // 這一關的起點，鏡頭就在邊界外那一列背景車的車頭旁邊（不到 1.5 ft）：貼著鏡頭的那一台也淡，最多一台。
-    expect(fadedIn('parkedCars:paint')).toBeLessThanOrEqual(1);
-    expect(fade.fadedCount()).toBe(1 + fadedIn('parkedCars:paint'));
+    expect(fadedIn('parkedCars:sedan:paint')).toBeLessThanOrEqual(1);
+    expect(fade.fadedCount()).toBe(1 + fadedIn('parkedCars:sedan:paint'));
   });
 });

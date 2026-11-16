@@ -98,6 +98,33 @@ export function parseFxOffParam(urlSearch: string): boolean {
   return new URLSearchParams(urlSearch).get(FX_PARAM) === FX_OFF_VALUE;
 }
 
+/** `?show=` 展示台的鏡頭角度（度）；沒給的那一項用展示台的預設值。 */
+export interface ShowAngles {
+  /** 從物件正前方往右繞的角度：0 = 正前方、90 = 右側、180 = 正後方。 */
+  readonly azimuthDeg?: number;
+  /** 從水平面往上的角度，限制在 0–89。 */
+  readonly elevationDeg?: number;
+}
+
+/**
+ * `?show=<id>&az=<度>&el=<度>`：從別的角度看展示的物件（對照參考圖用）。
+ * 沒給、空值或不是有限的數字就不給那一項。
+ */
+export function parseShowAngles(urlSearch: string): ShowAngles {
+  const params = new URLSearchParams(urlSearch);
+  const read = (name: string): number | undefined => {
+    const text = params.get(name)?.trim();
+    const value = Number(text === undefined || text === '' ? Number.NaN : text);
+    return Number.isFinite(value) ? value : undefined;
+  };
+  const azimuthDeg = read('az');
+  const elevationDeg = read('el');
+  return {
+    ...(azimuthDeg === undefined ? {} : { azimuthDeg }),
+    ...(elevationDeg === undefined ? {} : { elevationDeg: Math.min(Math.max(elevationDeg, 0), 89) }),
+  };
+}
+
 /**
  * 換關／回關卡選擇要去的查詢字串：`level` 換成目的地，其餘參數（`quality`、`view`、`unlock`…）原樣保留。
  * 網址原本有 `lang` 就改成現在的語言：玩家在這一頁按過語言按鈕的話，不會被舊的參數蓋回去

@@ -183,7 +183,7 @@ describe('建築會投影', () => {
         expect(mesh.castShadow, name).toBe(true);
       }
     }
-    expect(named(group, 'parkedCars:paint').castShadow).toBe(true);
+    expect(named(group, 'parkedCars:sedan:paint').castShadow).toBe(true);
   });
 });
 

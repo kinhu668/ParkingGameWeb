@@ -30,6 +30,7 @@ import {
   worldToSpotLocal,
   type LotLayout,
   type PropCategory,
+  type PropPlacement,
 } from '../src/props/lotLayout';
 import {
   createBinGeometry,
@@ -39,10 +40,11 @@ import {
   createTrunkGeometry,
   lampHeadPosition,
 } from '../src/props/lotProps';
-import { PARKED_CAR_BODY_PARTS, createParkedCars, parkedCarPlates } from '../src/props/parkedCars';
+import { createParkedCars, parkedCarPlates, type ParkedCar } from '../src/props/parkedCars';
 import { SKIP_AMBIENT_OCCLUSION } from '../src/render/ambientOcclusionFlag';
 import { QUALITY_LEVELS, usesHdrChain, type QualityLevel } from '../src/render/quality';
 import {
+  CAR_VISUAL_CONFIG,
   FIXED_CAMERA_CONFIG,
   LOT_PROPS_CONFIG,
   QUALITY_PRESETS,
@@ -68,6 +70,11 @@ const CAR_HALF_WIDTH_M = VEHICLE_CONFIG_SI.widthM / 2;
 const CAR_HALF_LENGTH_M = VEHICLE_CONFIG_SI.lengthM / 2;
 /** 車身中心到車角的距離。 */
 const CAR_REACH_M = Math.hypot(VEHICLE_CONFIG_SI.lengthM, VEHICLE_CONFIG_SI.widthM) / 2;
+
+/** 把背景車的擺放位置都當成轎車。 */
+function sedans(placements: readonly PropPlacement[]): ParkedCar[] {
+  return placements.map((placement) => ({ ...placement, model: 'sedan' }));
+}
 
 function layoutFor(level: QualityLevel, seed = DEFAULT_SEED): LotLayout {
   return createLotLayout(spot, startState, seed, QUALITY_PRESETS[level].props);
@@ -376,8 +383,15 @@ describe('擺設的網格', () => {
       expect(mesh.name).not.toBe('');
       counts.set(mesh.name, mesh instanceof InstancedMesh ? mesh.count : 0);
     }
-    expect(counts.get('parkedCars:paint')).toBe(layout.parkedCars.length);
-    expect(counts.get('parkedCars:tire')).toBe(layout.parkedCars.length * 4);
+    // 背景車每一款各自一組網格：各款加起來是全部的車、每台四個輪子。
+    const carsIn = (part: string): number =>
+      [...counts].reduce(
+        (total, [name, count]) =>
+          total + (name.startsWith('parkedCars:') && name.endsWith(`:${part}`) ? count : 0),
+        0,
+      );
+    expect(carsIn('paint')).toBe(layout.parkedCars.length);
+    expect(carsIn('tire')).toBe(layout.parkedCars.length * 4);
     expect(counts.get('lampPosts')).toBe(layout.lamps.length);
     expect(counts.get('lampLenses')).toBe(layout.lamps.length);
     expect(counts.get('concrete')).toBe(layout.pillars.length + layout.beams.length);
@@ -417,7 +431,7 @@ describe('擺設的網格', () => {
         expect(material?.depthWrite).toBe(false);
       }
       // 其他擺設都參與環境光遮蔽。
-      expect(named(level, 'parkedCars:paint')?.userData[SKIP_AMBIENT_OCCLUSION]).toBeUndefined();
+      expect(named(level, 'parkedCars:sedan:paint')?.userData[SKIP_AMBIENT_OCCLUSION]).toBeUndefined();
     }
   });
 
@@ -446,7 +460,7 @@ describe('擺設的網格', () => {
   });
 
   test('背景車的車牌：每台車的號碼都不同（固定種子），也不與玩家車相同；全部的字只多一個 draw call', () => {
-    const cars = LAYOUTS.ultra.parkedCars;
+    const cars = sedans(LAYOUTS.ultra.parkedCars);
     const plates = parkedCarPlates(cars.length);
     expect(plates).toHaveLength(cars.length);
     expect(new Set(plates).size).toBe(cars.length);
@@ -465,16 +479,28 @@ describe('擺設的網格', () => {
     }
     expect(text.userData.plates).toEqual(plates);
     expect(text.castShadow).toBe(false);
-    // 共用的車殼裡不再有車牌的字（否則每台車都疊著同一個號碼），牌面還在。
-    const trim = group.getObjectByName('parkedCars:trim');
-    const plate = group.getObjectByName('parkedCars:plate');
-    if (!(trim instanceof InstancedMesh) || !(plate instanceof InstancedMesh)) {
-      expect.fail('飾條與牌面要是 InstancedMesh');
+    // 共用的車殼裡不再有車牌的字（否則每台車都疊著同一個號碼），牌面還在（併在小分區的網格裡，是牌面的米白色）。
+    const trim = group.getObjectByName('parkedCars:sedan:trim');
+    const detail = group.getObjectByName('parkedCars:sedan:detail');
+    if (!(trim instanceof InstancedMesh) || !(detail instanceof InstancedMesh)) {
+      expect.fail('飾條與小分區要是 InstancedMesh');
     }
     const trimFittings: unknown = trim.geometry.userData.fittings;
     expect(trimFittings).not.toContain('plate:front:text');
     expect(trimFittings).not.toContain('plate:rear:text');
-    expect(plate.geometry.userData.fittings).toContain('plate:front');
+    const plateColor = new Color(CAR_VISUAL_CONFIG.plateColor);
+    const detailColors = detail.geometry.getAttribute('color');
+    let plateVertices = 0;
+    for (let vertex = 0; vertex < detailColors.count; vertex += 1) {
+      if (
+        Math.abs(detailColors.getX(vertex) - plateColor.r) < 1e-6 &&
+        Math.abs(detailColors.getY(vertex) - plateColor.g) < 1e-6 &&
+        Math.abs(detailColors.getZ(vertex) - plateColor.b) < 1e-6
+      ) {
+        plateVertices += 1;
+      }
+    }
+    expect(plateVertices).toBeGreaterThan(0);
     // 每台車前後各一塊：字的三角形數 = 各號碼的字（前 + 後）加起來，而且落在各自的車牌位置上。
     const expectedIndices = plates.reduce(
       (total, each) => total + (createPlateTextGeometry(each).index?.count ?? 0),
@@ -492,12 +518,21 @@ describe('擺設的網格', () => {
     expect(createBodyGeometries('low').get('trim')?.userData.fittings).toContain('plate:front:text');
   });
 
-  test('背景車：重用轎車的車殼分區，每個分區一個 InstancedMesh，車色不只一種，只有烤漆投影', () => {
-    const cars = LAYOUTS.ultra.parkedCars;
+  test('背景車：重用轎車的車殼，一款車 7 個 InstancedMesh（燈殼與牌面併成一個），車色不只一種，只有烤漆投影', () => {
+    const cars = sedans(LAYOUTS.ultra.parkedCars);
     const meshes = meshesOf(createParkedCars(cars, 'high'));
-    // 車殼分區 + 輪胎 + 輪圈 + 一個裝全部車牌號碼的網格。
-    expect(meshes).toHaveLength(PARKED_CAR_BODY_PARTS.length + 3);
-    const paint = meshes.find((mesh) => mesh.name === 'parkedCars:paint');
+    // 烤漆、玻璃、黑飾條、鍍鉻、小分區、輪胎、輪圈，加上一個裝全部車牌號碼的網格。
+    expect(meshes.map((mesh) => mesh.name)).toEqual([
+      'parkedCars:sedan:paint',
+      'parkedCars:sedan:glass',
+      'parkedCars:sedan:trim',
+      'parkedCars:sedan:chrome',
+      'parkedCars:sedan:detail',
+      'parkedCars:sedan:tire',
+      'parkedCars:sedan:rim',
+      'parkedCars:plateText',
+    ]);
+    const paint = meshes.find((mesh) => mesh.name === 'parkedCars:sedan:paint');
     if (!(paint instanceof InstancedMesh) || paint.instanceColor === null) {
       expect.fail('烤漆要是有實例顏色的 InstancedMesh');
     }
@@ -509,7 +544,7 @@ describe('擺設的網格', () => {
     }
     expect(colors.size).toBeGreaterThanOrEqual(4);
     expect(meshes.filter((mesh) => mesh.castShadow).map((mesh) => mesh.name)).toEqual([
-      'parkedCars:paint',
+      'parkedCars:sedan:paint',
     ]);
     // low 的輪子面數比較少。
     const triangles = (detail: 'low' | 'high'): number =>

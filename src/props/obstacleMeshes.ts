@@ -32,14 +32,13 @@ import { SURFACE_SPECS, type SurfaceId } from '../materials/surfaces';
 import type { VehicleDetail } from '../render/quality';
 import { OCCLUSION_FADE_CONFIG as FADE } from '../render/renderConfig';
 import { createBinGeometry, createTrafficConeGeometry, tinted } from './lotProps';
-import type { PropPlacement } from './lotLayout';
 import {
   occluderBox,
   registerCameraBlockers,
   registerOccluders,
   type Occluder,
 } from './occluders';
-import { createParkedCars } from './parkedCars';
+import { createParkedCars, type ParkedCar } from './parkedCars';
 import { createSignMesh } from './signs';
 
 /** 要畫的東西：關卡的障礙物、（選填的）可行駛範圍與環境。LevelDefinition 本身就符合這個形狀。 */
@@ -573,7 +572,7 @@ export function createObstacleMeshes(source: ObstacleSource, detail: VehicleDeta
     }
     if (type === 'parked_car') {
       // 與背景車同一套轎車；車色由障礙物在 JSON 裡的索引決定（固定，不用亂數）。
-      const placements: PropPlacement[] = indices.map((index) => {
+      const placements: ParkedCar[] = indices.map((index) => {
         const car = obstacleAt(index);
         return {
           x: ftToM(car.centerXFt),
@@ -584,6 +583,7 @@ export function createObstacleMeshes(source: ObstacleSource, detail: VehicleDeta
           sizeY: 0,
           sizeZ: ftToM(car.lengthFt),
           variant: ((index * 0.381966 + 0.07) % 1 + 1) % 1,
+          model: 'sedan',
         };
       });
       const cars = createParkedCars(placements, detail);

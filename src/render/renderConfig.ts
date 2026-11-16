@@ -1,6 +1,7 @@
 // 畫面的可調數值：畫質級別、鏡頭、天空、燈光、陰影、霧、後製、地面、車位標線、路緣石與車擋、車輛外觀。
 // 長度一律以英尺填寫，經 units.ts 換成公尺；顏色是 sRGB 十六進位。
 import { degToRad, ftToM, mphToMps } from '../core/units';
+import type { CarModelId } from '../vehicle/carModels';
 import type { QualityLevel, QualitySettings } from './quality';
 
 /** 算圖器。像素比上限與色調映射曲線跟著畫質級別走（QUALITY_PRESETS）。 */
@@ -1066,6 +1067,8 @@ export const LOT_PROPS_CONFIG = {
   /** 背景車的車色（不含玩家車的藍）。 */
   carColors: [0xd9dadc, 0xa9adb3, 0x1c1d20, 0x4a4d52, 0x8e1a1c, 0x2f4a3a, 0xb9a98a, 0x6a2a22, 0xe8e4da],
   carRoughness: 0.36,
+  /** 敞篷車看得到的座椅與內裝（皮革的棕色）。 */
+  carUpholsteryColor: 0x5a3e2b,
   carMetalness: 0.45,
 
   /** 路燈：桿高、桿半徑、燈臂長、燈殼大小（寬、厚、長）。 */
@@ -1161,6 +1164,42 @@ export const LOT_PROPS_CONFIG = {
   payStationKeypadColor: 0xb9bcc0,
   payStationSlotColor: 0x15171a,
 } as const;
+
+/**
+ * 停放車輛每一款的配色表：[車色, 第二車色]（sRGB）。第二車色用在條紋之類的 accent 分區，沒有那個分區的車款用不到。
+ * 轎車沿用原本的背景車車色（不含玩家車的藍）。
+ */
+export const PARKED_CAR_PAINTS: Readonly<Record<CarModelId, readonly (readonly [number, number])[]>> = {
+  sedan: LOT_PROPS_CONFIG.carColors.map((color) => [color, color] as const),
+  rally: [
+    [0x1747b5, 0xd8dbe0],
+    [0xe9eaec, 0x1747b5],
+    [0xb81d24, 0xe9eaec],
+    [0x23262b, 0xc9a23a],
+    [0x8f969e, 0x1b1d20],
+  ],
+  widebody: [
+    [0xf2b705, 0x111214],
+    [0x2a2d33, 0xd23a1a],
+    [0xd9480f, 0x111214],
+    [0xe9eaec, 0x111214],
+    [0x3b2a6e, 0x111214],
+  ],
+  fastback: [
+    [0xf1efe8, 0x1d3f9a],
+    [0x9c1b1b, 0xf1efe8],
+    [0x12301f, 0xc9a23a],
+    [0x141518, 0xc9a23a],
+    [0x1d3f9a, 0xf1efe8],
+  ],
+  roadster: [
+    [0xf5c518, 0x15171a],
+    [0xb3161b, 0x15171a],
+    [0x0f3d2a, 0xb9a98a],
+    [0xcfd3d8, 0x7a1f1f],
+    [0x1a3a6b, 0xd8dbe0],
+  ],
+};
 
 /**
  * 玩家車頭燈照地（carHeadlights.ts）：地上的光斑（加色混合的貼地面片）與不投影的真光源。

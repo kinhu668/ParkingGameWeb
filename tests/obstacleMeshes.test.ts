@@ -145,9 +145,9 @@ describe.each(LEVELS.map((level) => [level.id, level] as const))('%s 的障礙�
     const indices = cars?.userData.obstacleIndices as readonly number[];
     expect(indices).toHaveLength(expected);
     const bodies = cars?.children.filter(
-      (child): child is InstancedMesh => child instanceof InstancedMesh && child.name !== 'parkedCars:tire' && child.name !== 'parkedCars:rim',
+      (child): child is InstancedMesh => child instanceof InstancedMesh && child.name !== 'parkedCars:sedan:tire' && child.name !== 'parkedCars:sedan:rim',
     );
-    const paint = bodies?.find((body) => body.name === 'parkedCars:paint');
+    const paint = bodies?.find((body) => body.name === 'parkedCars:sedan:paint');
     expect(paint?.count).toBe(expected);
     // 全部車殼分區合起來的外框（車的本地座標）。
     const shell = new Box3();

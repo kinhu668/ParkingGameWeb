@@ -5,6 +5,7 @@ import {
   CAMERA_PRESETS,
   navigationSearch,
   parseLevelParam,
+  parseShowAngles,
   parseUnlockAllParam,
   parseUrlMode,
 } from '../src/core/urlParams';
@@ -186,5 +187,27 @@ describe('navigationSearch：換關／回關卡選擇的查詢字串', () => {
     const search = navigationSearch('?view=top', 'w1_l03', 'en');
     expect(parseLevelParam(search)).toBe('w1_l03');
     expect(parseUrlMode(search)).toEqual({ kind: 'game' });
+  });
+});
+
+describe('parseShowAngles（展示台的鏡頭角度）', () => {
+  test('沒給就是空的（用展示台的預設視角）', () => {
+    expect(parseShowAngles('?show=car_sedan')).toEqual({});
+    expect(parseShowAngles('?show=car_sedan&az=&el=')).toEqual({});
+  });
+
+  test('az、el 各自獨立；仰角夾在 0–89', () => {
+    expect(parseShowAngles('?show=car_rally&az=180')).toEqual({ azimuthDeg: 180 });
+    expect(parseShowAngles('?show=car_rally&az=-45&el=12.5')).toEqual({
+      azimuthDeg: -45,
+      elevationDeg: 12.5,
+    });
+    expect(parseShowAngles('?el=120')).toEqual({ elevationDeg: 89 });
+    expect(parseShowAngles('?el=-5')).toEqual({ elevationDeg: 0 });
+  });
+
+  test('不是有限的數字就不給', () => {
+    expect(parseShowAngles('?az=abc&el=Infinity')).toEqual({});
+    expect(parseShowAngles('?az=NaN&el=10')).toEqual({ elevationDeg: 10 });
   });
 });

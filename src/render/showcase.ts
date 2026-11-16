@@ -16,6 +16,7 @@ import {
 import { forward } from '../core/heading';
 import { t } from '../core/i18n';
 import { degToRad } from '../core/units';
+import type { ShowAngles } from '../core/urlParams';
 import { parkingSpotFromFt } from '../level/parkingJudge';
 import { PROTOTYPE_LAYOUT_FT } from '../level/prototypeLayout';
 import { OBSTACLE_TYPES } from '../level/obstacleTypes';
@@ -23,9 +24,11 @@ import { prepareSurfaceLibrary, surfaceChecksum } from '../materials/surfaceLibr
 import { createSurfaceMaterial } from '../materials/surfaceMaterial';
 import { SURFACE_IDS, type SurfaceId } from '../materials/surfaces';
 import { createObstacleShowcase } from '../props/obstacleMeshes';
+import { createParkedCars } from '../props/parkedCars';
 import { createSpotMarkings } from '../props/spotMarkings';
 import { showChoicesNotice } from '../ui/notice';
 import { createCarMesh } from '../vehicle/carMesh';
+import { CAR_MODEL_IDS } from '../vehicle/carModels';
 import { createCamera } from './followCamera';
 import type { VehicleDetail } from './quality';
 import { SHOWCASE_CONFIG } from './renderConfig';
@@ -77,6 +80,18 @@ function createSurfaceGrid(): Group {
 /** 展示登錄表：id → 建立物件（擺在原點、車頭／車位前方朝 −Z）。用 Map，`toString` 之類的 id 才不會誤中。 */
 const SHOWCASE_OBJECTS: ReadonlyMap<string, (detail: VehicleDetail) => Object3D> = new Map([
   ['car_sedan', (detail: VehicleDetail): Object3D => createCarMesh(detail).root],
+  // 停放用的車款（`car_rally`、`car_widebody`…）：一台停著的車，用這款車配色表的第一組顏色。
+  ...CAR_MODEL_IDS.filter((model) => model !== 'sedan').map(
+    (model) =>
+      [
+        `car_${model}`,
+        (detail: VehicleDetail): Object3D =>
+          createParkedCars(
+            [{ x: 0, y: 0, z: 0, headingRad: 0, sizeX: 0, sizeY: 0, sizeZ: 0, variant: 0, model }],
+            detail,
+          ),
+      ] as const,
+  ),
   [
     'parking_spot',
     (): Object3D =>
@@ -126,8 +141,15 @@ function createFloor(): Mesh {
   return floor;
 }
 
-/** 啟動展示模式。畫出完整的一幀後在 `<body>` 設 `data-shot-ready="true"`。 */
-export function runShowcase({ renderer, quality, pipeline }: RenderContext, id: string): void {
+/**
+ * 啟動展示模式。畫出完整的一幀後在 `<body>` 設 `data-shot-ready="true"`。
+ * @param angles 鏡頭角度（`?az=`、`?el=`）；沒給的用 SHOWCASE_CONFIG 的預設視角
+ */
+export function runShowcase(
+  { renderer, quality, pipeline }: RenderContext,
+  id: string,
+  angles: ShowAngles = {},
+): void {
   // 材質庫的貼圖在這裡用 GPU 烘一次；展示台把檢查碼寫在 <body> 上（同一個種子每次都要相同）。
   prepareSurfaceLibrary(renderer, quality.materials);
   if (id === 'materials') {
@@ -155,8 +177,8 @@ export function runShowcase({ renderer, quality, pipeline }: RenderContext, id: 
 
   // 鏡頭對準物件的包圍球；沒有物件（未知 id）時對準空的地台。
   const subject = new Box3().setFromObject(object ?? floor).getBoundingSphere(new Sphere());
-  const azimuth = forward(degToRad(SHOWCASE_CONFIG.cameraAzimuthDeg));
-  const elevationRad = degToRad(SHOWCASE_CONFIG.cameraElevationDeg);
+  const azimuth = forward(degToRad(angles.azimuthDeg ?? SHOWCASE_CONFIG.cameraAzimuthDeg));
+  const elevationRad = degToRad(angles.elevationDeg ?? SHOWCASE_CONFIG.cameraElevationDeg);
   const camera = createCamera();
 
   function frame(): void {
