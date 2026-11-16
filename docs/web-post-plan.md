@@ -140,3 +140,23 @@ A 路（low／medium）不因本批改走 EffectComposer。新效果不得把 `u
 ## 8. 本批明確不做
 
 第 4 階段內容（設定 UI、手把以外已有的系統、關卡編輯器、新世界）。近看車身肩線、水箱罩網格、飾條材質、積水以外的地面磨損（先前已另列的建模項）。WebGPU、新套件、改規格檔、在點頭前開 Claude 實作或 commit／push。
+
+---
+
+## 9. 實作結果（2026-11-16，使用者已核准後實作）
+
+使用者的決定：體積光只加強既有的光錐與高度霧（high／ultra 加深度淡出），不做全螢幕 ray march；手機（coarse pointer）自動畫質改為 `medium`，景深／動態模糊／鏡頭光暈在手機與軟體算圖上一律關（`?quality=high` 也一樣）；不做個別效果開關、不新增 `rain_night`。
+
+| 步驟 | 做了什麼 | 主要檔案 |
+| --- | --- | --- |
+| 1 | 泛光門檻／強度跟天氣走（`PostPreset`），泛光輸入壓上限，黃昏路燈減半 | `weatherPresets.ts`、`framePipeline.ts`、`lotProps.ts` |
+| 2 | 每種天氣自己的色調分級；黃昏的 GLSL 逐字不變 | `renderer.ts`、`weatherPresets.ts` |
+| 3 | 景深：半解析度模糊，深度沿用環境光遮蔽那一遍，對焦在玩家車，俯視不做 | `depthOfField.ts` |
+| 4 | 動態模糊：前後兩幀的 view-projection 重投影，只在一般遊戲的連續畫面；玩家車周圍不拖 | `motionBlur.ts` |
+| 5 | 鏡頭光暈：太陽與最近三盞路燈的燈頭，照畫面上的位置畫條紋與鬼影，被擋住看深度；色差降三分之一 | `lensFlare.ts`、`scene.ts` |
+| 6 | 光柱依上一幀的場景深度裁掉被擋住的部分（high／ultra）；雨、雷雨、夜晚的貼地霧與光柱加厚 | `lightShaft.ts`、`weatherPresets.ts` |
+| 7 | 畫質矩陣測試、`?fx=on` 的 e2e（軟體算圖上也編譯三個著色器）、審查與修正 | `tests/quality.test.ts`、`e2e/quality.spec.ts` |
+
+網址參數：`?quality=low|medium|high|ultra` 指定級別；`?fx=off` 關掉會動的效果與這三項鏡頭效果；`?fx=on` 在手機／軟體算圖上強制開這三項（截圖與測試用）。
+
+還沒做、留給之後：設定選單裡的畫質與個別效果開關（第 4 階段）；`?bench` 在真機（RTX 5070 Ti、GTX 1070、手機）的幀時間還沒量；TAA、級聯陰影；動態模糊的鏡頭切換判斷是逐像素的（切鏡頭那一幀遠處可能有很輕的一幀拖影）。對照圖在 `/workspace/parking-web-post-*.png`，進度與規格修正提議在 `~/parking-dev/logs/web-post-progress.md`。
