@@ -130,7 +130,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = 
     smaa: false,
     depthOfField: { maxBlur: 0.006, resolutionScale: 0.5, taps: 8 },
     motionBlur: { shutter: 0.3, maxBlur: 0.007, taps: 6 },
-    lensFlare: { streak: 0.05, ghosts: 0.03 },
+    lensFlare: { streak: 0.04, ghosts: 0.06 },
     ground: {
       textureSizePx: 1024,
       maxAnisotropy: 8,
@@ -172,7 +172,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualitySettings>> = 
     smaa: true,
     depthOfField: { maxBlur: 0.008, resolutionScale: 0.5, taps: 12 },
     motionBlur: { shutter: 0.45, maxBlur: 0.011, taps: 8 },
-    lensFlare: { streak: 0.07, ghosts: 0.045 },
+    lensFlare: { streak: 0.06, ghosts: 0.09 },
     ground: {
       textureSizePx: 2048,
       maxAnisotropy: 16,
@@ -590,6 +590,37 @@ export const POST_CONFIG = {
     /** 那個球的球心離地多高（車身的一半高）。 */
     subjectHeightM: ftToM(2.3),
     subjectFeather: 1.6,
+  },
+  /**
+   * 鏡頭光暈（render/lensFlare.ts）。光源取自泛光模糊過的緩衝區：亮度在 sourceMinLuma 以下不算，
+   * 到 sourceMaxLuma 全算（上限是 bloomMaxLuma；一小點反光模糊後到不了 sourceMinLuma，整塊亮的太陽與燈殼才留得住）。
+   */
+  lensFlare: {
+    sourceMinLuma: 3,
+    sourceMaxLuma: 6,
+    /** 光暈那一張緩衝區的大小（畫布的幾分之幾）。條紋與鬼影本來就是糊的。 */
+    resolutionScale: 0.25,
+    /** 條紋往左右各伸多長（畫面寬度為 1）、每一側取幾個樣本。 */
+    streakHalfWidth: 0.22,
+    streakTaps: 10,
+    /** 條紋偏冷（橫向條紋是變形鏡頭的特徵，慣例是藍的）。 */
+    streakTint: { r: 0.55, g: 0.75, b: 1 },
+    /** 三個鬼影：離畫面中心的距離是光源的幾分之幾（取樣座標的倍率，越大鬼影越靠近中心）與顏色。 */
+    ghostScales: [1.6, 0.75, 2.6],
+    ghostTints: [
+      { r: 1, g: 0.75, b: 0.45 },
+      { r: 0.45, g: 0.8, b: 0.6 },
+      { r: 0.6, g: 0.55, b: 1 },
+    ],
+    /** 取樣點離畫面邊緣這麼近（畫面為 1）之內淡到 0。 */
+    edgeFade: 0.08,
+    /** 太陽當作這麼亮的光源（場景線性亮度；與燈殼同一個量級，條紋與鬼影的強度才能共用）。 */
+    sunLuma: 6,
+    /** 太陽的條紋有多粗、三個鬼影的半徑（畫面高度為 1）。 */
+    sunStreakHeight: 0.012,
+    sunGhostRadii: [0.05, 0.09, 0.03],
+    /** 看太陽有沒有被擋住時，在它四周多遠取樣（畫面高度為 1）。 */
+    sunProbeRadius: 0.012,
   },
   /**
    * 進泛光的亮度上限（場景線性亮度）：比它亮的像素當作這麼亮。高過每種天氣的門檻與燈殼的亮度，

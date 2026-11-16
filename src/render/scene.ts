@@ -93,6 +93,7 @@ import {
 import { SKIP_GROUND_REFLECTION } from './groundReflectionFlag';
 import { installHeightFog } from './heightFog';
 import { installToneLook } from './renderer';
+import { setSceneSun } from './lensFlare';
 import type { ShaftSetup } from './lightShaft';
 import { collectCameraBlockers } from './cameraBlockers';
 import { createOcclusionFade, type Point3, type SightBox } from './occlusionFade';
@@ -533,6 +534,9 @@ export function createGameScene(
   const scene = new Scene();
   // 泛光的門檻與強度跟著天氣：畫這個場景時管線會照著調。
   setScenePost(scene, preset.post);
+  if (preset.post.sunFlare > 0) {
+    setSceneSun(scene, { direction: sunDirection, color: preset.sun.color });
+  }
   const skyDome = addSkyEnvironment(scene, renderer, quality, { ...preset, sunDirection }).dome;
   scene.add(skyDome);
   // 霧色與天空貼圖在地平線那一圈的霾同色，遠處的地面融進天空，沒有硬邊。

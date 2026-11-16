@@ -134,6 +134,13 @@ export interface PostPreset {
   readonly bloomStrengthScale: number;
   /** 路燈真光源（SpotLight）與地上光暈的亮度倍率：黃昏還有太陽，路燈再全亮會把燈下的淺色車照到過曝。 */
   readonly lampLightScale: number;
+  /**
+   * 鏡頭光暈把實體表面上的亮點算幾成光源（render/lensFlare.ts）。有太陽的天氣是 0：只有天上的太陽起光暈，
+   * 車漆與積水上的太陽反光不算；沒有太陽的天氣是 1：夠亮的只有路燈與車燈的燈殼。
+   */
+  readonly flareSurfaceScale: number;
+  /** 太陽自己的鏡頭光暈有多強（0 = 沒有：陰天、夜晚看不到太陽）。 */
+  readonly sunFlare: number;
 }
 
 /** 一種天氣的全部數值。 */
@@ -168,10 +175,22 @@ const CLEAR_AIR: AirPreset = { mistDensityPerM: 0, mistHeightM: 1, lampShaft: 1,
 const NO_ASSIST_GAIN: AssistViewPreset = { darkGain: 1, kneeLuma: 0.3 };
 
 /** 沒有太陽的天氣（雨、雷雨、夜晚）：泛光照畫質級別的數值，路燈全亮。 */
-const LAMP_LIT_POST: PostPreset = { bloomThresholdScale: 1, bloomStrengthScale: 1, lampLightScale: 1 };
+const LAMP_LIT_POST: PostPreset = {
+  bloomThresholdScale: 1,
+  bloomStrengthScale: 1,
+  lampLightScale: 1,
+  flareSurfaceScale: 1,
+  sunFlare: 0,
+};
 
 /** 白天（晴天、雨後）：門檻拉到受太陽光的白車漆之上，只有太陽在車漆、積水上的反光會發光；路燈本來就不亮。 */
-const DAYLIGHT_POST: PostPreset = { bloomThresholdScale: 2.5, bloomStrengthScale: 0.8, lampLightScale: 1 };
+const DAYLIGHT_POST: PostPreset = {
+  bloomThresholdScale: 2.5,
+  bloomStrengthScale: 0.8,
+  lampLightScale: 1,
+  flareSurfaceScale: 0,
+  sunFlare: 1,
+};
 
 /** 白天（晴天）：比黃昏中性，亮部只留一點暖色，藍天與車漆的顏色不被染黃。 */
 const DAYLIGHT_LOOK: ToneLookPreset = {
@@ -205,7 +224,13 @@ const DUSK: WeatherPreset = {
   air: CLEAR_AIR,
   assistView: NO_ASSIST_GAIN,
   // 太陽強度 8：受光的白車漆約 2.6，門檻放在它與燈殼（HDR 亮度約 4.6）之間；路燈只開一半。
-  post: { bloomThresholdScale: 2, bloomStrengthScale: 0.9, lampLightScale: 0.5 },
+  post: {
+    bloomThresholdScale: 2,
+    bloomStrengthScale: 0.9,
+    lampLightScale: 0.5,
+    flareSurfaceScale: 0,
+    sunFlare: 1,
+  },
   look: TONE_LOOK_CONFIG,
 };
 

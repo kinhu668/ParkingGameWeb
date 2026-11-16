@@ -13,8 +13,9 @@
 //    2b. MotionBlurPass   動態模糊（render/motionBlur.ts）；只有一般遊戲的畫面才做，定格一律跳過
 //    3. UnrealBloomPass   泛光；門檻是線性亮度，所以要在色調映射之前。門檻與強度跟著場景的天氣
 //                         （weatherPresets.ts 的 PostPreset），進泛光的亮度有上限（BLOOM_HIGH_PASS_FRAGMENT_SHADER）
+//    3a. LensFlarePass    鏡頭光暈（render/lensFlare.ts）：從泛光的緩衝區畫進自己的一小張，最後一步才加上去
 //    4. SMAAPass          ultra
-//    5. 輸出 ShaderPass    色差 → 暈影 → 色調映射 + 轉成輸出色域（sRGB）→ 抖色
+//    5. 輸出 ShaderPass    色差 → 加上鏡頭光暈 → 暈影 → 色調映射 + 轉成輸出色域（sRGB）→ 抖色
 //
 // 兩條路在畫場景之前，都先畫濕地的倒影（有積水的天氣、畫質級別有開才有；render/groundReflection.ts）：
 // 鏡像鏡頭把場景畫進一張縮小的貼圖，地面著色器再取樣。它的 draw calls 也算進這一幀。
@@ -54,6 +55,7 @@ import { createRng } from '../core/rng';
 import { SKIP_AMBIENT_OCCLUSION } from './ambientOcclusionFlag';
 import { DepthOfFieldPass, type LensFocus } from './depthOfField';
 import { groundReflectionOf } from './groundReflection';
+import { LensFlarePass } from './lensFlare';
 import { MotionBlurPass, type MotionSubject } from './motionBlur';
 import {
   effectivePixelRatio,
@@ -142,6 +144,7 @@ const VIGNETTE_OVERLAY_FRAGMENT_SHADER = /* glsl */ `
 const OUTPUT_FRAGMENT_SHADER = /* glsl */ `
   ${VIGNETTE_GLSL}
   uniform sampler2D tDiffuse;
+  uniform sampler2D tFlare;
   uniform float chromaticAberration;
   varying vec2 vUv;
 
@@ -161,6 +164,10 @@ const OUTPUT_FRAGMENT_SHADER = /* glsl */ `
       vec2 shift = ( vUv - 0.5 ) * dot( lens, lens ) * chromaticAberration;
       gl_FragColor.r = texture2D( tDiffuse, vUv - shift ).r;
       gl_FragColor.b = texture2D( tDiffuse, vUv + shift ).b;
+    #endif
+
+    #ifdef LENS_FLARE
+      gl_FragColor.rgb += texture2D( tFlare, vUv ).rgb;
     #endif
 
     // 暈影乘在色調映射之前：等於角落少一點曝光，太陽與車燈這些很亮的地方不會被壓成灰色。
@@ -224,11 +231,17 @@ function createVignetteOverlayMaterial(lens: LensSettings): ShaderMaterial {
   });
 }
 
-/** B 路最後一步的材質：色調映射 + 輸出色域，加上鏡頭效果（lens 為 null 時只剩抖色）。 */
-function createOutputMaterial(lens: LensSettings | null): ShaderMaterial {
+/**
+ * B 路最後一步的材質：色調映射 + 輸出色域，加上鏡頭效果（lens 為 null 時只剩抖色）。
+ * @param flare 鏡頭光暈的畫面（LensFlarePass 畫的）；null = 沒有光暈
+ */
+function createOutputMaterial(lens: LensSettings | null, flare: Texture | null): ShaderMaterial {
   const defines: Record<string, string> = {};
   if (lens !== null && lens.chromaticAberration > 0) {
     defines['CHROMATIC_ABERRATION'] = '';
+  }
+  if (flare !== null) {
+    defines['LENS_FLARE'] = '';
   }
   return new ShaderMaterial({
     name: 'OutputShader',
@@ -236,6 +249,7 @@ function createOutputMaterial(lens: LensSettings | null): ShaderMaterial {
     uniforms: {
       ...vignetteUniforms(lens),
       tDiffuse: { value: null },
+      tFlare: { value: flare },
       chromaticAberration: { value: lens?.chromaticAberration ?? 0 },
     },
     vertexShader: FULLSCREEN_VERTEX_SHADER,
@@ -471,6 +485,14 @@ export function createFramePipeline(
     composer.addPass(bloomPass);
   }
 
+  // 鏡頭光暈的光源取自泛光模糊過的緩衝區（八分之一大小那一張），天空與實體表面靠深度分。
+  let flarePass: LensFlarePass | undefined;
+  const flareSource = bloomPass?.renderTargetsVertical[2];
+  if (quality.lensFlare !== null && flareSource !== undefined && aoPass !== undefined) {
+    flarePass = new LensFlarePass(quality.lensFlare, flareSource.texture, aoPass.depthTexture);
+    composer.addPass(flarePass);
+  }
+
   let ready: Promise<void> = Promise.resolve();
   if (quality.smaa) {
     const smaaPass = new SMAAPass();
@@ -478,7 +500,7 @@ export function createFramePipeline(
     ready = whenSmaaTexturesLoad(smaaPass);
   }
 
-  const outputMaterial = createOutputMaterial(quality.lens);
+  const outputMaterial = createOutputMaterial(quality.lens, flarePass?.texture ?? null);
   composer.addPass(new ShaderPass(outputMaterial));
 
   /** 後製鏈的緩衝區有沒有照畫布的大小設過；第一次一定要設。 */
@@ -511,9 +533,14 @@ export function createFramePipeline(
         camera.updateMatrixWorld();
         motionPass.setCamera(camera, lens?.motion ?? null);
       }
+      const post = scenePostOf(scene);
+      if (flarePass !== undefined) {
+        // 沒登記天氣的場景（展示台）沒有太陽也沒有燈殼：車漆的反光不起光暈。
+        camera.updateMatrixWorld();
+        flarePass.setScene(scene, camera, post?.flareSurfaceScale ?? 0, post?.sunFlare ?? 0);
+      }
       if (bloomPass !== undefined && quality.bloom !== null) {
         // 泛光的門檻與強度跟著這個場景的天氣：白天受太陽光的白車漆不進泛光，夜裡的燈照常發光。
-        const post = scenePostOf(scene);
         const bloom = post === undefined ? quality.bloom : weatherBloom(quality.bloom, post);
         bloomPass.threshold = bloom.threshold;
         bloomPass.strength = bloom.strength;
