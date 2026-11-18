@@ -42,6 +42,7 @@
   "challenge.centered": "Centered",
   "challenge.headIn": "Head-in",
   "challenge.backIn": "Back-in",
+  "challenge.cleanExit": "Clean exit",
   "challenge.stateEarned": "earned this run",
   "challenge.stateBest": "earned in an earlier run",
   "challenge.stateNone": "not earned yet",

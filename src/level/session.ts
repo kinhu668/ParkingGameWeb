@@ -3,7 +3,7 @@
 import { COLLISION_RULES, FIXED_STEP_SECONDS, PHYSICS_HZ } from '../core/gameConfig';
 import { mToFt, mphToMps, mpsToMph, radToDeg } from '../core/units';
 import { stepVehicle, type DriveInput, type VehicleState } from '../vehicle/bicycleModel';
-import { vehicleHits, type Obb } from './collision';
+import { obbsOverlap, vehicleHits, vehicleObb, type Obb } from './collision';
 import { angleErrorRad, isHoldComplete, nextHeldSteps, type ParkingSpot } from './parkingJudge';
 import {
   UNLIMITED_RULES,
@@ -64,6 +64,13 @@ export interface Session {
   readonly collisions: number;
   /** 每個障礙物（與 layout.obstacles 同索引）的冷卻期限：stepCount 到這個值才會再計一次。 */
   readonly hitCooldownUntil: readonly number[];
+  /**
+   * 車身還壓在起始車位上（「安全出車」還沒結束）。車身完全離開那一格之後變成 false，不會再變回來；
+   * 起點不在車位裡的關卡一直是 false。
+   */
+  readonly inStartStall: boolean;
+  /** 車身完全離開起始車位之前計入的碰撞次數。 */
+  readonly exitCollisions: number;
   /** 失敗原因；沒有失敗是 null。 */
   readonly failReason: FailReason | null;
   /** 停妥的成績；還沒停妥是 null。 */
@@ -95,6 +102,8 @@ export function startSession(layout: SessionLayout): Session {
     elapsedSteps: 0,
     collisions: 0,
     hitCooldownUntil: (layout.obstacles ?? NO_OBSTACLES).map(() => 0),
+    inStartStall: layout.startStall !== undefined,
+    exitCollisions: 0,
     failReason: null,
     result: null,
   };
@@ -139,17 +148,28 @@ export function stepSession(session: Session, input: DriveInput): Session {
   let vehicle = moved;
   let collisions = session.collisions;
   let hitCooldownUntil = session.hitCooldownUntil;
+  let exitCollisions = session.exitCollisions;
   if (hits.length > 0) {
     vehicle = bounceBack(session.vehicle, moved);
     // 同時壓到的每個物件各計各的；還在冷卻中的不重複計，也不延長它的冷卻。
     const counted = hits.filter((index) => stepCount >= (hitCooldownUntil[index] ?? 0));
     if (counted.length > 0) {
       collisions += counted.length;
+      // 車身還壓在起始車位上時撞到的，另外記一筆（「安全出車」）。
+      if (session.inStartStall) {
+        exitCollisions += counted.length;
+      }
       hitCooldownUntil = hitCooldownUntil.map((until, index) =>
         counted.includes(index) ? stepCount + COLLISION_COOLDOWN_STEPS : until,
       );
     }
   }
+
+  // 車身完全離開起始車位（與那一格不再重疊）之後，出車就結束了。
+  const inStartStall =
+    session.inStartStall &&
+    layout.startStall !== undefined &&
+    obbsOverlap(vehicleObb(vehicle), layout.startStall);
 
   // 計時：第一次有駕駛輸入的那一步開始算，之後不論有沒有輸入都繼續。
   const driving = session.status === 'driving' || hasDriveInput(input);
@@ -168,6 +188,8 @@ export function stepSession(session: Session, input: DriveInput): Session {
       elapsedSteps,
       collisions,
       hitCooldownUntil,
+      inStartStall,
+      exitCollisions,
       failReason: failed,
       result: null,
     };
@@ -187,6 +209,8 @@ export function stepSession(session: Session, input: DriveInput): Session {
       elapsedSteps,
       collisions,
       hitCooldownUntil,
+      inStartStall,
+      exitCollisions,
       failReason: null,
       result: {
         stars: starsFor({
@@ -211,6 +235,8 @@ export function stepSession(session: Session, input: DriveInput): Session {
     elapsedSteps,
     collisions,
     hitCooldownUntil,
+    inStartStall,
+    exitCollisions,
     failReason: null,
     result: null,
   };

@@ -1,7 +1,7 @@
 // 結算面板：停妥（成功）或失敗後顯示。成功有星數與一排挑戰打鉤，失敗有原因；兩者都列出時間、碰撞、角度誤差，
 // 以及下一關／重來／關卡選擇的按鈕。掛在 HUD 的 `#hud-status` 裡；還在開的時候整塊隱藏。
 import { onLocaleChange, t, type TranslationKey } from '../core/i18n';
-import { challengesForSpot, sessionChallenges, type ChallengeId } from '../level/challenges';
+import { challengesForLayout, sessionChallenges, type ChallengeId } from '../level/challenges';
 import { angleErrorRad } from '../level/parkingJudge';
 import { UNLIMITED_RULES, stepsToSeconds, type FailReason } from '../level/scoring';
 import type { Session } from '../level/session';
@@ -22,6 +22,7 @@ const CHALLENGE_LABELS: Readonly<Record<ChallengeId, TranslationKey>> = {
   centered: 'challenge.centered',
   head_in: 'challenge.headIn',
   back_in: 'challenge.backIn',
+  clean_exit: 'challenge.cleanExit',
 };
 
 /**
@@ -75,7 +76,7 @@ function challengeChecks(session: Session, context: ChallengeContext): readonly 
   }
   const earned = sessionChallenges(session, context.timeS);
   const best = context.best();
-  return challengesForSpot(session.layout.spot).map((id) => ({
+  return challengesForLayout(session.layout).map((id) => ({
     id,
     state: earned.includes(id) ? 'earned' : best.includes(id) ? 'best' : 'none',
   }));

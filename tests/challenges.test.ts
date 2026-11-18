@@ -1,14 +1,15 @@
-// 過關挑戰：五種規則、門檻邊界、每關的「N 秒內」門檻與官方路線實測。
+// 過關挑戰：六種規則、門檻邊界、每關的「N 秒內」門檻與官方路線實測。
 import { describe, expect, test } from 'vitest';
 import { PHYSICS_HZ } from '../src/core/gameConfig';
 import { forward, right } from '../src/core/heading';
 import { degToRad, ftToM } from '../src/core/units';
 import { runRoute } from '../src/level/autoDriver';
+import { obbFromFt } from '../src/level/collision';
 import {
   CENTERED_MAX_OFFSET_FT,
   CHALLENGE_IDS,
   challengeTimeS,
-  challengesForSpot,
+  challengesForLayout,
   earnedChallenges,
   sessionChallenges,
   type ChallengeInput,
@@ -56,25 +57,57 @@ function perfect(changes: Partial<ChallengeInput> = {}): ChallengeInput {
     timeSteps: secondsToSteps(10),
     collisions: 0,
     challengeTimeS: TIME_S,
+    exitCollisions: 0,
     ...changes,
   };
 }
 
+/** 起始車位（「安全出車」的關卡才有）：位置不重要，只看有沒有。 */
+const START_STALL = obbFromFt({ centerXFt: -30, centerZFt: 40, widthFt: 9, lengthFt: 18, headingDeg: 0 });
+
 describe('每個車位有哪些挑戰', () => {
   test('挑戰 id 與顯示順序', () => {
-    expect(CHALLENGE_IDS).toEqual(['time', 'no_collisions', 'centered', 'head_in', 'back_in']);
+    expect(CHALLENGE_IDS).toEqual(['time', 'no_collisions', 'centered', 'head_in', 'back_in', 'clean_exit']);
   });
 
   test('一般車位五項；路邊平行停車只有三項共通的，沒有車頭入庫／倒車入庫', () => {
-    expect(challengesForSpot(BAY)).toEqual(CHALLENGE_IDS);
-    expect(challengesForSpot(PARALLEL)).toEqual(['time', 'no_collisions', 'centered']);
+    expect(challengesForLayout({ spot: BAY })).toEqual(['time', 'no_collisions', 'centered', 'head_in', 'back_in']);
+    expect(challengesForLayout({ spot: PARALLEL })).toEqual(['time', 'no_collisions', 'centered']);
   });
 
-  test.each(LEVELS.map((level) => [level.id, level] as const))('%s 的清單', (id, level) => {
-    const parallel = id === 'w1_l08' || id === 'w1_l09';
-    expect(challengesForSpot(level.layout.spot)).toHaveLength(parallel ? 3 : 5);
-    expect(challengesForSpot(level.layout.spot).includes('head_in')).toBe(!parallel);
-    expect(challengesForSpot(level.layout.spot).includes('back_in')).toBe(!parallel);
+  test('起點停在車位裡的關卡多一項「安全出車」，排在最後', () => {
+    expect(challengesForLayout({ spot: BAY, startStall: START_STALL })).toEqual(CHALLENGE_IDS);
+    expect(challengesForLayout({ spot: PARALLEL, startStall: START_STALL })).toEqual([
+      'time',
+      'no_collisions',
+      'centered',
+      'clean_exit',
+    ]);
+  });
+
+  test.each(LEVELS.map((level) => [level.id, level] as const))('%s 的清單', (_id, level) => {
+    const list = challengesForLayout(level.layout);
+    const parallel = level.parking === 'parallel';
+    const parkedStart = level.startStallFt !== undefined;
+    expect(list).toHaveLength(3 + (parallel ? 0 : 2) + (parkedStart ? 1 : 0));
+    expect(list.includes('head_in')).toBe(!parallel);
+    expect(list.includes('back_in')).toBe(!parallel);
+    expect(list.includes('clean_exit')).toBe(parkedStart);
+  });
+});
+
+describe('安全出車', () => {
+  test('有起始車位、離開前零碰撞：拿到；離開前撞過：沒有（之後才撞的不影響）', () => {
+    expect(earnedChallenges(perfect({ startStall: START_STALL }))).toContain('clean_exit');
+    expect(earnedChallenges(perfect({ startStall: START_STALL, exitCollisions: 1 }))).not.toContain('clean_exit');
+    // 出車乾淨、後面撞了兩次：零碰撞沒了，安全出車還在。
+    const later = earnedChallenges(perfect({ startStall: START_STALL, collisions: 2 }));
+    expect(later).toContain('clean_exit');
+    expect(later).not.toContain('no_collisions');
+  });
+
+  test('起點不在車位裡的關卡沒有這一項（零碰撞也不會拿到）', () => {
+    expect(earnedChallenges(perfect())).not.toContain('clean_exit');
   });
 });
 
@@ -173,6 +206,7 @@ describe('earnedChallenges：五種規則', () => {
         timeSteps: secondsToSteps(TIME_S) + 1,
         collisions: 2,
         challengeTimeS: TIME_S,
+        exitCollisions: 0,
       }),
     ).toEqual([]);
   });
@@ -263,7 +297,10 @@ describe('每關的「N 秒內」門檻', () => {
       timeSteps: session.result?.timeSteps ?? Infinity,
       collisions: session.collisions,
       challengeTimeS: seconds,
+      ...(level.layout.startStall === undefined ? {} : { startStall: level.layout.startStall }),
+      exitCollisions: session.exitCollisions,
     });
+    expect(earned.includes('clean_exit')).toBe(level.startStallFt !== undefined);
     expect(earned).toContain('time');
     expect(earned).toContain('no_collisions');
     // 一般車位的官方路線停在中心 0.2 ft 內，置中也拿得到；車頭／倒車入庫剛好拿到其中一個。

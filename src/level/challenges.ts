@@ -1,14 +1,21 @@
 // 過關挑戰：結算畫面星星下面那一排打鉤。純函式，不 import three、不碰 DOM。
-// 全部由停妥當下的狀態判定（車姿、車位、成績時間、碰撞次數）；失敗的一局沒有挑戰。
+// 由停妥當下的狀態判定（車姿、車位、成績時間、碰撞次數），加上這一局出車時的碰撞次數；失敗的一局沒有挑戰。
 import { forward, right } from '../core/heading';
 import { ftToM } from '../core/units';
 import type { VehicleState } from '../vehicle/bicycleModel';
 import { parkFacing, type ParkingSpot } from './parkingJudge';
 import { secondsToSteps } from './scoring';
-import type { Session } from './session';
+import type { Session, SessionLayout } from './session';
 
 /** 挑戰的 id（也是存檔裡的字串），依顯示順序。 */
-export const CHALLENGE_IDS = ['time', 'no_collisions', 'centered', 'head_in', 'back_in'] as const;
+export const CHALLENGE_IDS = [
+  'time',
+  'no_collisions',
+  'centered',
+  'head_in',
+  'back_in',
+  'clean_exit',
+] as const;
 
 export type ChallengeId = (typeof CHALLENGE_IDS)[number];
 
@@ -50,11 +57,16 @@ export function challengeTimeS(levelId: string): number {
 }
 
 /**
- * 這個車位有哪些挑戰（顯示順序）。一般車位五項；
- * 路邊平行停車只接受單一朝向，沒有車頭入庫／倒車入庫。
+ * 這一關有哪些挑戰（顯示順序）。一般車位有車頭入庫／倒車入庫，路邊平行停車只接受單一朝向所以沒有；
+ * 起點停在車位裡的關卡多一項「安全出車」。
  */
-export function challengesForSpot(spot: ParkingSpot): readonly ChallengeId[] {
-  return spot.headInHeadingRad === null ? COMMON_CHALLENGES : CHALLENGE_IDS;
+export function challengesForLayout(layout: {
+  readonly spot: ParkingSpot;
+  readonly startStall?: SessionLayout['startStall'];
+}): readonly ChallengeId[] {
+  const facing: readonly ChallengeId[] = layout.spot.headInHeadingRad === null ? [] : ['head_in', 'back_in'];
+  const exit: readonly ChallengeId[] = layout.startStall === undefined ? [] : ['clean_exit'];
+  return [...COMMON_CHALLENGES, ...facing, ...exit];
 }
 
 /** 停妥那一刻的狀態。 */
@@ -67,6 +79,10 @@ export interface ChallengeInput {
   readonly collisions: number;
   /** 這一關「N 秒內」的 N（秒）。 */
   readonly challengeTimeS: number;
+  /** 起始車位的矩形；起點不在車位裡的關卡沒有（也就沒有「安全出車」）。 */
+  readonly startStall?: SessionLayout['startStall'];
+  /** 車身完全離開起始車位之前的碰撞次數。 */
+  readonly exitCollisions: number;
 }
 
 /** 車中心在車位本地座標的偏移（橫向、縱向）是否都在 CENTERED_MAX_OFFSET_FT 以內。 */
@@ -84,7 +100,8 @@ function isCentered(vehicle: Pick<VehicleState, 'x' | 'z'>, spot: ParkingSpot): 
 
 /**
  * 這一局拿到哪些挑戰（依顯示順序）。只在停妥之後呼叫。
- * 時間剛好等於 N 秒算過；車頭入庫與倒車入庫看停妥的車頭朝向，同一局只會有一個。
+ * 時間剛好等於 N 秒算過；車頭入庫與倒車入庫看停妥的車頭朝向，同一局只會有一個；
+ * 「安全出車」= 車身完全離開起始車位之前沒有碰撞。
  */
 export function earnedChallenges(input: ChallengeInput): readonly ChallengeId[] {
   const { spot, vehicle } = input;
@@ -95,8 +112,9 @@ export function earnedChallenges(input: ChallengeInput): readonly ChallengeId[] 
     centered: isCentered(vehicle, spot),
     head_in: facing === 'head_in',
     back_in: facing === 'back_in',
+    clean_exit: input.exitCollisions === 0,
   };
-  return challengesForSpot(spot).filter((id) => earned[id]);
+  return challengesForLayout(input).filter((id) => earned[id]);
 }
 
 /** 停妥的一局拿到哪些挑戰（結算畫面與存檔用同一份）；還沒停妥或失敗是空的。 */
@@ -111,5 +129,7 @@ export function sessionChallenges(session: Session, timeS: number): readonly Cha
     timeSteps: result.timeSteps,
     collisions: result.collisions,
     challengeTimeS: timeS,
+    ...(session.layout.startStall === undefined ? {} : { startStall: session.layout.startStall }),
+    exitCollisions: session.exitCollisions,
   });
 }

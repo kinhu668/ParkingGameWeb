@@ -830,3 +830,77 @@ describe('原型關的規則', () => {
     expect(parked.result?.timeSteps).toBeLessThan(1800);
   });
 });
+
+describe('起始車位與出車時的碰撞（「安全出車」用）', () => {
+  const { startState } = PROTOTYPE_LAYOUT;
+  const startXFt = mToFt(startState.x);
+  const startZFt = mToFt(startState.z);
+  /** 9 × 18 ft 的起始車位，車停在正中央、車頭朝 −Z。 */
+  const stall = obbFromFt({ centerXFt: startXFt, centerZFt: startZFt, widthFt: 9, lengthFt: 18, headingDeg: 0 });
+  /** 車位後面 1 ft 一面牆，前面 40 ft 一面牆。 */
+  const layout: SessionLayout = {
+    spot: PROTOTYPE_LAYOUT.spot,
+    startState,
+    obstacles: [
+      wallFt(startXFt, startZFt + HALF_CAR_FT + 1 + 1, 20, 2),
+      wallFt(startXFt, startZFt - HALF_CAR_FT - 40 - 1, 20, 2),
+    ],
+    startStall: stall,
+  };
+  /** 車身完全離開車位：車尾過了車位前緣（車中心在車位中心前方 9 + 7.5 ft）。 */
+  const clearOfStall = (session: Session): boolean => startZFt - mToFt(session.vehicle.z) > 9 + HALF_CAR_FT;
+
+  test('起點不在車位裡的關卡：inStartStall 一直是 false，撞到也不記出車碰撞', () => {
+    const fresh = startSession(layoutWithWallAhead(1));
+    expect(fresh.inStartStall).toBe(false);
+    const hit = runUntil(fresh, FULL_THROTTLE, (s) => s.collisions === 1);
+    expect(hit.inStartStall).toBe(false);
+    expect(hit.exitCollisions).toBe(0);
+  });
+
+  test('起點在車位裡：一開始 inStartStall 是 true，放著不動也維持', () => {
+    const fresh = startSession(layout);
+    expect(fresh.inStartStall).toBe(true);
+    expect(fresh.exitCollisions).toBe(0);
+    expect(repeat(fresh, IDLE, 30).inStartStall).toBe(true);
+  });
+
+  test('車身還壓在車位上時撞到：碰撞與出車碰撞都加 1', () => {
+    const hit = runUntil(startSession(layout), FULL_REVERSE, (s) => s.collisions === 1);
+    expect(hit.inStartStall).toBe(true);
+    expect(hit.exitCollisions).toBe(1);
+  });
+
+  test('車身完全離開車位的那一步 inStartStall 變 false；之後撞到只加碰撞、不加出車碰撞', () => {
+    let session = startSession(layout);
+    while (session.inStartStall) {
+      expect(clearOfStall(session)).toBe(false);
+      session = stepSession(session, FULL_THROTTLE);
+      expect(session.stepCount).toBeLessThan(3600);
+    }
+    expect(clearOfStall(session)).toBe(true);
+    // 剛離開：車尾離車位前緣不到一步的位移。
+    expect(startZFt - mToFt(session.vehicle.z) - (9 + HALF_CAR_FT)).toBeLessThan(0.5);
+    const hit = runUntil(session, FULL_THROTTLE, (s) => s.collisions === 1);
+    expect(hit.inStartStall).toBe(false);
+    expect(hit.exitCollisions).toBe(0);
+  });
+
+  test('離開之後再倒回車位裡：不會變回 true，在車位裡撞到也不算出車碰撞', () => {
+    const out = runUntil(startSession(layout), FULL_THROTTLE, (s) => !s.inStartStall);
+    const back = runUntil(out, FULL_REVERSE, (s) => s.collisions === 1);
+    expect(vehicleHits(back.vehicle, [stall])).toEqual([0]);
+    expect(back.inStartStall).toBe(false);
+    expect(back.exitCollisions).toBe(0);
+  });
+
+  test('出車時先撞一次再離開：出車碰撞留著；重來歸零', () => {
+    const hit = runUntil(startSession(layout), FULL_REVERSE, (s) => s.collisions === 1);
+    const out = runUntil(hit, FULL_THROTTLE, (s) => !s.inStartStall);
+    expect(out.exitCollisions).toBe(1);
+    expect(out.collisions).toBe(1);
+    const restarted = restartSession(out);
+    expect(restarted.inStartStall).toBe(true);
+    expect(restarted.exitCollisions).toBe(0);
+  });
+});
