@@ -178,14 +178,18 @@ describe('parseSave：形狀不對就整份不要', () => {
   });
 
   test.each([
-    ['challenges 不是陣列', 'time'],
-    ['challenges 是物件', { time: true }],
-    ['challenges 是 null', null],
-    ['challenges 裡有不是字串的東西', ['time', 3]],
-  ])('%s → 整份不要', (_name, challenges) => {
+    ['challenges 不是陣列', 'time', []],
+    ['challenges 是物件', { time: true }, []],
+    ['challenges 是 null', null, []],
+    ['challenges 裡有不是字串的東西', ['time', 3, null, 'head_in'], ['time', 'head_in']],
+  ])('%s → 只丟掉壞掉的打鉤，星數與時間留著（不整份作廢）', (_name, challenges, kept) => {
     expect(
       parseSave({ version: 1, levels: { w1_l01: { stars: 2, bestTimeS: 9, challenges } }, settings: {} }),
-    ).toBeUndefined();
+    ).toEqual({
+      version: 1,
+      levels: { w1_l01: { stars: 2, bestTimeS: 9, challenges: kept } },
+      settings: {},
+    });
   });
 });
 

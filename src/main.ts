@@ -361,7 +361,7 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
     }
 
     // 剛停妥：把成績併進存檔（星數取大、時間取小、挑戰取聯集）。原型關不存。
-    // 在 hud.update 之前寫：結算畫面讀存檔時已經含這一局。
+    // 結算畫面的打鉤先看這一局、再看存檔，所以存檔在 hud.update 之前或之後寫，畫面都一樣。
     const { result } = session;
     if (result !== null && result !== savedResult) {
       savedResult = result;

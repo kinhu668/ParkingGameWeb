@@ -91,6 +91,9 @@ test('w1_l03：倒車撞邊界會被擋住並計數，超過上限失敗，按 T
   await expect(status).toHaveAttribute('data-status', 'failed');
   await expect(status.locator('.hud-status-title')).toHaveText('停車失敗');
   await expect(page.locator('#hud-status-detail')).toHaveText('碰撞太多次');
+  // 失敗的結算沒有挑戰那一排（挑戰只在過關時算）；時間、碰撞那幾欄照常顯示。
+  await expect(page.locator('#result-challenges')).toBeHidden();
+  await expect(page.locator('#result-time')).toBeVisible();
   await expect(collisions).toHaveText(`${MAX_COLLISIONS + 1} / ${MAX_COLLISIONS}`);
   await page.screenshot({ path: `${OUTPUT_DIR}/collision-failed.png` });
 

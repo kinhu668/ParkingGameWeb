@@ -142,6 +142,8 @@ export function createResultsPanel(
   // 挑戰打鉤：星星下面一排，只有成功時顯示。
   const challengeList = ui.element('ul', 'result-challenges', panel);
   challengeList.id = 'result-challenges';
+  // 樣式拿掉了項目符號，有些瀏覽器會連清單的語意一起拿掉；明確標回來。
+  challengeList.setAttribute('role', 'list');
 
   // 時間、碰撞、角度誤差。
   const rows = ui.element('dl', 'result-rows', panel);
@@ -170,21 +172,23 @@ export function createResultsPanel(
 
   let shown: ResultReadout | null = null;
 
-  /** 一項挑戰：勾選框（樣式看 data-state）＋ 名稱。狀態另外寫進 aria-label 與提示文字。 */
+  /**
+   * 一項挑戰：勾選框（樣式看 data-state）＋ 名稱。
+   * 勾選框是一張有替代文字的圖（狀態的說明），螢幕閱讀器會唸「狀態、名稱」；滑鼠停在上面也看得到說明。
+   */
   function challengeItem(check: ChallengeCheck, seconds: number): HTMLElement {
     const item = document.createElement('li');
     item.className = 'result-challenge';
     item.dataset.challenge = check.id;
     item.dataset.state = check.state;
-    const label = fillTemplate(t(CHALLENGE_LABELS[check.id]), { seconds: String(seconds) });
     const state = t(CHALLENGE_STATE_LABELS[check.state]);
-    item.setAttribute('aria-label', `${label} (${state})`);
     item.title = state;
     const box = document.createElement('span');
     box.className = 'result-check';
-    box.setAttribute('aria-hidden', 'true');
+    box.setAttribute('role', 'img');
+    box.setAttribute('aria-label', state);
     const text = document.createElement('span');
-    text.textContent = label;
+    text.textContent = fillTemplate(t(CHALLENGE_LABELS[check.id]), { seconds: String(seconds) });
     item.append(box, text);
     return item;
   }
