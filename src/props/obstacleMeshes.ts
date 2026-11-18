@@ -40,6 +40,7 @@ import { createParkedCars } from './parkedCars';
 import { assemble, bar, blob, box, cylinder, lerp, roller, type Point } from './partShapes';
 import { createDeliveryVanGeometry } from './deliveryVan';
 import { createFoodTruckGeometry } from './foodTruck';
+import { createLampIslandGeometry } from './lampIsland';
 import { createPillarGeometry } from './pillar';
 import { createPineappleStandeeGeometry } from './pineappleStandee';
 import { createSurfSuvGeometry } from './surfSuv';
@@ -339,6 +340,8 @@ export function createObstacleGeometry(type: ModelObstacleType): BufferGeometry 
       return assemble(barrierParts());
     case 'planter':
       return assemble(planterParts());
+    case 'lamp_island':
+      return createLampIslandGeometry();
     case 'pillar':
       return createPillarGeometry();
     case 'food_truck':
@@ -370,6 +373,7 @@ export const OBSTACLE_SURFACES: Readonly<Record<Exclude<ObstacleType, 'parked_ca
   bollard: 'paintedMetal',
   barrier: 'plastic',
   planter: 'concrete',
+  lamp_island: 'concrete',
   pillar: 'concrete',
   food_truck: 'paintedMetal',
   delivery_van: 'paintedMetal',

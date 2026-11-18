@@ -1,6 +1,7 @@
 // 有邊界（bounds）的關卡，場地四周長什麼樣子：只做計算（固定種子的亂數），不建立網格、不需要 WebGL。
 // 座標一律是世界座標（公尺）。規則（計畫 §6.2）：bounds 裡「看起來是實體」的東西只能來自關卡 JSON，
-// 所以這裡的背景車、路燈、樹、建築全部放在 bounds 外面；bounds 裡只有平貼地面的標線（含關卡 `rows` 的車位線）與貼在牆面上的門窗招牌。
+// 所以這裡的背景車、路燈、樹、建築全部放在 bounds 外面；bounds 裡只有平貼地面的標線（含關卡 `rows` 的車位線）、貼在牆面上的門窗招牌，
+// 以及立在關卡 JSON 的安全島（lamp_island，會撞到）上的路燈。
 // 原型關沒有 bounds，不走這裡（仍然是 lotLayout.ts 的那座停車場）。
 import { DEFAULT_SEED } from '../core/gameConfig';
 import { forward, right, type GroundVector } from '../core/heading';
@@ -1379,6 +1380,12 @@ export function createEnvironmentLayout(
       break;
   }
   addRowStallLines(builder, source);
+  // 場內的安全島（關卡 JSON 的 lamp_island，會撞到）：每一座中間立一盞路燈，大場地的中央才有光。
+  for (const island of source.obstaclesFt) {
+    if (island.type === 'lamp_island') {
+      builder.prop('lamps', { x: island.centerXFt, z: island.centerZFt }, LAMP_SIZE_FT, island.headingDeg);
+    }
+  }
   // 街道與窄巷的路燈是各自的函式排的：一樣每隔一盞掛一台監視器。
   if (builder.lot.cameras.length === 0) {
     builder.lot.lamps.forEach((lamp, index) => {

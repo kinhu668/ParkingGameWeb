@@ -26,6 +26,8 @@ export const OBSTACLE_DEFAULT_SIZE_FT = {
   bollard: { widthFt: 0.8, lengthFt: 0.8 },
   barrier: { widthFt: 6, lengthFt: 1.5 },
   planter: { widthFt: 4, lengthFt: 4 },
+  /** 車排盡頭的安全島：路緣圍起來的花台，中間立一盞路燈（燈由環境佈局擺）。預設比一格車位略小。 */
+  lamp_island: { widthFt: 8, lengthFt: 17 },
   /** 柱子：方形水泥柱。 */
   pillar: { widthFt: 2, lengthFt: 2 },
   /** 餐車：車身 7.5 ft 寬靠左（−X），右側 2.5 ft 是撐開的遮陽棚與出餐檯；長度含車頭。 */
