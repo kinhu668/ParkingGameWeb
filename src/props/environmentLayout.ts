@@ -1,6 +1,6 @@
 // 有邊界（bounds）的關卡，場地四周長什麼樣子：只做計算（固定種子的亂數），不建立網格、不需要 WebGL。
 // 座標一律是世界座標（公尺）。規則（計畫 §6.2）：bounds 裡「看起來是實體」的東西只能來自關卡 JSON，
-// 所以這裡的背景車、路燈、樹、建築全部放在 bounds 外面；bounds 裡只有平貼地面的標線與貼在牆面上的門窗招牌。
+// 所以這裡的背景車、路燈、樹、建築全部放在 bounds 外面；bounds 裡只有平貼地面的標線（含關卡 `rows` 的車位線）與貼在牆面上的門窗招牌。
 // 原型關沒有 bounds，不走這裡（仍然是 lotLayout.ts 的那座停車場）。
 import { DEFAULT_SEED } from '../core/gameConfig';
 import { forward, right, type GroundVector } from '../core/heading';
@@ -44,6 +44,8 @@ export interface EnvironmentSource {
     readonly headingDeg: number;
   };
   readonly obstaclesFt: readonly (ObbFt & { readonly type: ObstacleType })[];
+  /** 場內的車排（關卡 JSON 的 `rows` 展開的每一格）：畫成地上的車位線。不給 = 沒有車排。 */
+  readonly stallsFt?: readonly ObbFt[];
 }
 
 /**
@@ -338,6 +340,44 @@ function groundLine(builder: Builder, a: { x: number; z: number }, b: { x: numbe
     0,
     LINE_LIFT_FT,
   );
+}
+
+/** 目標車位自己有發光的框線：中心離它這麼近的那一格不再畫白線（英尺）。 */
+const TARGET_STALL_MATCH_FT = 1;
+
+/**
+ * 場內車排的車位線：每一格左右各一條、沿車位方向的白線（斜角車位就是斜的）。平貼地面，不是實體。
+ * 相鄰兩格共用的那一條只畫一次；目標車位那一格不畫（它有自己的框線）。
+ */
+function addRowStallLines(builder: Builder, source: EnvironmentSource): void {
+  const drawn = new Set<string>();
+  for (const stall of source.stallsFt ?? []) {
+    const { spotFt } = source;
+    if (
+      Math.hypot(stall.centerXFt - spotFt.centerXFt, stall.centerZFt - spotFt.centerZFt) <
+      TARGET_STALL_MATCH_FT
+    ) {
+      continue;
+    }
+    const across = right(degToRad(stall.headingDeg));
+    for (const side of [-1, 1]) {
+      const x = stall.centerXFt + across.x * side * (stall.widthFt / 2);
+      const z = stall.centerZFt + across.z * side * (stall.widthFt / 2);
+      const key = `${x.toFixed(2)},${z.toFixed(2)},${stall.headingDeg % 180}`;
+      if (drawn.has(key)) {
+        continue;
+      }
+      drawn.add(key);
+      builder.prop(
+        'stallLines',
+        { x, z },
+        { x: LINE_WIDTH_FT, y: LINE_HEIGHT_FT, z: stall.lengthFt },
+        stall.headingDeg,
+        0,
+        LINE_LIFT_FT,
+      );
+    }
+  }
 }
 
 /** 一個邊外面的一列假車位＋背景車。每個車位抽一樣多次亂數，數量變了位置也不變。 */
@@ -1338,6 +1378,7 @@ export function createEnvironmentLayout(
       addNarrowAlley(builder, source, bounds, rng);
       break;
   }
+  addRowStallLines(builder, source);
   // 街道與窄巷的路燈是各自的函式排的：一樣每隔一盞掛一台監視器。
   if (builder.lot.cameras.length === 0) {
     builder.lot.lamps.forEach((lamp, index) => {

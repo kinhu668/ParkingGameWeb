@@ -225,3 +225,60 @@ describe('招牌', () => {
     expect(createSpotArrow(LEVELS[0]?.layout.spot ?? { x: 0, z: 0, widthM: 3, lengthM: 6, headingRad: 0, headInHeadingRad: null, angleToleranceRad: 0.1 }).children).toHaveLength(1);
   });
 });
+
+describe('場內車排（rows）的車位線', () => {
+  const base = levelById('w1_l01');
+  if (base === undefined) {
+    throw new Error('沒有 w1_l01');
+  }
+  const { spotFt } = base;
+  /** 目標車位那一格，加上它右邊緊鄰的兩格（同方向、9 × 18）。 */
+  const across = { x: Math.cos((spotFt.headingDeg * Math.PI) / 180), z: Math.sin((spotFt.headingDeg * Math.PI) / 180) };
+  const stallAt = (index: number) => ({
+    centerXFt: spotFt.centerXFt + across.x * 9 * index,
+    centerZFt: spotFt.centerZFt + across.z * 9 * index,
+    headingDeg: spotFt.headingDeg,
+    widthFt: 9,
+    lengthFt: 18,
+  });
+  const plain = createEnvironmentLayout(base, ULTRA)?.lot.stallLines ?? [];
+  const linesWith = (stallsFt: readonly ReturnType<typeof stallAt>[]) =>
+    (createEnvironmentLayout({ ...base, stallsFt }, ULTRA)?.lot.stallLines ?? []).slice(plain.length);
+
+  test('沒有 stallsFt 或是空的：與原本一樣', () => {
+    expect(linesWith([])).toEqual([]);
+    expect(createEnvironmentLayout({ ...base, stallsFt: [] }, ULTRA)).toEqual(createEnvironmentLayout(base, ULTRA));
+  });
+
+  test('相鄰兩格：共用的線只畫一次（3 條）；線沿車位方向、與車位一樣長、平貼地面', () => {
+    const lines = linesWith([stallAt(1), stallAt(2)]);
+    expect(lines).toHaveLength(3);
+    for (const line of lines) {
+      expect(line.headingRad).toBeCloseTo((spotFt.headingDeg * Math.PI) / 180, 9);
+      expect(line.sizeZ).toBeCloseTo(ftToM(18), 9);
+      expect(line.sizeX).toBeLessThan(ftToM(0.6));
+      expect(line.y + line.sizeY).toBeLessThan(ftToM(0.1));
+    }
+    // 三條線在 1.5、2.5 個車位寬再加一條 0.5 的位置。
+    const offsets = lines
+      .map((line) => ((line.x - ftToM(spotFt.centerXFt)) * across.x + (line.z - ftToM(spotFt.centerZFt)) * across.z) / ftToM(9))
+      .sort((a, b) => a - b);
+    expect(offsets[0]).toBeCloseTo(0.5, 6);
+    expect(offsets[1]).toBeCloseTo(1.5, 6);
+    expect(offsets[2]).toBeCloseTo(2.5, 6);
+  });
+
+  test('目標車位那一格不畫白線（它有自己的發光框線）', () => {
+    expect(linesWith([stallAt(0)])).toEqual([]);
+    expect(linesWith([stallAt(0), stallAt(1)])).toHaveLength(2);
+  });
+
+  test('斜角車位：線跟著車位的方向斜', () => {
+    const angled = { ...stallAt(3), headingDeg: 45 };
+    const lines = linesWith([angled]);
+    expect(lines).toHaveLength(2);
+    for (const line of lines) {
+      expect(line.headingRad).toBeCloseTo(Math.PI / 4, 9);
+    }
+  });
+});
