@@ -34,6 +34,8 @@ const REAL_BRANDS = [
 
 /** 多個字的真實品牌與機構名稱（小寫，整句裡出現就不行）。 */
 const REAL_BRAND_PHRASES = [
+  // 計畫舉例用的餐車店名，其實是一家真的餐車：不能用。
+  'aloha plate',
   'home depot',
   'united states postal service',
   'u.s. postal service',
