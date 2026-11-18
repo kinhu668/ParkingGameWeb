@@ -30,6 +30,16 @@ export const test = base.extend<{ readonly pageProblems: readonly string[] }>({
 
 export { expect };
 
+/** 結算畫面的挑戰列裡，狀態是 state 的挑戰 id（依顯示順序）。 */
+export async function challengeIdsInState(
+  page: Page,
+  state: 'earned' | 'best' | 'none',
+): Promise<string[]> {
+  return page
+    .locator(`#result-challenges [data-challenge][data-state="${state}"]`)
+    .evaluateAll((items) => items.map((item) => item.getAttribute('data-challenge') ?? ''));
+}
+
 /** 畫布縮小成這個大小來統計顏色；夠看出「有沒有畫東西」，又不必搬整張圖。 */
 const PROBE_WIDTH = 160;
 const PROBE_HEIGHT = 90;

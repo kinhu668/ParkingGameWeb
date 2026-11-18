@@ -6,7 +6,7 @@
 // 「即將推出」的格子現在是 0 張，那幾個迴圈留著給之後還沒做完的世界。
 import type { Locator, Page } from '@playwright/test';
 import { driveIntoSpot, nextSnapshot } from './driving';
-import { expect, OUTPUT_DIR, test } from './fixtures';
+import { challengeIdsInState, expect, OUTPUT_DIR, test } from './fixtures';
 
 /** 存檔在 localStorage 的鍵（src/core/save.ts 的 SAVE_STORAGE_KEY）。 */
 const SAVE_KEY = 'parkinggame.save.v1';
@@ -24,7 +24,10 @@ const MOVE_DEADLINE_MS = 30_000;
 
 interface SavedData {
   readonly version: number;
-  readonly levels: Record<string, { readonly stars: number; readonly bestTimeS: number }>;
+  readonly levels: Record<
+    string,
+    { readonly stars: number; readonly bestTimeS: number; readonly challenges: readonly string[] }
+  >;
   readonly settings: { readonly locale?: string };
 }
 
@@ -134,10 +137,18 @@ test('驗收：選關 → 停好車 → 結算有星 → 回選單星數還在�
   await expect(page.locator('#result-select')).toBeVisible();
   await page.screenshot({ path: `${OUTPUT_DIR}/levelflow-2-result.png` });
 
-  // 停妥當下就寫進存檔：只有這一關，星數與時間就是這一次的成績。
+  // 停妥當下就寫進存檔：只有這一關，星數、時間與挑戰就是這一次的成績。車頭朝車位底部開進去 = 車頭入庫。
+  const earnedChallenges = await challengeIdsInState(page, 'earned');
+  expect(earnedChallenges).toContain('head_in');
   const expectedSave: SavedData = {
     version: 1,
-    levels: { [FIRST_LEVEL_ID]: { stars: earnedStars, bestTimeS: parked.elapsedS } },
+    levels: {
+      [FIRST_LEVEL_ID]: {
+        stars: earnedStars,
+        bestTimeS: parked.elapsedS,
+        challenges: earnedChallenges,
+      },
+    },
     settings: {},
   };
   expect(parked.elapsedS).toBeGreaterThan(0);
@@ -187,9 +198,11 @@ test('結算的「重來」留在頁內、「下一關」換網址並保留參�
   const first = await driveIntoSpot(page, FIRST_LEVEL_SPOT_Z_FT);
   await expect(status).toBeVisible();
   const firstSave = await readSave(page);
+  const firstChallenges = await challengeIdsInState(page, 'earned');
   expect(firstSave?.levels[FIRST_LEVEL_ID]).toEqual({
     stars: first.stars,
     bestTimeS: first.elapsedS,
+    challenges: firstChallenges,
   });
 
   // 重來（按鈕）：面板消失、車回起點、計時歸零；網址沒變，存檔也還在。
@@ -203,12 +216,14 @@ test('結算的「重來」留在頁內、「下一關」換網址並保留參�
   expect(page.url()).toBe(urlBefore);
   expect(await readSave(page)).toEqual(firstSave);
 
-  // 再過一次：星數取大、時間取小。
+  // 再過一次：星數取大、時間取小、挑戰取聯集（先前拿過的在前面）。
   const second = await driveIntoSpot(page, FIRST_LEVEL_SPOT_Z_FT);
   await expect(status).toBeVisible();
+  const secondChallenges = await challengeIdsInState(page, 'earned');
   expect((await readSave(page))?.levels[FIRST_LEVEL_ID]).toEqual({
     stars: Math.max(first.stars ?? 0, second.stars ?? 0),
     bestTimeS: Math.min(first.elapsedS, second.elapsedS),
+    challenges: [...new Set([...firstChallenges, ...secondChallenges])],
   });
 
   // 下一關：換網址，quality、lang、view 保留。
