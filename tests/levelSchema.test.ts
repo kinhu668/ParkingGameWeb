@@ -425,7 +425,7 @@ describe('parseLevel：錯誤訊息指出檔名與欄位', () => {
 });
 
 describe('障礙物類型表', () => {
-  test('類型就是計畫第 2.2 節那 13 種，加上關卡重做的 6 種（安全島、柱子、餐車、貨車、衝浪板休旅車、鳳梨立牌）', () => {
+  test('類型就是計畫第 2.2 節那 13 種，加上關卡重做的 7 種（安全島、柱子、餐車、貨車、衝浪板休旅車、鳳梨立牌、消防栓）', () => {
     expect(OBSTACLE_TYPES).toEqual([
       'parked_car',
       'cone',
@@ -445,6 +445,7 @@ describe('障礙物類型表', () => {
       'delivery_van',
       'surf_suv',
       'pineapple_standee',
+      'fire_hydrant',
       'wall',
     ]);
   });

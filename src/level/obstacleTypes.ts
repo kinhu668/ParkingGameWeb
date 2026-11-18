@@ -38,6 +38,8 @@ export const OBSTACLE_DEFAULT_SIZE_FT = {
   surf_suv: { widthFt: 6.6, lengthFt: 19 },
   /** 巨型鳳梨吉祥物立牌（含底座）。 */
   pineapple_standee: { widthFt: 4, lengthFt: 4 },
+  /** 路緣邊的消防栓。 */
+  fire_hydrant: { widthFt: 1.4, lengthFt: 1.4 },
   wall: null,
 } as const satisfies Readonly<Record<string, ObstacleSizeFt | null>>;
 

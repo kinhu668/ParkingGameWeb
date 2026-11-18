@@ -31,6 +31,7 @@
     { "type": "cone", "pos": [-40, 0, -12.5] },
     { "type": "cone", "pos": [-32, 0, -12.5] },
     { "type": "planter", "pos": [52, 0, 11.4] },
+    { "type": "fire_hydrant", "pos": [28.1, 0, 12.7] },
     { "type": "trash_bin", "pos": [4, 0, -13] }
   ]
 }

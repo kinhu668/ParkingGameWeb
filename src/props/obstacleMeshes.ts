@@ -39,6 +39,7 @@ import {
 import { createParkedCars } from './parkedCars';
 import { assemble, bar, blob, box, cylinder, lerp, roller, type Point } from './partShapes';
 import { createDeliveryVanGeometry } from './deliveryVan';
+import { createFireHydrantGeometry } from './fireHydrant';
 import { createFoodTruckGeometry } from './foodTruck';
 import { createLampIslandGeometry } from './lampIsland';
 import { createColonnadeBeamGeometry } from './colonnadeBeam';
@@ -353,6 +354,8 @@ export function createObstacleGeometry(type: ModelObstacleType): BufferGeometry 
       return createSurfSuvGeometry();
     case 'pineapple_standee':
       return createPineappleStandeeGeometry();
+    case 'fire_hydrant':
+      return createFireHydrantGeometry();
     case 'wall':
       return tinted(new BoxGeometry(1, 1, 1).translate(0, 0.5, 0), 0xffffff);
   }
@@ -381,6 +384,7 @@ export const OBSTACLE_SURFACES: Readonly<Record<Exclude<ObstacleType, 'parked_ca
   delivery_van: 'carPaint',
   surf_suv: 'carPaint',
   pineapple_standee: 'plastic',
+  fire_hydrant: 'paintedMetal',
 };
 
 /** 牆（JSON 的 wall 與巷子的邊界）在各環境是什麼表面：郵局與巷子是磚，其餘是水泥。 */
