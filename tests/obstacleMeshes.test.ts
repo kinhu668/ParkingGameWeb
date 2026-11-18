@@ -280,6 +280,78 @@ describe('貼在模型上的字', () => {
   });
 });
 
+describe('柱列頂上的橫樑', () => {
+  const pillar = OBSTACLE_DEFAULT_SIZE_FT.pillar;
+  const pillarAt = (centerXFt: number, centerZFt: number) => ({
+    type: 'pillar' as const,
+    centerXFt,
+    centerZFt,
+    widthFt: pillar.widthFt,
+    lengthFt: pillar.lengthFt,
+    headingDeg: 0,
+  });
+  /** 每一根樑兩端的位置（英尺，四捨五入到 0.01）與樑身底面的高度（英尺）。 */
+  function beamsOf(source: Parameters<typeof createObstacleMeshes>[0]) {
+    const beams: { ends: string[]; bottomFt: number }[] = [];
+    for (const child of createObstacleMeshes(source, 'low').children) {
+      if (!(child instanceof InstancedMesh) || child.name !== 'pillarBeams') {
+        continue;
+      }
+      child.geometry.computeBoundingBox();
+      const box = child.geometry.boundingBox ?? new Box3();
+      // 樑不比柱頭寬（俯視時看得到柱頭的兩側），燈具垂在樑下不到半英尺。
+      expect(Math.max(-mToFt(box.min.x), mToFt(box.max.x))).toBeLessThanOrEqual(0.6 + 1e-6);
+      expect(mToFt(box.min.y)).toBeGreaterThanOrEqual(-0.45 - 1e-6);
+      for (let instance = 0; instance < child.count; instance += 1) {
+        const matrix = new Matrix4();
+        child.getMatrixAt(instance, matrix);
+        const ends = [box.min.z, box.max.z].map((z) => {
+          const end = new Vector3(0, 0, z).applyMatrix4(matrix);
+          return `${mToFt(end.x).toFixed(2)},${mToFt(end.z).toFixed(2)}`;
+        });
+        beams.push({ ends: ends.sort(), bottomFt: mToFt(new Vector3().applyMatrix4(matrix).y) });
+      }
+    }
+    return beams;
+  }
+
+  test.each([
+    ['w1_l07', 11],
+    ['w1_l10', 13],
+  ] as const)('%s：%i 根柱子排成一列，相鄰的兩根之間各一根樑，架在柱頭上', (id, pillarCount) => {
+    const level = requireLevel(id);
+    const pillars = level.obstaclesFt.filter((obstacle) => obstacle.type === 'pillar');
+    expect(pillars).toHaveLength(pillarCount);
+    const beams = beamsOf(level);
+    expect(beams).toHaveLength(pillarCount - 1);
+    const sorted = [...pillars].sort((a, b) => a.centerXFt - b.centerXFt);
+    const expected = sorted.slice(1).map((to, index) => {
+      const from = sorted[index] ?? to;
+      return [from, to].map((end) => `${end.centerXFt.toFixed(2)},${end.centerZFt.toFixed(2)}`).sort();
+    });
+    expect(beams.map((beam) => beam.ends).sort()).toEqual(expected.sort());
+    // 樑身的底面就是柱頭的頂面，比車頂（約 5 ft）高得多：車從下面過。
+    const pillarGeometry = createObstacleGeometry('pillar');
+    pillarGeometry.computeBoundingBox();
+    const capitalTopFt = mToFt(pillarGeometry.boundingBox?.max.y ?? 0);
+    expect(capitalTopFt).toBeGreaterThan(9);
+    for (const beam of beams) {
+      expect(beam.bottomFt).toBeCloseTo(capitalTopFt, 4);
+    }
+  });
+
+  test('斜著排的兩根柱子：樑沿著兩根柱子的連線', () => {
+    const beams = beamsOf({ obstaclesFt: [pillarAt(10, 20), pillarAt(16, 28)] });
+    expect(beams.map((beam) => beam.ends)).toEqual([['10.00,20.00', '16.00,28.00']]);
+  });
+
+  test('隔太遠的柱子（超過 14 ft）、單獨一根柱子、沒有柱子的關卡：沒有樑', () => {
+    expect(beamsOf({ obstaclesFt: [pillarAt(0, 0), pillarAt(20, 0)] })).toEqual([]);
+    expect(beamsOf({ obstaclesFt: [pillarAt(0, 0)] })).toEqual([]);
+    expect(beamsOf(requireLevel('w1_l06'))).toEqual([]);
+  });
+});
+
 describe('邊界的樣子', () => {
   test('停車場與街道是矮路緣（不擋視線）；巷子是高牆，厚到鏡頭不會跑到牆的另一面', () => {
     for (const environment of ['open_lot', 'warehouse_club', 'post_office', 'city_street'] as const) {

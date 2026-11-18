@@ -41,6 +41,7 @@ import { assemble, bar, blob, box, cylinder, lerp, roller, type Point } from './
 import { createDeliveryVanGeometry } from './deliveryVan';
 import { createFoodTruckGeometry } from './foodTruck';
 import { createLampIslandGeometry } from './lampIsland';
+import { createColonnadeBeamGeometry } from './colonnadeBeam';
 import { createPillarGeometry } from './pillar';
 import { createPineappleStandeeGeometry } from './pineappleStandee';
 import { createSurfSuvGeometry } from './surfSuv';
@@ -511,10 +512,56 @@ function obstacleLabels(type: ModelObstacleType, obstacle: ObbFt): Mesh[] {
   return [];
 }
 
+/** 相鄰兩根柱子的中心相距不超過這麼多英尺，柱頭上就跨一根橫樑（柱列的柱距是 10.5 ft）。 */
+const PILLAR_BEAM_MAX_SPAN_FT = 14;
+
+/**
+ * 柱列頂上的橫樑：每一對相鄰的柱子之間一根，架在柱頭上（topM），整排柱子才像一道拱廊，不是一根根孤立的柱子。
+ * 只是裝飾，不是障礙物：樑在車頂上方，車從下面過。同一種跨距共用一個 InstancedMesh。
+ */
+function createPillarBeams(
+  pillars: readonly ObbFt[],
+  topM: number,
+  material: MeshStandardMaterial,
+): InstancedMesh[] {
+  const matricesBySpan = new Map<number, Matrix4[]>();
+  pillars.forEach((from, index) => {
+    for (const to of pillars.slice(index + 1)) {
+      const dx = to.centerXFt - from.centerXFt;
+      const dz = to.centerZFt - from.centerZFt;
+      const spanFt = Math.round(Math.hypot(dx, dz) * 100) / 100;
+      if (spanFt > PILLAR_BEAM_MAX_SPAN_FT) {
+        continue;
+      }
+      // 樑的本地 Z 對準兩根柱子的連線，中心在兩根柱子的正中間。
+      const matrix = new Matrix4().compose(
+        new Vector3(
+          ftToM((from.centerXFt + to.centerXFt) / 2),
+          topM,
+          ftToM((from.centerZFt + to.centerZFt) / 2),
+        ),
+        new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), Math.atan2(dx, dz)),
+        new Vector3(1, 1, 1),
+      );
+      matricesBySpan.set(spanFt, [...(matricesBySpan.get(spanFt) ?? []), matrix]);
+    }
+  });
+  return [...matricesBySpan].map(([spanFt, matrices]) => {
+    const mesh = new InstancedMesh(createColonnadeBeamGeometry(spanFt), material, matrices.length);
+    matrices.forEach((matrix, instance) => mesh.setMatrixAt(instance, matrix));
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.name = 'pillarBeams';
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    return mesh;
+  });
+}
+
 /**
  * 建立障礙物與邊界的模型。
  * 子物件：每種障礙物一個 InstancedMesh（`obstacle:<type>`，userData.obstacleIndices 是各實例在 JSON 裡的索引）、
- * 停放車輛的群組（`parkedCars`，同樣有 obstacleIndices）、邊界（`bounds`）、貼在障礙物上的字（`sign`）。
+ * 停放車輛的群組（`parkedCars`，同樣有 obstacleIndices）、邊界（`bounds`）、貼在障礙物上的字（`sign`）、
+ * 柱列頂上的橫樑（`pillarBeams`）。
  * @param detail 停放車輛輪圈的細分（跟著畫質級別）
  */
 export function createObstacleMeshes(source: ObstacleSource, detail: VehicleDetail = 'high'): Group {
@@ -626,6 +673,9 @@ export function createObstacleMeshes(source: ObstacleSource, detail: VehicleDeta
     mesh.receiveShadow = true;
     group.add(mesh);
     registerOccluders(group, occluders);
+    if (type === 'pillar') {
+      group.add(...createPillarBeams(indices.map(obstacleAt), heightM, materialFor(OBSTACLE_SURFACES.pillar)));
+    }
   }
 
   if (source.boundsFt !== undefined) {
