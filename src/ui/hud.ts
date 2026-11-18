@@ -6,7 +6,7 @@ import type { GameCameraView } from '../core/cameraView';
 import type { ControlAction, ControlBindings } from '../core/controls';
 import { onLocaleChange, t, type TranslationKey } from '../core/i18n';
 import { spotBehindHint } from '../core/spotHint';
-import { targetPointer, type TargetPointer } from '../core/targetPointer';
+import { targetPointer, type TargetPointer, type TargetView } from '../core/targetPointer';
 import { mpsToMph, radToDeg } from '../core/units';
 import { angleErrorRad } from '../level/parkingJudge';
 import { UNLIMITED_RULES, stepsToSeconds, type FailReason } from '../level/scoring';
@@ -126,17 +126,17 @@ export function spotHintVisible(session: Session, gear: Gear, shown: boolean): b
 }
 
 /**
- * 車位方向指標要顯示什麼：這一局還在進行、車位離得遠才有（core/targetPointer.ts）；不顯示是 null。
- * @param viewYawRad 畫面上方對應的地面方向（俯視是 0，其餘是鏡頭朝向）
- * @param shown 上一幀有沒有在顯示（距離在門檻附近時維持原狀）
+ * 車位方向指標要顯示什麼：這一局還在進行、車位離得遠或不在畫面裡才有（core/targetPointer.ts）；不顯示是 null。
+ * @param view 鏡頭的朝向與車位在畫面上的位置（render/gameCamera.ts 的 targetView）
+ * @param shown 上一幀有沒有在顯示（在門檻附近時維持原狀）
  */
 export function targetPointerReadout(
   session: Session,
-  viewYawRad: number,
+  view: TargetView,
   shown: boolean,
 ): TargetPointer | null {
   const running = session.status === 'ready' || session.status === 'driving';
-  return running ? targetPointer(session.vehicle, session.layout.spot, viewYawRad, shown) : null;
+  return running ? targetPointer(session.vehicle, session.layout.spot, view, shown) : null;
 }
 
 export interface Hud {
@@ -145,9 +145,9 @@ export interface Hud {
    * 停妥或失敗時顯示結算面板（星數或原因、時間、碰撞、角度誤差、按鈕），重來後收起來。
    * @param session 這一局的現況
    * @param gear 目前的檔位（main.ts 每幀算好）
-   * @param viewYawRad 畫面上方對應的地面方向（heading 約定；車位方向指標的箭頭用）
+   * @param view 鏡頭的朝向與車位在畫面上的位置（車位方向指標用）
    */
-  update(session: Session, gear: Gear, viewYawRad: number): void;
+  update(session: Session, gear: Gear, view: TargetView): void;
   /**
    * 顯示目前的鏡頭名稱（進場與每次切換時呼叫）：短暫出現後淡出。
    * 淡出只是看不見，`#hud-camera` 的文字與 `data-view` 一直留著。
@@ -209,7 +209,7 @@ export function createHud(
   spotHint.hidden = true;
   let spotHintShown = false;
 
-  // 車位方向指標：提示的下面。箭頭指向車位、旁邊是距離；車位離得遠（隔著幾排車、或在俯視的畫面外）才顯示。
+  // 車位方向指標：提示的下面。箭頭指向車位、旁邊是距離；車位離得遠（隔著幾排車）或不在畫面裡才顯示。
   const pointer = element('div', 'hud-panel hud-target-pointer', root);
   pointer.id = 'hud-target-pointer';
   pointer.hidden = true;
@@ -309,7 +309,7 @@ export function createHud(
   onLocaleChange(renderTexts);
 
   return {
-    update(session: Session, gear: Gear, viewYawRad: number): void {
+    update(session: Session, gear: Gear, view: TargetView): void {
       const next = hudReadout(session);
       const previous = shown;
       shown = next;
@@ -333,7 +333,7 @@ export function createHud(
         spotHintShown = hintNow;
         spotHint.hidden = !hintNow;
       }
-      const pointerNow = targetPointerReadout(session, viewYawRad, pointerShown !== null);
+      const pointerNow = targetPointerReadout(session, view, pointerShown !== null);
       if ((pointerNow === null) !== (pointerShown === null)) {
         pointer.hidden = pointerNow === null;
       }

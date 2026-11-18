@@ -1,8 +1,16 @@
-// 車位方向指標：車位離得遠（隔著幾排車、或在俯視鏡頭的畫面外）時，HUD 顯示一個指向車位的箭頭與距離。
-// 純函式，不 import three、不碰 DOM；怎麼顯示在 ui/hud.ts。
-import { TARGET_POINTER_RULES } from './gameConfig';
+// 車位方向指標：車位離得遠（隔著幾排車）或不在畫面裡（俯視、直式的窄畫面、車位在側後方）時，
+// HUD 顯示一個指向車位的箭頭與距離。純函式，不 import three、不碰 DOM；怎麼顯示在 ui/hud.ts。
+import { TARGET_POINTER_RULES as RULES } from './gameConfig';
 import { headingDelta, headingFromDirection } from './heading';
 import { mToFt } from './units';
+
+/** 指標需要知道的鏡頭狀態（render/gameCamera.ts 的 targetView 每幀算好）。 */
+export interface TargetView {
+  /** 畫面「上方」對應的地面方向（heading 約定）：俯視是 0（北方朝上），其餘鏡頭是鏡頭朝向。 */
+  readonly yawRad: number;
+  /** 車位中心在畫面上的位置（−1 到 1 是畫面內）；在鏡頭後面是 null。 */
+  readonly spotScreen: { readonly x: number; readonly y: number } | null;
+}
 
 export interface TargetPointer {
   /** 箭頭在畫面上要轉的角度（弧度，0 = 朝畫面上方，順時針為正）。 */
@@ -12,27 +20,32 @@ export interface TargetPointer {
 }
 
 /**
- * 車位方向指標的內容；不用顯示時回傳 null。
- * 車位中心離車超過 showBeyondM 才出現，回到 hideWithinM 以內才收起（中間那一段維持原狀，不會閃）：
- * 近了之後車位的發光標記就在眼前，不需要箭頭。
- * @param viewYawRad 畫面「上方」對應的地面方向（heading 約定）：俯視是 0（北方朝上），其餘鏡頭是鏡頭朝向
+ * 車位方向指標的內容；不用顯示時回傳 null。規則見 TARGET_POINTER_RULES：
+ * 遠了一定顯示；近了只在車位中心不在畫面裡時顯示；已經在車位上不顯示。門檻附近維持原狀，不會閃。
  * @param shown 上一幀有沒有在顯示
  */
 export function targetPointer(
   vehicle: { readonly x: number; readonly z: number },
   spot: { readonly x: number; readonly z: number },
-  viewYawRad: number,
+  view: TargetView,
   shown: boolean,
 ): TargetPointer | null {
   const dx = spot.x - vehicle.x;
   const dz = spot.z - vehicle.z;
   const distanceM = Math.hypot(dx, dz);
-  if (distanceM <= (shown ? TARGET_POINTER_RULES.hideWithinM : TARGET_POINTER_RULES.showBeyondM)) {
+  if (distanceM < RULES.minDistanceM) {
     return null;
   }
-  const step = TARGET_POINTER_RULES.distanceStepFt;
+  if (distanceM <= (shown ? RULES.hideWithinM : RULES.showBeyondM)) {
+    const limit = shown ? RULES.onScreenWithin : RULES.offScreenBeyond;
+    const { spotScreen } = view;
+    if (spotScreen !== null && Math.abs(spotScreen.x) <= limit && Math.abs(spotScreen.y) <= limit) {
+      return null;
+    }
+  }
+  const step = RULES.distanceStepFt;
   return {
-    angleRad: headingDelta(viewYawRad, headingFromDirection(dx, dz)),
+    angleRad: headingDelta(view.yawRad, headingFromDirection(dx, dz)),
     distanceFt: Math.round(mToFt(distanceM) / step) * step,
   };
 }

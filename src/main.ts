@@ -57,7 +57,7 @@ import { createPresetCamera } from './render/followCamera';
 import {
   cameraSnapshot,
   createGameCamera,
-  viewYawRad,
+  targetView,
   type CameraSnapshot,
 } from './render/gameCamera';
 import { motionSubjectAt } from './render/motionBlur';
@@ -412,7 +412,7 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
             motion: motionSubjectAt(pose.x, pose.z),
           },
     );
-    hud.update(session, gear, viewYawRad(gameCamera));
+    hud.update(session, gear, targetView(gameCamera, session.layout.spot));
     // 觸控層只在能開車的時候顯示：暫停、結算、按鍵設定開著時收起來，不擋面板上的按鈕。
     touch.update(
       {

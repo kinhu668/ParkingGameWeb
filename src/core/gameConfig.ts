@@ -49,11 +49,18 @@ export const SPOT_HINT_RULES = {
 } as const;
 
 /**
- * 車位方向指標（core/targetPointer.ts）：車位中心離車超過 showBeyondM（45 ft）才出現，回到 hideWithinM（36 ft）以內才收起；
- * 距離取到 distanceStepFt 的倍數，數字不會每一幀都在跳。
+ * 車位方向指標（core/targetPointer.ts）。
+ * - 車位中心離車超過 showBeyondM（45 ft）就顯示，回到 hideWithinM（36 ft）以內才可能收起；
+ * - 比這更近時，只有車位中心不在畫面裡才顯示（直式的俯視左右只看得到 15 ft）：
+ *   畫面座標（−1 到 1）超出 offScreenBeyond 算在畫面外，回到 onScreenWithin 以內才算回到畫面裡；
+ * - 離車位中心不到 minDistanceM（12 ft，已經在車位上或正要進去）不顯示；
+ * - 距離取到 distanceStepFt 的倍數，數字不會每一幀都在跳。
  */
 export const TARGET_POINTER_RULES = {
   showBeyondM: 13.716,
   hideWithinM: 10.9728,
+  minDistanceM: 3.6576,
+  offScreenBeyond: 0.95,
+  onScreenWithin: 0.85,
   distanceStepFt: 5,
 } as const;

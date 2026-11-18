@@ -7,6 +7,7 @@
 import { PerspectiveCamera, Vector3 } from 'three';
 import type { GameCameraView } from '../core/cameraView';
 import { forward, headingDelta, headingFromDirection, normalizeHeading, right } from '../core/heading';
+import type { TargetView } from '../core/targetPointer';
 import { degToRad, mToFt } from '../core/units';
 import type { VehiclePose } from '../vehicle/bicycleModel';
 import { VEHICLE_CONFIG_SI } from '../vehicle/vehicleConfig';
@@ -253,18 +254,24 @@ export function cameraSnapshot(gameCamera: GameCamera, pose: VehiclePose): Camer
   };
 }
 
-const yawDirection = new Vector3();
+const targetPoint = new Vector3();
 
 /**
- * 畫面「上方」對應的地面方向（heading 約定）：HUD 的車位方向指標用它把箭頭轉到畫面上的方向。
+ * HUD 的車位方向指標要的鏡頭狀態：畫面「上方」對應的地面方向，與車位中心（地面上）在畫面上的位置。
  * 俯視是北方朝上（0）；其餘鏡頭是鏡頭朝向在地面上的方向。
  */
-export function viewYawRad(gameCamera: GameCamera): number {
-  if (gameCamera.view() === 'top') {
-    return 0;
-  }
-  const direction = gameCamera.camera.getWorldDirection(yawDirection);
-  return headingFromDirection(direction.x, direction.z);
+export function targetView(
+  gameCamera: GameCamera,
+  spot: { readonly x: number; readonly z: number },
+): TargetView {
+  const { camera } = gameCamera;
+  camera.updateMatrixWorld(true);
+  const direction = camera.getWorldDirection(targetPoint);
+  const yawRad = gameCamera.view() === 'top' ? 0 : headingFromDirection(direction.x, direction.z);
+  targetPoint.set(spot.x, 0, spot.z);
+  const inFront = targetPoint.clone().applyMatrix4(camera.matrixWorldInverse).z < -camera.near;
+  const screen = targetPoint.project(camera);
+  return { yawRad, spotScreen: inFront ? { x: screen.x, y: screen.y } : null };
 }
 
 /**
