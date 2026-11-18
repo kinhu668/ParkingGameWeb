@@ -5,8 +5,10 @@ import { forward, right } from '../src/core/heading';
 import { degToRad, ftToM, mphToMps } from '../src/core/units';
 import {
   REQUIRED_HOLD_STEPS,
+  angleErrorRad,
   isHoldComplete,
   nextHeldSteps,
+  parkFacing,
   parkingConditionsMet,
   parkingSpotFromFt,
   type ParkingSpot,
@@ -28,7 +30,10 @@ const END_MARGIN_FT = (SPOT_LENGTH_FT - VEHICLE_CONFIG_US.lengthFt) / 2;
 /** 「永遠不成功」的案例跑這麼多步（10 秒）。 */
 const LONG_RUN_STEPS = 10 * PHYSICS_HZ;
 
-/** 9×18 ft 的車位，heading 與角度容許值可指定；不給容許值就用預設 8°。 */
+/**
+ * 9×18 ft、只接受單一朝向的車位（路邊平行停車的規則），heading 與角度容許值可指定；不給容許值就用預設 8°。
+ * 兩個朝向都合法的一般車位用 baySpot（案例 12）。
+ */
 function spotFacing(headingDeg: number, angleToleranceDeg?: number): ParkingSpot {
   return parkingSpotFromFt({
     centerXFt: SPOT_CENTER_X_FT,
@@ -62,6 +67,19 @@ function carInSpot(spot: ParkingSpot, placement: CarPlacement): VehicleState {
     speedMps: mphToMps(placement.speedMph ?? 0),
     steerRad: 0,
   };
+}
+
+/** 9×18 ft 的一般車位：車頭入庫的方向是 headInHeadingDeg，它的反向（倒車入庫）也合法。 */
+function baySpot(headingDeg: number, headInHeadingDeg: number, angleToleranceDeg?: number): ParkingSpot {
+  return parkingSpotFromFt({
+    centerXFt: SPOT_CENTER_X_FT,
+    centerZFt: SPOT_CENTER_Z_FT,
+    widthFt: SPOT_WIDTH_FT,
+    lengthFt: SPOT_LENGTH_FT,
+    headingDeg,
+    headInHeadingDeg,
+    ...(angleToleranceDeg === undefined ? {} : { angleToleranceDeg }),
+  });
 }
 
 /** 車維持同一個狀態連續判定 steps 步，回傳最後的連續成立步數。 */
@@ -271,7 +289,7 @@ describe('案例 6：中斷歸零', () => {
   });
 });
 
-describe('案例 7：車頭反向', () => {
+describe('案例 7：只接受單一朝向的車位（路邊平行停車），車頭反向', () => {
   const spot = spotFacing(0);
 
   test('車身轉 180° 佔的範圍相同：正向的 0°、−8°、+8° 都成功（對照組）', () => {
@@ -291,7 +309,7 @@ describe('案例 7：車頭反向', () => {
   });
 });
 
-describe('案例 8：倒車入庫', () => {
+describe('案例 8：只接受單一朝向的車位，倒車停入', () => {
   // 車位的 heading 設成車頭該朝的方向：東（90°）。車從車位東邊倒車（往西）進來。
   const spot = spotFacing(90);
   const APPROACH_FT = 40;
@@ -414,5 +432,56 @@ describe('案例 11：斜向車位（heading 30°）', () => {
     expect(parksAfterOneSecond(carInSpot(spot, { headingDeg: 38 }), spot)).toBe(true);
     expect(everParks(carInSpot(spot, { headingDeg: 21.99 }), spot)).toBe(false);
     expect(everParks(carInSpot(spot, { headingDeg: 38.01 }), spot)).toBe(false);
+  });
+});
+
+describe('案例 12：一般車位，車頭入庫與倒車入庫都算停妥', () => {
+  // 車位方向朝北（0°）；車頭入庫的方向是朝南（180°，車位底部在南邊）。
+  const spot = baySpot(0, 180);
+
+  test('車頭朝 head-in 方向或它的反向（含容許值兩端）→ 成功，並分得出是哪一種', () => {
+    for (const headingDeg of [180, 172, 188]) {
+      const car = carInSpot(spot, { headingDeg });
+      expect(parksAfterOneSecond(car, spot)).toBe(true);
+      expect(parkFacing(car, spot)).toBe('head_in');
+    }
+    for (const headingDeg of [0, 8, -8, 352]) {
+      const car = carInSpot(spot, { headingDeg });
+      expect(parksAfterOneSecond(car, spot)).toBe(true);
+      expect(parkFacing(car, spot)).toBe('back_in');
+    }
+  });
+
+  test('兩個朝向之外的角度（剛超過容許值、橫著停）→ 永遠不成功', () => {
+    for (const headingDeg of [8.01, -8.01, 171.99, 188.01, 90, 270]) {
+      const car = carInSpot(spot, { headingDeg });
+      expect(parkingConditionsMet(car, spot)).toBe(false);
+      expect(everParks(car, spot)).toBe(false);
+    }
+  });
+
+  test('角度誤差看較近的合法朝向：反向停 2° 的誤差是 2°，不是 178°', () => {
+    expect(angleErrorRad({ headingRad: degToRad(182) }, spot)).toBeCloseTo(degToRad(2), 12);
+    expect(angleErrorRad({ headingRad: degToRad(2) }, spot)).toBeCloseTo(degToRad(2), 12);
+    expect(angleErrorRad({ headingRad: degToRad(358) }, spot)).toBeCloseTo(degToRad(2), 12);
+    expect(angleErrorRad({ headingRad: degToRad(90) }, spot)).toBeCloseTo(degToRad(90), 12);
+    expect(angleErrorRad({ headingRad: 0 }, spot)).toBe(0);
+  });
+
+  test('可調的容許值對兩個朝向都適用', () => {
+    const tight = baySpot(90, 90, 3);
+    for (const headingDeg of [90, 93, 87, 270, 273, 267]) {
+      expect(parksAfterOneSecond(carInSpot(tight, { headingDeg }), tight)).toBe(true);
+    }
+    for (const headingDeg of [93.01, 86.99, 273.01, 266.99]) {
+      expect(parkingConditionsMet(carInSpot(tight, { headingDeg }), tight)).toBe(false);
+    }
+  });
+
+  test('只接受單一朝向的車位沒有入庫方式，角度誤差對車位 heading 量到 180°', () => {
+    const strict = spotFacing(0);
+    expect(strict.headInHeadingRad).toBeNull();
+    expect(parkFacing({ headingRad: 0 }, strict)).toBeNull();
+    expect(angleErrorRad({ headingRad: degToRad(180) }, strict)).toBeCloseTo(Math.PI, 12);
   });
 });

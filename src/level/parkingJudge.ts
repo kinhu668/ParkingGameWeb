@@ -14,8 +14,13 @@ export interface ParkingSpotFt {
   readonly widthFt: number;
   /** 縱向（沿 heading）的長度。 */
   readonly lengthFt: number;
-  /** 停好時車頭該朝的方向。倒車入庫的車位也是填車頭方向，判定不另外放寬 180°。 */
+  /** 車位的方向（縱向軸）。沒有 headInHeadingDeg 的車位（路邊平行停車）只接受車頭朝這個方向。 */
   readonly headingDeg: number;
+  /**
+   * 一般車位才有：車頭入庫時車頭朝的方向（朝車位底部、遠離通道），等於 headingDeg 或它的反向。
+   * 有這個欄位的車位兩個朝向都算停妥：朝它 = 車頭入庫，朝它的反向 = 倒車入庫。
+   */
+  readonly headInHeadingDeg?: number;
   /** 夾角容許值（含邊界）；不填用 PARKING_RULES.defaultAngleToleranceDeg。 */
   readonly angleToleranceDeg?: number;
 }
@@ -28,6 +33,8 @@ export interface ParkingSpot {
   readonly widthM: number;
   readonly lengthM: number;
   readonly headingRad: number;
+  /** 一般車位：車頭入庫的車頭方向，兩個朝向都合法。null = 只接受 headingRad（路邊平行停車）。 */
+  readonly headInHeadingRad: number | null;
   readonly angleToleranceRad: number;
 }
 
@@ -51,13 +58,40 @@ export function parkingSpotFromFt(spot: ParkingSpotFt): ParkingSpot {
     widthM: ftToM(spot.widthFt),
     lengthM: ftToM(spot.lengthFt),
     headingRad: degToRad(spot.headingDeg),
+    headInHeadingRad: spot.headInHeadingDeg === undefined ? null : degToRad(spot.headInHeadingDeg),
     angleToleranceRad: degToRad(spot.angleToleranceDeg ?? PARKING_RULES.defaultAngleToleranceDeg),
   };
 }
 
-/** 車頭與車位 heading 的夾角（弧度，絕對值，0–π）。HUD 的角度誤差與 3 星的門檻都看它。 */
+/**
+ * 車頭與合法朝向的夾角（弧度，絕對值）。HUD 的角度誤差與 3 星的門檻都看它。
+ * 一般車位有兩個合法朝向（車頭入庫、倒車入庫），取較近的那個，範圍 0–π/2；
+ * 路邊平行停車只有車位的 heading，範圍 0–π。
+ */
 export function angleErrorRad(vehicle: Pick<VehicleState, 'headingRad'>, spot: ParkingSpot): number {
-  return Math.abs(headingDelta(vehicle.headingRad, spot.headingRad));
+  if (spot.headInHeadingRad === null) {
+    return Math.abs(headingDelta(vehicle.headingRad, spot.headingRad));
+  }
+  const fromHeadIn = Math.abs(headingDelta(vehicle.headingRad, spot.headInHeadingRad));
+  return Math.min(fromHeadIn, Math.PI - fromHeadIn);
+}
+
+/** 停進一般車位的方式；路邊平行停車沒有這個分別。 */
+export type ParkFacing = 'head_in' | 'back_in';
+
+/**
+ * 車頭離哪個合法朝向比較近：朝車位底部 = 車頭入庫，朝通道 = 倒車入庫（看停妥的車頭方向，不看最後的檔位）。
+ * 路邊平行停車的車位回傳 null。
+ */
+export function parkFacing(
+  vehicle: Pick<VehicleState, 'headingRad'>,
+  spot: ParkingSpot,
+): ParkFacing | null {
+  if (spot.headInHeadingRad === null) {
+    return null;
+  }
+  const fromHeadIn = Math.abs(headingDelta(vehicle.headingRad, spot.headInHeadingRad));
+  return fromHeadIn <= Math.PI / 2 ? 'head_in' : 'back_in';
 }
 
 /** 條件 1：車身四個角都在車位內。角轉到車位本地座標（橫向、縱向）後比半寬、半長；邊線算內。 */
@@ -76,8 +110,8 @@ function allCornersInside(vehicle: VehicleState, spot: ParkingSpot): boolean {
 }
 
 /**
- * 條件 2：車頭與車位 heading 的夾角在容許值內（含邊界）。
- * headingDelta 折到 (−180°, 180°]，所以車頭反向時差值是 180°，不會被當成對正。
+ * 條件 2：車頭與合法朝向的夾角在容許值內（含邊界）。
+ * 一般車位兩個朝向都合法；路邊平行停車車頭反向時差值是 180°，不會被當成對正。
  */
 function headingAligned(vehicle: VehicleState, spot: ParkingSpot): boolean {
   return angleErrorRad(vehicle, spot) <= spot.angleToleranceRad + ANGLE_EPSILON_RAD;

@@ -222,6 +222,6 @@ describe('招牌', () => {
     expect(mesh.position.toArray()).toEqual([1, 2, 3]);
     expect(mesh.userData.signText).toBe('MAIL');
     expect(mesh).not.toBeInstanceOf(InstancedMesh);
-    expect(createSpotArrow(LEVELS[0]?.layout.spot ?? { x: 0, z: 0, widthM: 3, lengthM: 6, headingRad: 0, angleToleranceRad: 0.1 }).children).toHaveLength(1);
+    expect(createSpotArrow(LEVELS[0]?.layout.spot ?? { x: 0, z: 0, widthM: 3, lengthM: 6, headingRad: 0, headInHeadingRad: null, angleToleranceRad: 0.1 }).children).toHaveLength(1);
   });
 });
