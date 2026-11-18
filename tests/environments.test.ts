@@ -210,6 +210,23 @@ describe('四個環境各自認得出來', () => {
     expect(centerZ + half).toBeLessThan(0);
   });
 
+  test('卸貨口那面牆沒被夾住時（把 w1_l08 凹槽兩側的牆拿掉）：LOADING ZONE 是 13 ft，DELIVERIES ONLY 掛在同一面牆上', () => {
+    const level = levelById('w1_l08');
+    if (level === undefined) {
+      throw new Error('找不到 w1_l08');
+    }
+    const open = {
+      ...level,
+      obstaclesFt: level.obstaclesFt.filter((obstacle) => !(obstacle.type === 'wall' && obstacle.centerZFt === -25.75)),
+    };
+    const signs = createEnvironmentLayout(open, ULTRA)?.signs ?? [];
+    const loading = signs.find((sign) => sign.text === 'LOADING ZONE');
+    expect(mToFt(loading?.widthM ?? 0)).toBeCloseTo(13, 6);
+    const notices = signs.filter((sign) => sign.text === 'DELIVERIES ONLY');
+    expect(notices).toHaveLength(1);
+    expect(notices[0]?.z).toBe(loading?.z);
+  });
+
   test('空地：沒有招牌，四周是假車位與背景車', () => {
     const layout = layoutOf('w1_l02');
     expect(layout.signs).toHaveLength(0);

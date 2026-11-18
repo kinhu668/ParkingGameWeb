@@ -3,7 +3,7 @@
 import { describe, expect, test } from 'vitest';
 import { forward } from '../src/core/heading';
 import { degToRad, ftToM, radToDeg } from '../src/core/units';
-import { obbCorners, obbFromFt, obbsOverlap, vehicleObb, type ObbFt } from '../src/level/collision';
+import { obbCorners, obbFromFt, obbsOverlap, vehicleHits, vehicleObb, type ObbFt } from '../src/level/collision';
 import {
   LEVELS,
   LEVEL_IDS,
@@ -347,18 +347,24 @@ describe('w1_l08（死巷角落）', () => {
 });
 
 describe('w1_l08：車頭一把轉不進凹槽（要三點調頭，或倒車進去）', () => {
+  /** 開始把方向盤打到底時車身中心的 x（ft）：掃描的範圍。 */
+  const TURN_IN_FROM_FT = 28;
+  const TURN_IN_TO_FT = 41;
+
   /**
    * 從第二段巷子朝東的每一條車道、每一個時機把方向盤往左打到底，轉正之後直行進車位；
    * 回傳沒有碰撞就停妥的那幾次（車道 z、開始打方向盤時車身中心的 x，ft）。
    */
-  function cleanNoseIns(level: LevelDefinition): string[] {
-    const clean: string[] = [];
-    for (let laneZFt = -14; laneZFt <= -3; laneZFt += 1) {
-      for (let turnInXFt = 33; turnInXFt <= 41; turnInXFt += 0.25) {
-        let session = startSession({
-          ...level.layout,
-          startState: { ...level.layout.startState, x: ftToM(turnInXFt), z: ftToM(laneZFt), headingRad: degToRad(90) },
-        });
+  function cleanNoseIns(level: LevelDefinition): { laneZFt: number; turnInXFt: number }[] {
+    const clean: { laneZFt: number; turnInXFt: number }[] = [];
+    for (let laneZFt = -13.5; laneZFt <= -3.5; laneZFt += 0.5) {
+      for (let turnInXFt = TURN_IN_FROM_FT; turnInXFt <= TURN_IN_TO_FT; turnInXFt += 0.25) {
+        const startState = { ...level.layout.startState, x: ftToM(turnInXFt), z: ftToM(laneZFt), headingRad: degToRad(90) };
+        // 起跑的位置壓在垃圾箱上的（最南邊的車道、太早的時機）不算一次嘗試。
+        if (vehicleHits(startState, level.layout.obstacles ?? []).length > 0) {
+          continue;
+        }
+        let session = startSession({ ...level.layout, startState });
         let straight = false;
         for (let step = 0; step < 30 * 60 && session.status !== 'parked' && session.collisions === 0; step += 1) {
           const headingDeg = radToDeg(session.vehicle.headingRad);
@@ -368,7 +374,7 @@ describe('w1_l08：車頭一把轉不進凹槽（要三點調頭，或倒車進�
           session = stepSession(session, { throttle: slow && !inBay ? 1 : 0, steer: straight ? 0 : -1, brake: inBay });
         }
         if (session.status === 'parked' && session.collisions === 0) {
-          clean.push(`${laneZFt}, ${turnInXFt}`);
+          clean.push({ laneZFt, turnInXFt });
         }
       }
     }
@@ -390,7 +396,11 @@ describe('w1_l08：車頭一把轉不進凹槽（要三點調頭，或倒車進�
       },
       'w1_l08（13 ft 凹槽）',
     );
-    expect(cleanNoseIns(wide).length).toBeGreaterThan(0);
+    const control = cleanNoseIns(wide);
+    expect(control.length).toBeGreaterThan(0);
+    // 掃描的時機範圍兩頭都比對照組成功的時機寬：沒有把解切掉。
+    expect(Math.min(...control.map((attempt) => attempt.turnInXFt))).toBeGreaterThan(TURN_IN_FROM_FT + 2);
+    expect(Math.max(...control.map((attempt) => attempt.turnInXFt))).toBeLessThan(TURN_IN_TO_FT - 2);
     expect(cleanNoseIns(mustFind('w1_l08'))).toEqual([]);
   });
 });
