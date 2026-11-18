@@ -591,7 +591,8 @@ describe('parseLevel：車排（rows）與停在車位裡的起點（start.parke
     const pitchFt = 9 / Math.sin(degToRad(45));
     level.stallsFt.forEach((stall, index) => {
       expect(stall.centerXFt).toBeCloseTo(0, 9);
-      expect(stall.centerZFt).toBeCloseTo(30 - pitchFt * index, 9);
+      // 每一格的間距取到 1e-9 ft（軸向的車排才不會帶著 cos 90° 的零頭）。
+      expect(stall.centerZFt).toBeCloseTo(30 - pitchFt * index, 7);
       expect(stall.headingDeg).toBe(45);
       expect(stall.lengthFt).toBe(19);
     });

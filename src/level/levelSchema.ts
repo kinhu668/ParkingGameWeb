@@ -362,8 +362,10 @@ function readRow(value: unknown, at: Cursor, rowIndex: number): readonly LevelSt
   const pitchFt = widthFt / Math.abs(sine);
   const rowRad = degToRad(rowHeadingDeg);
   // heading 0 朝 −Z、順時針為正：前進方向 = (sin, −cos)。
-  const stepXFt = Math.sin(rowRad) * pitchFt;
-  const stepZFt = -Math.cos(rowRad) * pitchFt;
+  // 取到 1e-9 ft：cos 90° 不是剛好 0，不取整的話軸向的車排會帶著 1e-15 的零頭。
+  const snap = (valueFt: number): number => Math.round(valueFt * 1e9) / 1e9;
+  const stepXFt = snap(Math.sin(rowRad) * pitchFt);
+  const stepZFt = snap(-Math.cos(rowRad) * pitchFt);
   const headInDeg = (rowHeadingDeg + angleDeg) % FULL_TURN_DEG;
   const perpendicular = angleDeg % (FULL_TURN_DEG / 2) === DEFAULT_ROW_ANGLE_DEG;
   return Array.from({ length: stallCount }, (_, index) => ({

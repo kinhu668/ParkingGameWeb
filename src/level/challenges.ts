@@ -37,7 +37,7 @@ const CHALLENGE_TIME_S: ReadonlyMap<string, number> = new Map([
   ['prototype', 21],
   ['w1_l01', 13],
   ['w1_l02', 24],
-  ['w1_l03', 15],
+  ['w1_l03', 25],
   ['w1_l04', 18],
   ['w1_l05', 13],
   ['w1_l06', 21],

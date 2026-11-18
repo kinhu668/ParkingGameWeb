@@ -400,8 +400,8 @@ describe('碰撞：退回上一步並反彈', () => {
     // 拿掉時間與碰撞上限，讓車一直開下去。
     const layout: SessionLayout = { ...level.layout, rules: UNLIMITED_RULES };
     const obstacles = layout.obstacles ?? [];
-    // 4 個障礙物 + 四面邊界。
-    expect(obstacles).toHaveLength(8);
+    // 回收架 + 兩排車位的 15 台停放車 + 四面邊界。
+    expect(obstacles).toHaveLength(20);
     expect(vehicleHits(layout.startState, obstacles)).toEqual([]);
 
     const rng = createRng(20261111);

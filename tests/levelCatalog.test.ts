@@ -182,58 +182,40 @@ describe('原型關（prototype.json）', () => {
   });
 });
 
-describe('w1_l03（規格範例幾何，修正起點方向）', () => {
+describe('w1_l03（先出來）', () => {
   const level = mustFind('w1_l03');
 
-  test('起點 (0, −33)、heading 是 180（規格範例寫 0，那是背向目標）', () => {
-    expect(level.startFt).toEqual({ xFt: 0, zFt: -33, headingDeg: 180 });
-    expect(level.layout.startState.headingRad).toBe(Math.PI);
+  test('起點停在南排的車位裡、車頭朝南（heading 180）：要先倒車出庫', () => {
+    expect(level.startFt).toEqual({ xFt: -18, zFt: 21, headingDeg: 180 });
+    expect(level.startStallFt).toMatchObject({ centerXFt: -18, centerZFt: 21, headingDeg: 180, occupied: false });
+    expect(level.layout.startStall).toBeDefined();
   });
 
-  test('heading 180 朝 +Z；目標在 +Z 一側，車頭面向目標', () => {
-    const ahead = forward(level.layout.startState.headingRad);
-    expect(ahead.z).toBe(1);
-    expect(ahead.x).toBeCloseTo(0, 12);
-    expect(level.spotFt.centerZFt).toBeGreaterThan(level.startFt.zFt);
-    // 往車頭方向量，車位中心在前方 46 ft（13 − (−33)）。
-    expect(facingTargetFt(level)).toBeCloseTo(46, 9);
+  test('起始車位兩側都有車，正後方（對面那一排）也有車', () => {
+    const carAt = (xFt: number, zFt: number): boolean =>
+      level.obstaclesFt.some(
+        (obstacle) => obstacle.type === 'parked_car' && obstacle.centerXFt === xFt && obstacle.centerZFt === zFt,
+      );
+    expect(carAt(-27, 21)).toBe(true);
+    expect(carAt(-9, 21)).toBe(true);
+    expect(carAt(-18, -21)).toBe(true);
   });
 
-  test('如果照規格範例寫 heading 0，車頭會背向目標', () => {
-    const wrong: LevelDefinition = { ...level, startFt: { ...level.startFt, headingDeg: 0 } };
-    expect(facingTargetFt(wrong)).toBeCloseTo(-46, 9);
-  });
-
-  test('目標車位 (20, 13) heading 90、9.5 × 18.5 ft；warehouse_club、clear', () => {
-    expect(level.spotFt).toEqual({
-      centerXFt: 20,
-      centerZFt: 13,
-      widthFt: 9.5,
-      lengthFt: 18.5,
-      headingDeg: 90,
-      headInHeadingDeg: 90,
-      angleToleranceDeg: 8,
-    });
+  test('目標車位在對面那一排、往東 5 格：(27, −21) heading 0、9 × 18 ft；warehouse_club、dusk', () => {
+    expect(level.spotFt).toMatchObject({ centerXFt: 27, centerZFt: -21, widthFt: 9, lengthFt: 18, headingDeg: 0 });
+    expect((level.spotFt.centerXFt - level.startFt.xFt) / 9).toBe(5);
     expect(level.environment).toBe('warehouse_club');
-    expect(level.weather).toBe('clear');
-    expect(level.boundsFt).toEqual({ minXFt: -22, minZFt: -48, maxXFt: 34, maxZFt: 44 });
+    expect(level.weather).toBe('dusk');
+    // 目標那一格是空的。
+    expect(level.stallsFt.find((stall) => stall.centerXFt === 27 && stall.centerZFt === -21)?.occupied).toBe(false);
   });
 
-  test('兩側各一台停放車；交通錐在通道西側，不在車位入口（西緣 x = 10.75）前面', () => {
-    const cars = level.obstaclesFt.filter((obstacle) => obstacle.type === 'parked_car');
-    expect(cars.map((car) => [car.centerXFt, car.centerZFt, car.headingDeg])).toEqual([
-      [20, 4, 90],
-      [20, 22, 270],
-    ]);
-    const cones = level.obstaclesFt.filter((obstacle) => obstacle.type === 'cone');
-    expect(cones).toHaveLength(1);
-    const entranceXFt = level.spotFt.centerXFt - level.spotFt.lengthFt / 2;
-    expect(entranceXFt).toBe(10.75);
-    for (const cone of cones) {
-      // 規格範例的 [10, 0, 13] 正好在入口中線外 1 ft；移到起點那條線（x = 0）的另一側。
-      expect(cone.centerXFt).toBeLessThan(level.startFt.xFt);
-      expect(entranceXFt - cone.centerXFt).toBeGreaterThan(15);
-    }
+  test('購物車回收架佔南排的一格；兩排車位夾一條 24 ft 的走道', () => {
+    const corral = level.obstaclesFt.find((obstacle) => obstacle.type === 'cart_corral');
+    expect(corral).toMatchObject({ centerXFt: 9, centerZFt: 21 });
+    expect(level.stallsFt.find((stall) => stall.centerXFt === 9 && stall.centerZFt === 21)?.occupied).toBe(false);
+    const mouths = level.stallsFt.map((stall) => Math.abs(stall.centerZFt) - stall.lengthFt / 2);
+    expect(new Set(mouths)).toEqual(new Set([12]));
   });
 });
 
@@ -282,7 +264,7 @@ describe('停車種類與車頭入庫的方向（挑戰計畫 §1）', () => {
     ['prototype', 0],
     ['w1_l01', 90],
     ['w1_l02', 270],
-    ['w1_l03', 90],
+    ['w1_l03', 0],
     ['w1_l04', 90],
     ['w1_l05', 180],
     ['w1_l06', 180],
