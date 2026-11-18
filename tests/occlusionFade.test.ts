@@ -477,7 +477,7 @@ describe('背景車', () => {
   });
 });
 
-describe('w1_l07：起點的近距離跟車鏡頭', () => {
+describe('w1_l07：退到走道南緣時的近距離跟車鏡頭', () => {
   const level = levelById('w1_l07');
   if (level === undefined) {
     throw new Error('找不到 w1_l07');
@@ -498,11 +498,12 @@ describe('w1_l07：起點的近距離跟車鏡頭', () => {
     );
   });
 
-  test('車後方那一根路燈（參考圖擋住右半邊的那根）被淡掉；其他路燈、樹、建築都不淡', () => {
-    const start = level.layout.startState;
-    const camera = createGameCamera('chase_near', start).camera;
+  test('車後方那一根路燈（邊界外、正對車尾的那根）被淡掉；其他路燈、樹、建築都不淡', () => {
+    // 車在 A 走道南緣、車頭朝北：鏡頭在車後 18 ft，邊界外 6 ft 的那根路燈就夾在鏡頭與車之間。
+    const pose: VehiclePose = { x: ftToM(-17), z: ftToM(53), headingRad: 0, steerRad: 0 };
+    const camera = createGameCamera('chase_near', pose).camera;
     const fade = createOcclusionFade(environment);
-    fade.update(camera.position, start, true, FRAME_SECONDS);
+    fade.update(camera.position, pose, true, FRAME_SECONDS);
     const fadedIn = (name: string): number => {
       const mesh = environment.getObjectByName(name);
       return mesh instanceof InstancedMesh ? standIns(mesh).length : 0;
@@ -513,7 +514,7 @@ describe('w1_l07：起點的近距離跟車鏡頭', () => {
     expect(fadedIn('foliage')).toBe(0);
     expect(fadedIn('environmentSlabs')).toBe(0);
     expect(fadedIn('buildings')).toBe(0);
-    // 這一關的起點，鏡頭就在邊界外那一列背景車的車頭旁邊（不到 1.5 ft）：貼著鏡頭的那一台也淡，最多一台。
+    // 鏡頭就在邊界外那一列背景車的車頭旁邊：貼著鏡頭的那一台也淡，最多一台。
     const fadedCars = CAR_MODEL_IDS.reduce(
       (total, model) => total + fadedIn(`parkedCars:${model}:paint`),
       0,

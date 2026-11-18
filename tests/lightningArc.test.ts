@@ -1,5 +1,5 @@
 // 閃電的電弧：形狀與落點只由種子與「第幾道」決定；整條都在場地外面、不從玩家頭上穿過、不會塞住鏡頭；
-// 第一道（t = 2）在 w1_l07 的三個固定鏡頭裡看得到；網格跟著閃光亮與淡。不開 WebGL。
+// 第一道（t = 2）在 w1_l07 的固定鏡頭與朝前看的遊戲鏡頭裡看得到；網格跟著閃光亮與淡。不開 WebGL。
 import { AdditiveBlending, Mesh, PerspectiveCamera, ShaderMaterial, Vector3 } from 'three';
 import { describe, expect, test } from 'vitest';
 import { GAME_CAMERA_VIEWS } from '../src/core/cameraView';
@@ -292,16 +292,21 @@ describe('電弧在場地外面、離鏡頭遠', () => {
 });
 
 describe('第一道（t = 2）在截圖鏡頭裡看得到', () => {
-  test('w1_l07：?cam=spot_low、?cam=top、?cam=follow 的畫面裡都有電弧', () => {
+  test('w1_l07：?cam=spot_low、?cam=top 與遊戲裡朝前看的四個鏡頭的畫面裡都有電弧', () => {
     const level = levelOf('w1_l07');
     const bolts = strikeBolts(SEED, 0, areaOf(level));
     const vehicle = vehicleOnRouteAt(level, LIGHTNING_CONFIG.firstStrikeS) ?? level.layout.startState;
     const { spot } = level.layout;
-    const seen = (preset: 'follow' | 'top' | 'spot_low'): number =>
+    const seen = (preset: 'top' | 'spot_low'): number =>
       visibleSegments(createPresetCamera(preset, vehicle.x, vehicle.z, spot), bolts);
     expect(seen('spot_low')).toBeGreaterThanOrEqual(2);
     expect(seen('top')).toBeGreaterThanOrEqual(1);
-    expect(seen('follow')).toBeGreaterThanOrEqual(1);
+    // 起點停在柱廊對面那一排車位裡、車頭朝柱廊：第一道打在柱廊後面，正好在擋風玻璃前方。
+    // （?cam=follow 是以車為中心往下看的陡角度，車離車位 60 ft 時照不到那麼遠，所以不列。）
+    for (const view of ['chase_near', 'chase_far', 'hood', 'cockpit'] as const) {
+      const { camera } = createGameCamera(view, vehicle);
+      expect(visibleSegments(camera, bolts), view).toBeGreaterThanOrEqual(1);
+    }
   });
 
   test('每一關的 ?cam=spot_low：第一道的主電弧在畫面裡（方位以車位為準，所以每一關都一樣）', () => {
