@@ -87,9 +87,9 @@ describe('個別關卡的太陽方位 sunAzimuthDeg', () => {
     }
   });
 
-  test('沒被連坐：w1_l05（樓在北邊、晴天）仍用預設方位，影子照舊落進場地', () => {
-    expect(sunAzimuthDeg('clear', 'w1_l05')).toBe(WEATHER_PRESETS.clear.sun.azimuthDeg);
-    expect(shadowIntoLot('w1_l05', 'clear')).toBeGreaterThan(0.7);
+  test('沒被連坐：w1_l04（樓在北邊）在晴天仍用預設方位，影子照舊落進場地', () => {
+    expect(sunAzimuthDeg('clear', 'w1_l04')).toBe(WEATHER_PRESETS.clear.sun.azimuthDeg);
+    expect(shadowIntoLot('w1_l04', 'clear')).toBeGreaterThan(0.7);
   });
 
   test('覆寫只動方位：仰角不變，太陽仍在地平線上方同一個高度', () => {

@@ -21,6 +21,7 @@ import {
 } from '../src/props/spotGlow';
 import { SKIP_AMBIENT_OCCLUSION } from '../src/render/ambientOcclusionFlag';
 import { createGameCamera } from '../src/render/gameCamera';
+import { REVERSE_BAY_LEVEL } from './reverseBayLevel';
 import { createOcclusionFade } from '../src/render/occlusionFade';
 import {
   GAME_CAMERA_CONFIG,
@@ -209,12 +210,8 @@ describe('不擋鏡頭：鏡頭不可能在標記裡面', () => {
     }
   });
 
-  test('w1_l05（直線倒車）：遠距跟車的鏡頭就在車位正上方，以前被吊在空中的箭頭包住', () => {
-    const level = levelById('w1_l05');
-    if (level === undefined) {
-      throw new Error('沒有 w1_l05');
-    }
-    const { spot, startState } = level.layout;
+  test('直線倒車關：遠距跟車的鏡頭就在車位正上方，以前被吊在空中的箭頭包住', () => {
+    const { spot, startState } = REVERSE_BAY_LEVEL.layout;
     const camera = createGameCamera('chase_far', startState).camera;
     // 鏡頭的水平位置落在車位的範圍裡（這就是那個 bug 的幾何條件）…
     const local = worldToSpotLocal(spot, camera.position.x, camera.position.z);

@@ -2,8 +2,8 @@
 import { describe, expect, test } from 'vitest';
 import { FIXED_STEP_SECONDS } from '../src/core/gameConfig';
 import { forward } from '../src/core/heading';
-import { levelById } from '../src/level/levelCatalog';
 import { startSession, stepSession, type Session } from '../src/level/session';
+import { REVERSE_BAY_LEVEL } from './reverseBayLevel';
 import { stepVehicle, type VehicleState } from '../src/vehicle/bicycleModel';
 import {
   INITIAL_GEAR,
@@ -158,12 +158,8 @@ function aheadOfStartM(session: Session): number {
   return (session.vehicle.x - start.x) * ahead.x + (session.vehicle.z - start.z) * ahead.z;
 }
 
-describe.each(['w1_l05', 'w1_l06'])('回歸：倒車關 %s 掛 R 檔後油門是倒車，不是剎車', (levelId) => {
-  const level = levelById(levelId);
-  if (level === undefined) {
-    throw new Error(`找不到關卡 ${levelId}`);
-  }
-  const { layout } = level;
+describe('回歸：直線倒車關掛 R 檔後油門是倒車，不是剎車', () => {
+  const { layout } = REVERSE_BAY_LEVEL;
 
   test('切到 R 檔按住油門：車往後走', () => {
     const gear = gearForFrame(INITIAL_GEAR, { restarted: false, toggles: 1, canShift: true });
@@ -188,13 +184,9 @@ describe.each(['w1_l05', 'w1_l06'])('回歸：倒車關 %s 掛 R 檔後油門是
   });
 });
 
-describe('倒車關 w1_l05：玩家的開法（切到 R、踩油門、踩剎車）可以停妥', () => {
+describe('直線倒車關：玩家的開法（切到 R、踩油門、踩剎車）可以停妥', () => {
   test('直線倒進後方的車位', () => {
-    const level = levelById('w1_l05');
-    if (level === undefined) {
-      throw new Error('找不到關卡 w1_l05');
-    }
-    const { layout } = level;
+    const { layout } = REVERSE_BAY_LEVEL;
     const spot = layout.spot;
     let session = startSession(layout);
     // 倒到車身中心接近車位中心就放開油門踩剎車（車頭朝 −Z，車位在 +Z 那一邊）。

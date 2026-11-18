@@ -8,6 +8,7 @@ import { LEVELS, levelById } from '../src/level/levelCatalog';
 import { PROTOTYPE_LEVEL } from '../src/level/prototypeLayout';
 import { startSession } from '../src/level/session';
 import { spotHintVisible } from '../src/ui/hud';
+import { REVERSE_BAY_LEVEL } from './reverseBayLevel';
 
 /** 車在原點、車頭朝北（−Z）。 */
 const CAR = { x: 0, z: 0, headingRad: 0 };
@@ -74,8 +75,8 @@ describe('各關的起點', () => {
     return spotHintVisible(startSession(level.layout), 'forward', false);
   };
 
-  test('w1_l05（直線倒車）：車位在起點正後方，一開始就顯示', () => {
-    expect(hintAtStart('w1_l05')).toBe(true);
+  test('直線倒車關：車位在起點正後方，一開始就顯示', () => {
+    expect(spotHintVisible(startSession(REVERSE_BAY_LEVEL.layout), 'forward', false)).toBe(true);
   });
 
   test('車位在前方的關卡（原型關、w1_l01）一開始不顯示', () => {
@@ -85,17 +86,14 @@ describe('各關的起點', () => {
 
   test('每一關的起點都算得出來（不丟例外）；至少有一關顯示、大多數不顯示', () => {
     const shown = LEVELS.filter((level) => hintAtStart(level.id)).map((level) => level.id);
-    expect(shown).toContain('w1_l05');
+    // w1_l03：起點車頭朝內停在車位裡，目標車位在背後的對面那一排。
+    expect(shown).toContain('w1_l03');
     expect(shown.length).toBeLessThan(LEVELS.length / 2);
   });
 });
 
 describe('HUD 的顯示條件', () => {
-  const level = levelById('w1_l05');
-  if (level === undefined) {
-    throw new Error('沒有 w1_l05');
-  }
-  const session = startSession(level.layout);
+  const session = startSession(REVERSE_BAY_LEVEL.layout);
 
   test('掛倒檔時不顯示（倒車輔助層已經在看後面了）', () => {
     expect(spotHintVisible(session, 'forward', false)).toBe(true);

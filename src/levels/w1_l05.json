@@ -5,18 +5,23 @@
   "environment": "post_office",
   "weather": "clear",
   "vehicle": "sedan",
-  "time_limit": 60,
-  "target_time": 18,
+  "time_limit": 90,
+  "target_time": 24,
   "max_collisions": 3,
   "parking": "bay",
-  "head_in_heading": 180,
-  "bounds": { "min": [-22, -22], "max": [22, 47] },
-  "start": { "pos": [0, 0, 0], "heading": 0 },
-  "target": { "pos": [0, 0, 35], "heading": 0, "size": [10, 19] },
+  "head_in_heading": 45,
+  "bounds": { "min": [-29.5, -72], "max": [29.5, 64] },
+  "start": { "pos": [-20, 0, 52], "heading": 90 },
+  "target": { "pos": [19.55, 0, -21], "heading": 45, "size": [9, 18] },
   "obstacles": [
-    { "type": "mailbox", "pos": [-6.6, 0, 28] },
-    { "type": "trash_bin", "pos": [7, 0, 28] },
-    { "type": "trash_bin", "pos": [-7, 0, 38] },
-    { "type": "mailbox", "pos": [6.6, 0, 38] }
+    { "type": "delivery_van", "pos": [6.5, 0, 13.5], "heading": 0 },
+    { "type": "mailbox", "pos": [9.65, 0, -19.6] },
+    { "type": "trash_bin", "pos": [-10.8, 0, -44.5] },
+    { "type": "planter", "pos": [23, 0, 58] },
+    { "type": "planter", "pos": [23, 0, 46] }
+  ],
+  "rows": [
+    { "pos": [19.55, 0, 29.91], "heading": 0, "angle": 45, "count": 7, "empty": [4] },
+    { "pos": [-19.55, 0, 29.91], "heading": 0, "angle": 315, "count": 7, "empty": [1, 5] }
   ]
 }
