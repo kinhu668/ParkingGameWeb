@@ -218,7 +218,6 @@ export function createHud(
   pointer.id = 'hud-target-pointer';
   pointer.hidden = true;
   const pointerArrow = element('span', 'hud-target-arrow', pointer);
-  pointerArrow.textContent = '▲';
   translatedElement('span', 'hud-target-label', pointer, 'hud.targetPointer');
   const pointerDistance = element('span', 'hud-target-distance', pointer);
   pointerDistance.id = 'hud-target-distance';

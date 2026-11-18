@@ -147,10 +147,13 @@ body {
   top: calc(max(var(--ui-gap), env(safe-area-inset-top)) + 110px);
 }
 
+/* 朝上的導航箭頭（尖端在上、尾端內凹），方向一眼看得出來；hud.ts 把它轉到車位的方位。 */
 .hud-target-arrow {
   display: inline-block;
-  font-size: 15px;
-  line-height: 1;
+  width: 12px;
+  height: 16px;
+  background: currentColor;
+  clip-path: polygon(50% 0, 100% 100%, 50% 74%, 0 100%);
 }
 
 .hud-target-distance {
