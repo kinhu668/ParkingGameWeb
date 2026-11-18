@@ -640,6 +640,17 @@ describe('parseLevel：車排（rows）與停在車位裡的起點（start.parke
     expect(level.startFt).toEqual({ xFt: -1, zFt: -19, headingDeg: 0 });
   });
 
+  test('start.parked：車位方向剛好在 0／360 的接縫另一邊（359.995 對 0）也算同向', () => {
+    const seamRow = { pos: [-10, 0, -20], heading: 89.995, angle: 270, count: 4, empty: [1] };
+    for (const heading of [0, 180]) {
+      const level = parseLevel(
+        sampleWith({ rows: [seamRow], start: { pos: [-1, 0, -20], heading, parked: true } }),
+        SOURCE,
+      );
+      expect(level.startStallFt?.headingDeg).toBeCloseTo(359.995, 6);
+    }
+  });
+
   test('start.parked 是 false 與不寫一樣', () => {
     const level = parseLevel(
       sampleWith({ rows: [row], start: { pos: [1, 0, -33], heading: 180, parked: false } }),

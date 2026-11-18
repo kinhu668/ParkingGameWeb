@@ -420,7 +420,8 @@ function startStallOf(
     const dz = startFt.zFt - stall.centerZFt;
     const along = dx * Math.sin(headingRad) - dz * Math.cos(headingRad);
     const across = dx * Math.cos(headingRad) + dz * Math.sin(headingRad);
-    const turnDeg = Math.abs(((startFt.headingDeg - stall.headingDeg + 270) % 180) - 90);
+    // 兩個方向差幾度（0 到 90；車頭、車尾朝裡都算停在格子裡）。JS 的 % 對負數會給負值，先折回 0 到 180。
+    const turnDeg = Math.abs((((startFt.headingDeg - stall.headingDeg + 90) % 180) + 180) % 180 - 90);
     return (
       Math.abs(along) <= stall.lengthFt / 2 &&
       Math.abs(across) <= stall.widthFt / 2 &&
