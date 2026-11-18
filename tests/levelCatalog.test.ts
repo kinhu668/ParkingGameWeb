@@ -281,6 +281,71 @@ describe('w1_l01（第一格）', () => {
   });
 });
 
+describe('w1_l08（死巷角落）', () => {
+  const level = mustFind('w1_l08');
+  const spot = level.spotFt;
+  /** 牆塊（heading 0）在 x、z 兩個方向佔的範圍（ft）。 */
+  const walls = level.obstaclesFt
+    .filter((obstacle) => obstacle.type === 'wall')
+    .map((wall) => ({
+      minX: wall.centerXFt - wall.widthFt / 2,
+      maxX: wall.centerXFt + wall.widthFt / 2,
+      minZ: wall.centerZFt - wall.lengthFt / 2,
+      maxZ: wall.centerZFt + wall.lengthFt / 2,
+    }));
+
+  test('巷口朝北出發；窄巷、雨天、角度容許 6°；卸貨位 9 × 17.5 ft、heading 180（車頭朝外 = 倒車入庫）', () => {
+    expect(level.startFt).toEqual({ xFt: 1.3, zFt: 80, headingDeg: 0 });
+    expect(level.environment).toBe('narrow_alley');
+    expect(level.weather).toBe('rain');
+    expect(level.parking).toBe('bay');
+    expect(spot).toMatchObject({
+      centerXFt: 46,
+      centerZFt: -25.75,
+      widthFt: 9,
+      lengthFt: 17.5,
+      headingDeg: 180,
+      angleToleranceDeg: 6,
+    });
+  });
+
+  test('卸貨位是死巷底北側的凹槽：兩側的牆相距 13 ft，底是北邊界，開口在 z = −17', () => {
+    const beside = walls.filter((wall) => wall.minZ < spot.centerZFt && wall.maxZ > spot.centerZFt);
+    expect(beside).toHaveLength(2);
+    expect(Math.max(...beside.map((wall) => wall.minX))).toBe(52.5);
+    expect(Math.min(...beside.map((wall) => wall.maxX))).toBe(39.5);
+    expect(beside.map((wall) => wall.maxZ)).toEqual([-17, -17]);
+    expect(level.boundsFt?.minZFt).toBe(spot.centerZFt - spot.lengthFt / 2);
+  });
+
+  test('死巷：東邊界只比車位中線多 9 ft（15 ft 長的車開不過去再倒進來）；第二段巷子寬 17 ft', () => {
+    expect((level.boundsFt?.maxXFt ?? 0) - spot.centerXFt).toBe(9);
+    // 第二段巷子夾在北側牆塊的南緣（z = −17）與南側牆塊的北緣（z = 0）之間。
+    const south = walls.filter((wall) => wall.minZ >= 0);
+    expect(south).toHaveLength(2);
+    expect(Math.min(...south.map((wall) => wall.minZ))).toBe(0);
+  });
+
+  test('凹槽正對面是迴轉用的短巷（17.5 ft 寬、26 ft 深）：車頭朝南停進去，直直倒車就停進卸貨位', () => {
+    // 短巷：西側牆塊的東緣 x = 37.5 到東邊界 x = 55；南端被另一個牆塊在 z = 26 封住。
+    const south = walls.filter((wall) => wall.minZ >= 0);
+    expect(Math.max(...south.map((wall) => wall.maxX).filter((maxX) => maxX < spot.centerXFt))).toBe(37.5);
+    expect(Math.min(...south.filter((wall) => wall.maxX > spot.centerXFt).map((wall) => wall.minZ))).toBe(26);
+    // 車停在短巷裡、對正車位中線、車頭朝南：只踩倒車，不打方向盤。
+    let session = startSession({
+      ...level.layout,
+      startState: { ...level.layout.startState, x: ftToM(46), z: ftToM(11), headingRad: degToRad(180) },
+    });
+    for (let step = 0; step < 40 * 60 && session.status !== 'parked'; step += 1) {
+      const slow = Math.abs(session.vehicle.speedMps) < 1.2;
+      const inBay = session.vehicle.z <= ftToM(spot.centerZFt + 1);
+      session = stepSession(session, { throttle: slow && !inBay ? -1 : 0, steer: 0, brake: inBay });
+    }
+    expect(session.status).toBe('parked');
+    expect(session.collisions).toBe(0);
+  });
+});
+
 describe('第 1 世界的 10 關（重做計畫 §2）', () => {
   /** id、環境、天氣、起點是不是停在車位裡、這一關少不了的障礙物類型。 */
   const PLAN: readonly (readonly [string, string, string, boolean, readonly string[]])[] = [
