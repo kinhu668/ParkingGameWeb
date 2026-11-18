@@ -8,6 +8,8 @@
   "time_limit": 80,
   "target_time": 25,
   "max_collisions": 3,
+  "parking": "bay",
+  "head_in_heading": 90,
   "bounds": { "min": [-33, -40], "max": [31, 62] },
   "start": { "pos": [2, 0, 52], "heading": 0 },
   "target": { "pos": [20, 0, -10], "heading": 90, "size": [9, 18] },

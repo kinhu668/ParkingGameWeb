@@ -761,6 +761,25 @@ describe('評分', () => {
     expect(straighter.result?.stars).toBe(3);
   });
 
+  test('一般車位反向停妥（倒車入庫的朝向）：角度誤差看較近的合法朝向，182° → 2°、3 星', () => {
+    const layout: SessionLayout = {
+      spot: PROTOTYPE_LAYOUT.spot,
+      startState: { ...CENTERED_LAYOUT.startState, headingRad: degToRad(182) },
+      rules: { timeLimitSteps: 3600, targetSteps: 1800, maxCollisions: 0 },
+    };
+    const parked = repeat(stepSession(startSession(layout), BRAKE), IDLE, REQUIRED_HOLD_STEPS - 1);
+    expect(parked.status).toBe('parked');
+    expect(parked.result?.angleErrorRad).toBeCloseTo(degToRad(2), 12);
+    expect(sessionSnapshot(parked).angleErrorDeg).toBeCloseTo(2, 9);
+    expect(parked.result?.stars).toBe(3);
+
+    // 同一台車停進只接受單一朝向的車位（路邊平行停車）：永遠不算停妥。
+    const strict = startSession({ ...layout, spot: { ...layout.spot, headInHeadingRad: null } });
+    const waited = repeat(stepSession(strict, BRAKE), IDLE, 10 * REQUIRED_HOLD_STEPS);
+    expect(waited.status).toBe('driving');
+    expect(waited.heldSteps).toBe(0);
+  });
+
   test('沒有給規則的配置：不限時、不限碰撞，停妥照樣有成績', () => {
     const parked = repeat(driveIntoPrototypeSpotWithoutRules(), IDLE, REQUIRED_HOLD_STEPS);
     expect(parked.status).toBe('parked');

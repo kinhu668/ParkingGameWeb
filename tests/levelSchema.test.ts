@@ -38,6 +38,8 @@ function sample(): Record<string, unknown> {
     target_time: 22,
     max_collisions: 4,
     angle_tolerance: 6,
+    parking: 'bay',
+    head_in_heading: 90,
     bounds: { min: [-22, -48], max: [34, 44] },
     start: { pos: [1, 0, -33], heading: 180 },
     target: { pos: [20, 0, 13], heading: 90, size: [9.5, 18.5] },
@@ -91,6 +93,7 @@ describe('parseLevel：合法關卡', () => {
       widthFt: 9.5,
       lengthFt: 18.5,
       headingDeg: 90,
+      headInHeadingDeg: 90,
       angleToleranceDeg: 6,
     });
   });
@@ -117,6 +120,7 @@ describe('parseLevel：合法關卡', () => {
       widthM: ftToM(9.5),
       lengthM: ftToM(18.5),
       headingRad: degToRad(90),
+      headInHeadingRad: degToRad(90),
       angleToleranceRad: degToRad(6),
     });
   });
@@ -243,6 +247,7 @@ describe('parseLevel：錯誤訊息指出檔名與欄位', () => {
     'time_limit',
     'target_time',
     'max_collisions',
+    'parking',
     'start',
     'target',
     'obstacles',
@@ -463,5 +468,51 @@ describe('障礙物類型表', () => {
     expect(isObstacleType('Cone')).toBe(false);
     expect(isObstacleType('toString')).toBe(false);
     expect(isObstacleType('')).toBe(false);
+  });
+});
+
+describe('parseLevel：停車種類與車頭入庫的方向', () => {
+  test('bay：head_in_heading 寫進車位，兩個朝向都合法', () => {
+    const level = parseLevel(sample(), SOURCE);
+    expect(level.parking).toBe('bay');
+    expect(level.spotFt.headInHeadingDeg).toBe(90);
+    expect(level.layout.spot.headInHeadingRad).toBe(degToRad(90));
+  });
+
+  test('bay：head_in_heading 可以是 target.heading 的反向（倒車才對得上車位方向的關）', () => {
+    const level = parseLevel(sampleWith({ head_in_heading: 270 }), SOURCE);
+    expect(level.spotFt.headingDeg).toBe(90);
+    expect(level.spotFt.headInHeadingDeg).toBe(270);
+    expect(level.layout.spot.headInHeadingRad).toBe(degToRad(270));
+  });
+
+  test('parallel：沒有 head_in_heading，車位只接受單一朝向', () => {
+    const level = parseLevel(sampleWith({ parking: 'parallel', head_in_heading: undefined }), SOURCE);
+    expect(level.parking).toBe('parallel');
+    expect(level.spotFt).not.toHaveProperty('headInHeadingDeg');
+    expect(level.layout.spot.headInHeadingRad).toBeNull();
+  });
+
+  test('bay 少了 head_in_heading、parallel 多了 head_in_heading 都不合格', () => {
+    expect(errorOf(sampleWith({ head_in_heading: undefined }))).toBe(
+      `${SOURCE}: head_in_heading parking 是 bay 時是必填欄位`,
+    );
+    expect(errorOf(sampleWith({ parking: 'parallel' }))).toBe(
+      `${SOURCE}: head_in_heading parking 是 parallel 時不能有這個欄位`,
+    );
+  });
+
+  test.each([0, 180, 91, 269.5])('head_in_heading = %j 不是車位方向或它的反向 → 不合格', (headIn) => {
+    expect(errorOf(sampleWith({ head_in_heading: headIn }))).toMatch(
+      /^sample\.json: head_in_heading 必須是 target\.heading（90）或它的反向/,
+    );
+  });
+
+  test.each([-90, 360, '90', null])('head_in_heading = %j 不合格（範圍是 [0, 360)）', (headIn) => {
+    expect(errorOf(sampleWith({ head_in_heading: headIn }))).toMatch(/^sample\.json: head_in_heading /);
+  });
+
+  test.each(['angled', 'BAY', 1, null])('parking = %j 不合格', (parking) => {
+    expect(errorOf(sampleWith({ parking }))).toMatch(/^sample\.json: parking 必須是 bay、parallel 其中之一/);
   });
 });

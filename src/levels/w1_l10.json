@@ -9,6 +9,8 @@
   "target_time": 50,
   "max_collisions": 2,
   "angle_tolerance": 6,
+  "parking": "bay",
+  "head_in_heading": 0,
   "bounds": { "min": [-6.75, -40], "max": [31.25, 90] },
   "start": { "pos": [1.3, 0, 80], "heading": 0 },
   "target": { "pos": [3, 0, -30.75], "heading": 180, "size": [9, 17.5] },

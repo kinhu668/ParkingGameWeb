@@ -8,6 +8,7 @@
   "time_limit": 90,
   "target_time": 30,
   "max_collisions": 3,
+  "parking": "parallel",
   "bounds": { "min": [-60, -14.5], "max": [60, 14] },
   "start": { "pos": [-45, 0, 2], "heading": 90 },
   "target": { "pos": [0, 0, 9.75], "heading": 90, "size": [8.5, 25] },

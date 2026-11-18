@@ -164,6 +164,7 @@ describe('原型關（prototype.json）', () => {
       widthFt: 9,
       lengthFt: 18,
       headingDeg: 0,
+      headInHeadingDeg: 0,
       angleToleranceDeg: 8,
     });
   });
@@ -210,6 +211,7 @@ describe('w1_l03（規格範例幾何，修正起點方向）', () => {
       widthFt: 9.5,
       lengthFt: 18.5,
       headingDeg: 90,
+      headInHeadingDeg: 90,
       angleToleranceDeg: 8,
     });
     expect(level.environment).toBe('warehouse_club');
@@ -325,5 +327,53 @@ describe('第 1 世界的 10 關（計畫 §3.1）', () => {
     }
     // 第 9 關的空位比第 8 關短。
     expect(mustFind('w1_l09').spotFt.lengthFt).toBeLessThan(mustFind('w1_l08').spotFt.lengthFt);
+  });
+});
+
+describe('停車種類與車頭入庫的方向（挑戰計畫 §1）', () => {
+  /** 每一關車頭入庫時車頭朝的方向（度）；路邊平行停車是 null。 */
+  const HEAD_IN_DEG: ReadonlyArray<readonly [string, number | null]> = [
+    ['prototype', 0],
+    ['w1_l01', 0],
+    ['w1_l02', 90],
+    ['w1_l03', 90],
+    ['w1_l04', 90],
+    ['w1_l05', 180],
+    ['w1_l06', 180],
+    ['w1_l07', 180],
+    ['w1_l08', null],
+    ['w1_l09', null],
+    ['w1_l10', 0],
+  ];
+
+  test('表涵蓋目錄裡的每一關', () => {
+    expect(HEAD_IN_DEG.map(([id]) => id)).toEqual(LEVEL_IDS);
+  });
+
+  test.each(HEAD_IN_DEG)('%s：車頭入庫的方向 %s（null = 路邊平行停車，只接受單一朝向）', (id, headInDeg) => {
+    const level = levelById(id);
+    expect(level?.parking).toBe(headInDeg === null ? 'parallel' : 'bay');
+    expect(level?.spotFt.headInHeadingDeg).toBe(headInDeg ?? undefined);
+    expect(level?.layout.spot.headInHeadingRad).toBe(headInDeg === null ? null : degToRad(headInDeg));
+  });
+
+  test('一般車位的底部（車頭入庫時車頭朝的那一端）比另一端靠近邊界：車頭朝內、通道在車尾', () => {
+    for (const level of LEVELS) {
+      const { boundsFt, spotFt } = level;
+      if (boundsFt === undefined || spotFt.headInHeadingDeg === undefined) {
+        continue;
+      }
+      const toward = forward(degToRad(spotFt.headInHeadingDeg));
+      /** 從車位中心沿 direction 走到邊界的距離（ft）；方向都是軸向。 */
+      const roomFt = (sign: 1 | -1): number => {
+        const dx = toward.x * sign;
+        const dz = toward.z * sign;
+        if (Math.abs(dx) > Math.abs(dz)) {
+          return dx > 0 ? boundsFt.maxXFt - spotFt.centerXFt : spotFt.centerXFt - boundsFt.minXFt;
+        }
+        return dz > 0 ? boundsFt.maxZFt - spotFt.centerZFt : spotFt.centerZFt - boundsFt.minZFt;
+      };
+      expect(roomFt(1), level.id).toBeLessThan(roomFt(-1));
+    }
   });
 });

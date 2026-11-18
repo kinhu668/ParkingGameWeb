@@ -34,6 +34,14 @@ export const LEVEL_VEHICLES = ['sedan'] as const;
 
 export type LevelVehicle = (typeof LEVEL_VEHICLES)[number];
 
+/**
+ * `parking` 可用的值：bay = 一般車位（車頭入庫與倒車入庫都算停妥），
+ * parallel = 路邊平行停車（只接受 target.heading 那一個朝向，與車流同向）。
+ */
+export const LEVEL_PARKINGS = ['bay', 'parallel'] as const;
+
+export type LevelParking = (typeof LEVEL_PARKINGS)[number];
+
 /** `world` 的範圍：1–5 是正式世界，0 保留給原型關（不出現在選關、不存檔）。 */
 export const PROTOTYPE_WORLD = 0;
 const MAX_WORLD = 5;
@@ -95,6 +103,8 @@ export interface LevelDefinition {
   /** 可行駛範圍；沒有這個欄位 = 沒有邊界。 */
   readonly boundsFt?: LevelBoundsFt;
   readonly startFt: LevelStartFt;
+  /** 停車種類；bay 的 spotFt 一定有 headInHeadingDeg，parallel 一定沒有。 */
+  readonly parking: LevelParking;
   /** 目標車位；angleToleranceDeg 一定有值。 */
   readonly spotFt: ParkingSpotFt;
   readonly obstaclesFt: readonly LevelObstacleFt[];
@@ -275,6 +285,31 @@ function readTarget(value: unknown, at: Cursor, angleToleranceDeg: number): Park
   };
 }
 
+/**
+ * `head_in_heading`：一般車位必填、路邊平行停車不能有（回傳 undefined）。
+ * 值是車頭入庫時車頭朝的方向，只能是車位的 heading 或它的反向（車位只有這兩個朝向）。
+ * @param at `head_in_heading` 的位置（沒寫這個欄位時錯誤訊息也指向它）
+ */
+function readHeadInHeading(
+  parking: LevelParking,
+  value: unknown,
+  at: Cursor,
+  spotHeadingDeg: number,
+): number | undefined {
+  if (parking === 'parallel') {
+    return value === undefined ? undefined : fail(at, 'parking 是 parallel 時不能有這個欄位');
+  }
+  if (value === undefined) {
+    return fail(at, 'parking 是 bay 時是必填欄位');
+  }
+  const headInDeg = readHeadingDeg(value, at);
+  const turnDeg = (headInDeg - spotHeadingDeg + FULL_TURN_DEG) % FULL_TURN_DEG;
+  if (turnDeg !== 0 && turnDeg !== FULL_TURN_DEG / 2) {
+    return fail(at, `必須是 target.heading（${spotHeadingDeg}）或它的反向，${got(headInDeg)}`);
+  }
+  return headInDeg;
+}
+
 function readBounds(value: unknown, at: Cursor): LevelBoundsFt {
   const fields = fieldsOf(value, at);
   const min = fields.required('min');
@@ -396,6 +431,8 @@ export function parseLevel(raw: unknown, source: string): LevelDefinition {
   const targetTime = fields.required('target_time');
   const maxCollisions = fields.required('max_collisions');
   const angleTolerance = fields.optional('angle_tolerance');
+  const parkingField = fields.required('parking');
+  const headInHeading = fields.optional('head_in_heading');
   const bounds = fields.optional('bounds');
   const start = fields.required('start');
   const target = fields.required('target');
@@ -422,7 +459,16 @@ export function parseLevel(raw: unknown, source: string): LevelDefinition {
   }
 
   const startFt = readStart(start.value, start.at);
-  const spotFt = readTarget(target.value, target.at, angleToleranceDeg);
+  const parking = readOneOf(parkingField.value, parkingField.at, LEVEL_PARKINGS);
+  const strictSpotFt = readTarget(target.value, target.at, angleToleranceDeg);
+  const headInHeadingDeg = readHeadInHeading(
+    parking,
+    headInHeading?.value,
+    { source, path: 'head_in_heading' },
+    strictSpotFt.headingDeg,
+  );
+  const spotFt =
+    headInHeadingDeg === undefined ? strictSpotFt : { ...strictSpotFt, headInHeadingDeg };
   const maxCollisionCount = readInteger(maxCollisions.value, maxCollisions.at, 0, Infinity);
   const boundsFt = bounds === undefined ? undefined : readBounds(bounds.value, bounds.at);
   const obstaclesFt = readObstacles(obstacles.value, obstacles.at, levelId);
@@ -442,6 +488,7 @@ export function parseLevel(raw: unknown, source: string): LevelDefinition {
     maxCollisions: maxCollisionCount,
     ...(boundsFt === undefined ? {} : { boundsFt }),
     startFt,
+    parking,
     spotFt,
     obstaclesFt,
     layout: layoutOf(

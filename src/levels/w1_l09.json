@@ -9,6 +9,7 @@
   "target_time": 40,
   "max_collisions": 2,
   "angle_tolerance": 7,
+  "parking": "parallel",
   "bounds": { "min": [-60, -14.5], "max": [60, 13.5] },
   "start": { "pos": [-45, 0, 2], "heading": 90 },
   "target": { "pos": [0, 0, 9.5], "heading": 90, "size": [8, 21.5] },
