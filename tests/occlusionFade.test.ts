@@ -393,11 +393,17 @@ describe('w1_l04：推車回收架', () => {
     expect(signs).toHaveLength(2);
     const fade = createOcclusionFade(obstacles);
 
-    // 車在回收架的一側、鏡頭在另一側（都在回收架的中線上），視線穿過回收架。
+    // 車停在回收架北邊的目標車位裡，鏡頭在回收架西南方的走道上：視線斜穿過回收架，
+    // 不碰到回收架南邊那一格的車（鏡頭在那台車的車頭外 3 ft 以上）。
     const x = ftToM(corral.centerXFt);
     const z = ftToM(corral.centerZFt);
-    const pose: VehiclePose = { x, z: z - ftToM(14), headingRad: 0, steerRad: 0 };
-    const camera = { x, y: ftToM(5.5), z: z + ftToM(8) };
+    const pose: VehiclePose = {
+      x: ftToM(level.spotFt.centerXFt),
+      z: ftToM(level.spotFt.centerZFt),
+      headingRad: Math.PI / 2,
+      steerRad: 0,
+    };
+    const camera = { x: x - ftToM(11), y: ftToM(5.5), z: z + ftToM(6.5) };
     for (let frame = 0; frame < 30; frame += 1) {
       fade.update(camera, pose, true, FRAME_SECONDS);
     }

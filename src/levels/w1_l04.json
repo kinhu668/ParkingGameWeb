@@ -5,22 +5,27 @@
   "environment": "warehouse_club",
   "weather": "wet",
   "vehicle": "sedan",
-  "time_limit": 80,
-  "target_time": 25,
-  "max_collisions": 3,
+  "time_limit": 110,
+  "target_time": 38,
+  "max_collisions": 4,
   "parking": "bay",
   "head_in_heading": 90,
-  "bounds": { "min": [-33, -40], "max": [31, 62] },
-  "start": { "pos": [2, 0, 52], "heading": 0 },
-  "target": { "pos": [20, 0, -10], "heading": 90, "size": [9, 18] },
+  "bounds": { "min": [-30, -104], "max": [48, 66] },
+  "start": { "pos": [37, 0, 58], "heading": 0 },
+  "target": { "pos": [21, 0, -79.5], "heading": 90, "size": [9, 18] },
   "obstacles": [
-    { "type": "cart_corral", "pos": [20, 0, -19], "heading": 90 },
-    { "type": "parked_car", "pos": [20, 0, -1], "heading": 270 },
-    { "type": "parked_car", "pos": [-25, 0, 40], "heading": 90 },
-    { "type": "parked_car", "pos": [-25, 0, -15], "heading": 270 },
-    { "type": "shopping_cart", "pos": [5, 0, 27], "heading": 10 },
-    { "type": "shopping_cart", "pos": [-21, 0, 3], "heading": 70 },
-    { "type": "shopping_cart", "pos": [-6, 0, -32], "heading": 340 },
-    { "type": "pallet_stack", "pos": [7.5, 0, 6] }
+    { "type": "cart_corral", "pos": [21, 0, -70.5], "heading": 90 },
+    { "type": "shopping_cart", "pos": [3, 0, 25], "heading": 20 },
+    { "type": "shopping_cart", "pos": [-1.8, 0, -19], "heading": 250 },
+    { "type": "shopping_cart", "pos": [2.5, 0, -58], "heading": 100 },
+    { "type": "shopping_cart", "pos": [-17, 0, 2.5], "heading": 300 },
+    { "type": "shopping_cart", "pos": [-19.5, 0, -53], "heading": 75 },
+    { "type": "shopping_cart", "pos": [11.3, 0, -71.5], "heading": 95 }
+  ],
+  "rows": [
+    { "pos": [-21, 0, 19.5], "heading": 0, "angle": 270, "count": 12, "empty": [2, 8] },
+    { "pos": [21, 0, 19.5], "heading": 0, "count": 12, "empty": [10, 11] },
+    { "pos": [39, 0, 19.5], "heading": 0, "angle": 270, "count": 12, "empty": [1, 5, 9] },
+    { "pos": [-25.5, 0, 57], "heading": 90, "count": 6 }
   ]
 }
