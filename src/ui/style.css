@@ -941,19 +941,19 @@ body {
     font-size: 18px;
   }
 
-  /* 行車資訊在第二排，提示跟著往下。 */
+  /* 行車資訊在第二排（下緣在 +108px），提示跟著往下，與它隔 6px。 */
   .hud-spot-hint {
-    top: calc(max(var(--ui-gap), env(safe-area-inset-top)) + 108px);
+    top: calc(max(var(--ui-gap), env(safe-area-inset-top)) + 114px);
     font-size: 13px;
   }
 
   .hud-target-pointer {
-    top: calc(max(var(--ui-gap), env(safe-area-inset-top)) + 108px);
+    top: calc(max(var(--ui-gap), env(safe-area-inset-top)) + 114px);
     font-size: 13px;
   }
 
   .hud-spot-hint:not([hidden]) + .hud-target-pointer {
-    top: calc(max(var(--ui-gap), env(safe-area-inset-top)) + 140px);
+    top: calc(max(var(--ui-gap), env(safe-area-inset-top)) + 146px);
   }
 
   /* 結算與暫停面板：不超出畫面，按鈕放不下就換行。 */
