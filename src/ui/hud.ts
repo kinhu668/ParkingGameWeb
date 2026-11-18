@@ -219,8 +219,12 @@ export function createHud(
   pointer.hidden = true;
   const pointerArrow = element('span', 'hud-target-arrow', pointer);
   translatedElement('span', 'hud-target-label', pointer, 'hud.targetPointer');
+  // 距離：數字＋單位（單位走語系表，跟時速的單位一樣）。
   const pointerDistance = element('span', 'hud-target-distance', pointer);
   pointerDistance.id = 'hud-target-distance';
+  const pointerDistanceValue = element('span', 'hud-target-distance-value', pointerDistance);
+  pointerDistance.append(' ');
+  translatedElement('span', 'hud-target-distance-unit', pointerDistance, 'hud.distanceUnit');
   let pointerShown: TargetPointer | null = null;
 
   // 右上角：語言按鈕（顯示「會切到的語言」的名稱），下面是回關卡選擇的按鈕。
@@ -348,7 +352,7 @@ export function createHud(
           pointer.dataset.angle = String(degrees);
         }
         if (pointerNow.distanceFt !== pointerShown?.distanceFt) {
-          pointerDistance.textContent = `${pointerNow.distanceFt} ft`;
+          pointerDistanceValue.textContent = String(pointerNow.distanceFt);
         }
       }
       pointerShown = pointerNow;

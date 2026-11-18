@@ -1,6 +1,7 @@
 {
   "hud.speed": "車速",
   "hud.speedUnit": "mph",
+  "hud.distanceUnit": "ft",
   "hud.controls": "操作",
   "hud.controlThrottle": "油門",
   "hud.controlSteer": "轉向",

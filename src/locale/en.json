@@ -1,6 +1,7 @@
 {
   "hud.speed": "Speed",
   "hud.speedUnit": "mph",
+  "hud.distanceUnit": "ft",
   "hud.controls": "Controls",
   "hud.controlThrottle": "Throttle",
   "hud.controlSteer": "Steer",
