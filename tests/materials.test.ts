@@ -379,8 +379,8 @@ describe('場景裡的物件換成了庫材質', () => {
   test.each([
     ['w1_l03', ['concrete', 'paintedMetal', 'corrugated']],
     ['w1_l05', ['brick', 'concrete', 'paintedMetal', 'plaster']],
-    ['w1_l08', ['brick', 'concrete', 'plaster', 'wornPaint']],
-    ['w1_l10', ['paintedMetal', 'corrugated', 'wornPaint']],
+    ['w1_l09', ['brick', 'concrete', 'plaster', 'wornPaint']],
+    ['w1_l08', ['paintedMetal', 'corrugated', 'wornPaint']],
   ] as const)('%s 的環境用到這些表面', (id, expected) => {
     const surfaces = surfacesIn(environmentOf(id));
     for (const surface of expected) {
@@ -389,7 +389,7 @@ describe('場景裡的物件換成了庫材質', () => {
   });
 
   test('環境方塊：每種表面一個 InstancedMesh（最多六個），實例總數等於方塊數；亮著的窗仍是不吃光的玻璃', () => {
-    for (const id of ['w1_l03', 'w1_l05', 'w1_l08', 'w1_l10']) {
+    for (const id of ['w1_l03', 'w1_l05', 'w1_l09', 'w1_l08']) {
       const level = requireLevel(id);
       const layout = createEnvironmentLayout(level, QUALITY_PRESETS.high.props);
       if (layout === undefined) {
@@ -428,7 +428,7 @@ describe('場景裡的物件換成了庫材質', () => {
     expect(WALL_SURFACES.post_office).toBe('brick');
     expect(OBSTACLE_SURFACES.cone).toBe('plastic');
     expect(OBSTACLE_SURFACES.dumpster).toBe('rustedIron');
-    const alley = createObstacleMeshes(requireLevel('w1_l10'));
+    const alley = createObstacleMeshes(requireLevel('w1_l08'));
     const bounds = alley.getObjectByName('bounds');
     expect(surfaceOf((bounds as InstancedMesh).material as Material)).toBe('brick');
     const lot = createObstacleMeshes(requireLevel('w1_l03'));

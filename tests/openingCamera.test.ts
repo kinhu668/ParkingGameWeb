@@ -278,10 +278,10 @@ describe.each(CASES)('%s（%s）的開場鏡頭', (_id, quality, level) => {
   });
 });
 
-describe('使用者回報的畫面：w1_l10 遠距離跟車', () => {
-  const level = LEVELS.find((candidate) => candidate.id === 'w1_l10');
+describe('使用者回報的畫面：w1_l08 遠距離跟車', () => {
+  const level = LEVELS.find((candidate) => candidate.id === 'w1_l08');
   if (level === undefined) {
-    throw new Error('找不到 w1_l10');
+    throw new Error('找不到 w1_l08');
   }
   const world = worldOf(level, 'medium');
   const pose = level.layout.startState;
@@ -297,7 +297,7 @@ describe('使用者回報的畫面：w1_l10 遠距離跟車', () => {
     const camera = openingCamera('chase_far', level, world, aspect);
     const bounds = level.boundsFt;
     if (bounds === undefined) {
-      throw new Error('w1_l10 沒有 bounds');
+      throw new Error('w1_l08 沒有 bounds');
     }
     expect(mToFt(camera.position.z)).toBeLessThan(bounds.maxZFt - 1);
     expect(mToFt(camera.position.z)).toBeGreaterThan(mToFt(pose.z));

@@ -125,10 +125,10 @@ describe('收集擋塊', () => {
     },
   );
 
-  test('巷子（w1_l10）：兩旁的整棟建築是擋塊，四面的高度各自不同；路燈不是', () => {
-    const level = levelById('w1_l10');
+  test('巷子（w1_l08）：兩旁的整棟建築是擋塊，四面的高度各自不同；路燈不是', () => {
+    const level = levelById('w1_l08');
     if (level === undefined) {
-      throw new Error('找不到 w1_l10');
+      throw new Error('找不到 w1_l08');
     }
     const blockers = collectCameraBlockers(buildLevelWorld(level, QUALITY_PRESETS.medium));
     // 南面那一棟（車的正後方）：比遠距離跟車鏡頭的高度矮——鏡頭原本就是落在它的屋頂上方。

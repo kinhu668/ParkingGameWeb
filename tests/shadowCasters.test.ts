@@ -131,7 +131,7 @@ describe('建築的影子長度上限', () => {
 
 describe('建築會投影', () => {
   // 以前主建築與背景樓都不投影（怕黃昏的低太陽把場地罩黑）；現在一律投影，低太陽時靠影子長度上限。
-  test.each(['w1_l03', 'w1_l05', 'w1_l08', 'w1_l10'])('%s：主建築（environmentSlabs）投影', (id) => {
+  test.each(['w1_l03', 'w1_l05', 'w1_l09', 'w1_l08'])('%s：主建築（environmentSlabs）投影', (id) => {
     const slabs = named(environmentOf(id), 'environmentSlabs');
     expect(slabs.castShadow).toBe(true);
     expect(slabs.receiveShadow).toBe(true);
@@ -146,7 +146,7 @@ describe('建築會投影', () => {
     // 郵局有主建築也有背景樓；街道只有主建築（environmentSlabs）。
     for (const [id, names] of [
       ['w1_l05', ['environmentSlabs', 'buildings']],
-      ['w1_l08', ['environmentSlabs']],
+      ['w1_l09', ['environmentSlabs']],
     ] as const) {
       const free = environmentOf(id);
       const capped = environmentOf(id, capM);
@@ -190,7 +190,7 @@ describe('建築會投影', () => {
 describe('牆與邊界會投影', () => {
   // 以前高於 10 ft 的牆與邊界不投影（怕巷子全黑）；巷子裡一邊在影子裡才是對的。
   test('窄巷：兩側的高牆（bounds）與牆障礙物（wall）都投影', () => {
-    const level = requireLevel('w1_l10');
+    const level = requireLevel('w1_l08');
     expect(level.environment).toBe('narrow_alley');
     expect(BOUNDS_STYLES.narrow_alley.heightFt).toBeGreaterThan(10);
     expect(WALL_STYLES.narrow_alley.heightFt).toBeGreaterThan(10);
@@ -256,7 +256,7 @@ describe('陰影相機的近平面容得下高的投影物', () => {
     expect(ftToM(BOUNDS_STYLES.narrow_alley.heightFt * 1.5)).toBeLessThan(
       SUN_CONFIG.lotShadowCasterHeightM,
     );
-    for (const id of ['w1_l03', 'w1_l05', 'w1_l08', 'w1_l10']) {
+    for (const id of ['w1_l03', 'w1_l05', 'w1_l09', 'w1_l08']) {
       expect(tallestTopM(named(environmentOf(id), 'environmentSlabs')), id).toBeLessThanOrEqual(
         SUN_CONFIG.lotShadowCasterHeightM,
       );

@@ -179,7 +179,7 @@ describe('四個環境各自認得出來', () => {
   });
 
   test('街道：五間店的招牌、OAK ST、2 HR PARKING；兩旁有人行道、一側是店面，沒有假車位裡的背景車', () => {
-    for (const id of ['w1_l08', 'w1_l09']) {
+    for (const id of ['w1_l09']) {
       expect([...texts(id)].sort()).toEqual([...signTextsFor('city_street')].sort());
       expect(layoutOf(id).lot.parkedCars).toHaveLength(0);
       expect(layoutOf(id).slabs.filter((slab) => slab.kind === 'flat').length).toBeGreaterThan(3);
@@ -187,8 +187,8 @@ describe('四個環境各自認得出來', () => {
   });
 
   test('窄巷：LOADING ZONE、DELIVERIES ONLY、NO PARKING；牆上有後門與捲門，沒有背景車與樹', () => {
-    const layout = layoutOf('w1_l10');
-    expect([...new Set(texts('w1_l10'))].sort()).toEqual([...signTextsFor('narrow_alley')].sort());
+    const layout = layoutOf('w1_l08');
+    expect([...new Set(texts('w1_l08'))].sort()).toEqual([...signTextsFor('narrow_alley')].sort());
     expect(layout.slabs.filter((slab) => slab.kind === 'decal').length).toBeGreaterThan(5);
     expect(layout.lot.parkedCars).toHaveLength(0);
     expect(layout.lot.trees).toHaveLength(0);

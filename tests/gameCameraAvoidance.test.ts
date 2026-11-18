@@ -65,7 +65,7 @@ function pitchDownDeg(game: ReturnType<typeof createGameCamera>): number {
 
 describe.each(CHASE_VIEWS)('%s 被車後方的牆擋住', (view) => {
   const rig = RIGS[view];
-  // 牆面離車尾 2.5 ft（w1_l10 開場的情形）：比鏡頭高的 26 ft 牆，與比遠距鏡頭矮的 19.8 ft 牆。
+  // 牆面離車尾 2.5 ft（w1_l08 開場的情形）：比鏡頭高的 26 ft 牆，與比遠距鏡頭矮的 19.8 ft 牆。
   const faceFt = mToFt(HALF_LENGTH_M) + 2.5;
 
   test.each([26, 19.8])('牆高 %d ft：鏡頭留在牆的前面、高過車頂、沒有鑽進牆裡或跑到牆頂上', (heightFt) => {

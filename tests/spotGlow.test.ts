@@ -124,7 +124,7 @@ describe('位置與形狀：貼著車位輪廓、從地面升起的矮牆', () =
   });
 
   test('側向停車的車位（heading 90°）：長邊沿世界 X', () => {
-    const spot = spotOf('w1_l08');
+    const spot = spotOf('w1_l09');
     const glow = createSpotGlow(spot);
     glow.root.updateMatrixWorld(true);
     const size = new Box3().setFromObject(glow.root).getSize(new Vector3());
@@ -412,14 +412,14 @@ describe('不是會被遮擋半透明淡掉的擺設', () => {
   });
 
   test('有環境模組的關：環境登記的擺設裡沒有發光標記；地面的方向箭頭還在', () => {
-    const level = levelById('w1_l10');
+    const level = levelById('w1_l08');
     if (level === undefined) {
-      throw new Error('沒有 w1_l10');
+      throw new Error('沒有 w1_l08');
     }
     const props = QUALITY_PRESETS.low.props;
     const layout = createEnvironmentLayout(level, props);
     if (layout === undefined) {
-      throw new Error('w1_l10 應該有環境佈局');
+      throw new Error('w1_l08 應該有環境佈局');
     }
     const environment = createEnvironment(level.layout.spot, layout, props, false);
     const glow = createSpotGlow(level.layout.spot);
