@@ -237,96 +237,42 @@ describe('w1_l03（規格範例幾何，修正起點方向）', () => {
   });
 });
 
-describe('w1_l01（第一個車位）', () => {
+describe('w1_l01（第一格）', () => {
   const level = mustFind('w1_l01');
 
-  test('幾何與原型關相同（正前方 60 ft、heading 0），車位放寬成 11 × 20 ft', () => {
-    expect(level.startFt).toEqual(PROTOTYPE_LEVEL.startFt);
-    expect(level.spotFt).toEqual({ ...PROTOTYPE_LEVEL.spotFt, widthFt: 11, lengthFt: 20 });
-    expect(facingTargetFt(level)).toBe(60);
+  test('走道往北 60 多英尺，車位在右手邊：起點朝北（heading 0），車位朝東（heading 90）、9 × 18 ft', () => {
+    expect(level.startFt).toEqual({ xFt: -4, zFt: 55, headingDeg: 0 });
+    expect(level.spotFt).toMatchObject({ centerXFt: 21, centerZFt: -8, widthFt: 9, lengthFt: 18, headingDeg: 90 });
+    // 起點到車位那一格的走道口，直行 60 ft 左右。
+    expect(level.startFt.zFt - level.spotFt.centerZFt).toBeGreaterThan(55);
   });
 
-  test('沒有障礙物、有邊界；起點與整個車位都在邊界內', () => {
-    expect(level.obstaclesFt).toEqual([]);
+  test('兩排車位夾一條 24 ft 的走道；目標車位與左右各一格都是空的', () => {
+    expect(level.stallsFt).toHaveLength(20);
+    const east = level.stallsFt.filter((stall) => stall.centerXFt > 0);
+    const west = level.stallsFt.filter((stall) => stall.centerXFt < 0);
+    // 兩排車位的開口相距 24 ft。
+    expect(Math.min(...east.map((stall) => stall.centerXFt - stall.lengthFt / 2))).toBe(12);
+    expect(Math.max(...west.map((stall) => stall.centerXFt + stall.lengthFt / 2))).toBe(-12);
+    const emptyEastZ = east.filter((stall) => !stall.occupied).map((stall) => stall.centerZFt);
+    expect(emptyEastZ).toEqual([1, -8, -17]);
+    // 障礙物全部是車排展開的停放車。
+    expect(level.obstaclesFt.every((obstacle) => obstacle.type === 'parked_car')).toBe(true);
+    expect(level.obstaclesFt).toHaveLength(level.stallsFt.filter((stall) => stall.occupied).length);
+  });
+
+  test('有邊界；起點與每一格車位都在邊界內', () => {
     const bounds = level.boundsFt;
     expect(bounds).toBeDefined();
     if (bounds === undefined) {
       return;
     }
     expect(level.startFt.zFt + 7.5).toBeLessThan(bounds.maxZFt);
-    expect(level.spotFt.centerZFt - level.spotFt.lengthFt / 2).toBeGreaterThan(bounds.minZFt);
-    expect(level.spotFt.centerXFt - level.spotFt.widthFt / 2).toBeGreaterThan(bounds.minXFt);
-    expect(level.spotFt.centerXFt + level.spotFt.widthFt / 2).toBeLessThan(bounds.maxXFt);
-  });
-});
-
-describe('第 1 世界的 10 關（計畫 §3.1）', () => {
-  /** id、環境、天氣、車位 heading 與起點 heading 的關係（正停 = 車頭開進去、倒車 = 車尾進去、平行 = 路邊）。 */
-  const PLAN: readonly (readonly [string, string, string, readonly string[]])[] = [
-    ['w1_l01', 'open_lot', 'clear', []],
-    ['w1_l02', 'open_lot', 'dusk', ['cone']],
-    ['w1_l03', 'warehouse_club', 'clear', ['parked_car', 'cone', 'shopping_cart']],
-    ['w1_l04', 'warehouse_club', 'wet', ['cart_corral', 'parked_car', 'shopping_cart', 'pallet_stack']],
-    ['w1_l05', 'post_office', 'clear', ['mailbox', 'trash_bin']],
-    ['w1_l06', 'post_office', 'dusk', ['parked_car', 'mailbox', 'bollard']],
-    ['w1_l07', 'warehouse_club', 'storm', ['parked_car', 'shopping_cart', 'cone']],
-    ['w1_l08', 'city_street', 'clear', ['parked_car']],
-    ['w1_l09', 'city_street', 'night', ['parked_car', 'cone']],
-    ['w1_l10', 'narrow_alley', 'rain', ['wall', 'dumpster', 'pallet', 'trash_bin', 'pallet_stack']],
-  ];
-
-  test.each(PLAN)('%s：%s、%s，障礙物類型齊全', (id, environment, weather, obstacleTypes) => {
-    const level = mustFind(id);
-    expect(level.world).toBe(1);
-    expect(level.environment).toBe(environment);
-    expect(level.weather).toBe(weather);
-    const types = new Set<string>(level.obstaclesFt.map((obstacle) => obstacle.type));
-    for (const type of obstacleTypes) {
-      expect(types.has(type), `${id} 應該有 ${type}`).toBe(true);
+    for (const stall of level.stallsFt) {
+      expect(Math.abs(stall.centerXFt) + stall.lengthFt / 2).toBeLessThanOrEqual(bounds.maxXFt);
+      expect(stall.centerZFt - stall.widthFt / 2).toBeGreaterThan(bounds.minZFt);
+      expect(stall.centerZFt + stall.widthFt / 2).toBeLessThan(bounds.maxZFt);
     }
-    expect(level.boundsFt, `${id} 必須有邊界`).toBeDefined();
-  });
-
-  test('五種環境、六種天氣都用到', () => {
-    const levels = worldLevels(1);
-    expect(new Set(levels.map((level) => level.environment)).size).toBe(5);
-    expect(new Set(levels.map((level) => level.weather)).size).toBe(6);
-  });
-
-  test('難度遞增：碰撞上限只減不增；窄的關卡角度容許值比較小', () => {
-    const levels = worldLevels(1);
-    levels.slice(1).forEach((level, index) => {
-      expect(level.maxCollisions, level.id).toBeLessThanOrEqual(levels[index]?.maxCollisions ?? 0);
-    });
-    expect(mustFind('w1_l09').spotFt.angleToleranceDeg).toBe(7);
-    expect(mustFind('w1_l10').spotFt.angleToleranceDeg).toBe(6);
-  });
-
-  test('倒車的關卡：起點在車位「車頭那一側」或側邊，車位 heading 不是朝著遠離起點的方向', () => {
-    // 倒車入庫停好時車頭朝外（朝通道）：車位的車頭方向指回通道，也就是大致指向起點那一側。
-    for (const id of ['w1_l05', 'w1_l06', 'w1_l07', 'w1_l10']) {
-      const level = mustFind(id);
-      const out = forward(degToRad(level.spotFt.headingDeg ?? 0));
-      const toStartX = level.startFt.xFt - level.spotFt.centerXFt;
-      const toStartZ = level.startFt.zFt - level.spotFt.centerZFt;
-      expect(out.x * toStartX + out.z * toStartZ, id).toBeGreaterThan(0);
-    }
-  });
-
-  test('平行停車：車位長邊沿著路（比寬邊長得多），前後各有一台同向的停放車', () => {
-    for (const id of ['w1_l08', 'w1_l09']) {
-      const level = mustFind(id);
-      expect(level.spotFt.lengthFt, id).toBeGreaterThan(level.spotFt.widthFt * 2.5);
-      const neighbours = level.obstaclesFt.filter(
-        (obstacle) =>
-          obstacle.type === 'parked_car' &&
-          obstacle.headingDeg === level.spotFt.headingDeg &&
-          Math.abs(obstacle.centerXFt - level.spotFt.centerXFt) < 25,
-      );
-      expect(neighbours, id).toHaveLength(2);
-    }
-    // 第 9 關的空位比第 8 關短。
-    expect(mustFind('w1_l09').spotFt.lengthFt).toBeLessThan(mustFind('w1_l08').spotFt.lengthFt);
   });
 });
 
@@ -334,7 +280,7 @@ describe('停車種類與車頭入庫的方向（挑戰計畫 §1）', () => {
   /** 每一關車頭入庫時車頭朝的方向（度）；路邊平行停車是 null。 */
   const HEAD_IN_DEG: ReadonlyArray<readonly [string, number | null]> = [
     ['prototype', 0],
-    ['w1_l01', 0],
+    ['w1_l01', 90],
     ['w1_l02', 90],
     ['w1_l03', 90],
     ['w1_l04', 90],

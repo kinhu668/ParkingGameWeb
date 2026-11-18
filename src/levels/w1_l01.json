@@ -5,13 +5,17 @@
   "environment": "open_lot",
   "weather": "clear",
   "vehicle": "sedan",
-  "time_limit": 60,
-  "target_time": 15,
+  "time_limit": 75,
+  "target_time": 18,
   "max_collisions": 5,
   "parking": "bay",
-  "head_in_heading": 0,
-  "bounds": { "min": [-30, -76], "max": [30, 16] },
-  "start": { "pos": [0, 0, 0], "heading": 0 },
-  "target": { "pos": [0, 0, -60], "heading": 0, "size": [11, 20] },
-  "obstacles": []
+  "head_in_heading": 90,
+  "bounds": { "min": [-30, -53], "max": [30, 66] },
+  "start": { "pos": [-4, 0, 55], "heading": 0 },
+  "target": { "pos": [21, 0, -8], "heading": 90, "size": [9, 18] },
+  "obstacles": [],
+  "rows": [
+    { "pos": [21, 0, 37], "heading": 0, "count": 10, "empty": [4, 5, 6] },
+    { "pos": [-21, 0, 37], "heading": 0, "angle": 270, "count": 10, "empty": [0, 3, 4, 8] }
+  ]
 }

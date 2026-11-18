@@ -35,7 +35,7 @@ const LENGTH_EPSILON_M = 1e-9;
  */
 const CHALLENGE_TIME_S: ReadonlyMap<string, number> = new Map([
   ['prototype', 21],
-  ['w1_l01', 11],
+  ['w1_l01', 13],
   ['w1_l02', 14],
   ['w1_l03', 15],
   ['w1_l04', 18],

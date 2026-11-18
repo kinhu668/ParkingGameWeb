@@ -227,10 +227,12 @@ describe('招牌', () => {
 });
 
 describe('場內車排（rows）的車位線', () => {
-  const base = levelById('w1_l01');
-  if (base === undefined) {
+  const found = levelById('w1_l01');
+  if (found === undefined) {
     throw new Error('沒有 w1_l01');
   }
+  /** 拿掉這一關自己的車排，只看測試給的那幾格。 */
+  const base = { ...found, stallsFt: [] };
   const { spotFt } = base;
   /** 目標車位那一格，加上它右邊緊鄰的兩格（同方向、9 × 18）。 */
   const across = { x: Math.cos((spotFt.headingDeg * Math.PI) / 180), z: Math.sin((spotFt.headingDeg * Math.PI) / 180) };
@@ -247,7 +249,8 @@ describe('場內車排（rows）的車位線', () => {
 
   test('沒有 stallsFt 或是空的：與原本一樣', () => {
     expect(linesWith([])).toEqual([]);
-    expect(createEnvironmentLayout({ ...base, stallsFt: [] }, ULTRA)).toEqual(createEnvironmentLayout(base, ULTRA));
+    const { stallsFt: _dropped, ...withoutField } = found;
+    expect(createEnvironmentLayout(withoutField, ULTRA)).toEqual(createEnvironmentLayout(base, ULTRA));
   });
 
   test('相鄰兩格：共用的線只畫一次（3 條）；線沿車位方向、與車位一樣長、平貼地面', () => {

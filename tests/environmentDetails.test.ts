@@ -65,8 +65,11 @@ describe('停車場類的環境：四周的小東西', () => {
         expect(lot[category].length, category).toBeGreaterThan(0);
       }
       // 每一列 n 個車位有 n + 2 條線（n + 1 條直的＋一條收尾的橫線）。主建築那一邊沒有假車位。
+      // 場內車排（關卡的 rows）的車位線另外算：它們沒有車擋。
       const rows = level.environment === 'open_lot' ? 4 : 3;
-      expect(lot.wheelStops).toHaveLength(lot.stallLines.length - 2 * rows);
+      const outsideLines = layoutOf({ ...level, stallsFt: [] }, 'high').lot.stallLines.length;
+      expect(lot.stallLines.length - outsideLines).toBeGreaterThanOrEqual(level.stallsFt.length === 0 ? 0 : 1);
+      expect(lot.wheelStops).toHaveLength(outsideLines - 2 * rows);
       // 兩道橫桿：橫桿數 = 2 ×（立柱數 − 圍欄段數）。
       expect(lot.fenceRails).toHaveLength(2 * (lot.fencePosts.length - rows));
       // 每一列一台繳費機。
