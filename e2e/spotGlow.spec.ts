@@ -221,3 +221,63 @@ test('「車位在後方」的提示：w1_l03 一進場就有，掛倒檔後收�
   await expect(page.locator('#hud-gear')).toHaveAttribute('data-gear', 'forward');
   await expect(page.locator('#hud-spot-hint')).toBeHidden();
 });
+
+/** 兩個元素的外框有沒有重疊。 */
+async function overlaps(page: Page, first: string, second: string): Promise<boolean> {
+  const a = await page.locator(first).boundingBox();
+  const b = await page.locator(second).boundingBox();
+  if (a === null || b === null) {
+    throw new Error(`${first} 或 ${second} 不在畫面上`);
+  }
+  return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+}
+
+test('車位方向指標：車位離得遠就有箭頭與距離，俯視是北方朝上；不擋行車資訊與「車位在後方」；停妥後收起', async ({
+  page,
+}) => {
+  const pointer = page.locator('#hud-target-pointer');
+  const distance = page.locator('#hud-target-distance');
+  const angle = async (): Promise<number> => Number(await pointer.getAttribute('data-angle'));
+
+  // w1_l04：車位在正前方 138 ft 的走道盡頭（略偏左），隔著外側那排車。
+  await page.goto('/?level=w1_l04&view=chase_far&lang=en&touch=off');
+  await expect(pointer).toBeVisible();
+  await expect(distance).toHaveText('140 ft');
+  await expect(pointer.locator('.hud-target-label')).toHaveText('Spot');
+  expect(Math.abs((await angle()) - -7)).toBeLessThanOrEqual(3);
+  expect(await overlaps(page, '#hud-target-pointer', '.hud-stats')).toBe(false);
+
+  // w1_l03：車頭朝南停在車位裡，車位在東北方 62 ft。行車鏡頭的箭頭朝左後方；「車位在後方」也在，兩個不重疊。
+  await page.goto('/?level=w1_l03&view=cockpit&lang=zh-TW&touch=off');
+  await expect(pointer).toBeVisible();
+  await expect(distance).toHaveText('60 ft');
+  await expect(pointer.locator('.hud-target-label')).toHaveText('車位');
+  expect(Math.abs((await angle()) - -133)).toBeLessThanOrEqual(3);
+  await expect(page.locator('#hud-spot-hint')).toBeVisible();
+  expect(await overlaps(page, '#hud-target-pointer', '#hud-spot-hint')).toBe(false);
+  expect(await overlaps(page, '#hud-spot-hint', '.hud-stats')).toBe(false);
+  await page.screenshot({ path: `${OUTPUT_DIR}/target-pointer-w1_l03-cockpit.png` });
+
+  // 俯視：北方朝上，箭頭朝右上（東北）。直式手機的畫面也一樣放得下。
+  await page.setViewportSize({ width: 412, height: 892 });
+  await page.goto('/?level=w1_l03&view=top&lang=zh-TW');
+  await expect(pointer).toBeVisible();
+  expect(Math.abs((await angle()) - 47)).toBeLessThanOrEqual(3);
+  expect(await overlaps(page, '#hud-target-pointer', '#hud-spot-hint')).toBe(false);
+  expect(await overlaps(page, '#hud-target-pointer', '.hud-stats')).toBe(false);
+  expect(await overlaps(page, '#hud-spot-hint', '.hud-stats')).toBe(false);
+  const box = await pointer.boundingBox();
+  expect(box?.x ?? -1).toBeGreaterThanOrEqual(0);
+  expect((box?.x ?? 0) + (box?.width ?? 999)).toBeLessThanOrEqual(412);
+  await page.screenshot({ path: `${OUTPUT_DIR}/target-pointer-w1_l03-top-portrait.png` });
+
+  // 原型關：車位在正前方 60 ft，箭頭朝上；開進去停妥後指標收起。
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto('/?level=prototype&view=chase_near&lang=en&touch=off');
+  await expect(pointer).toBeVisible();
+  await expect(distance).toHaveText('60 ft');
+  expect(Math.abs(await angle())).toBeLessThanOrEqual(3);
+  const parked = await driveIntoSpot(page, PROTOTYPE_SPOT.zFt);
+  expect(parked.status).toBe('parked');
+  await expect(pointer).toBeHidden();
+});
