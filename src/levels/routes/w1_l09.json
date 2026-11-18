@@ -1,12 +1,7 @@
 {
   "level": "w1_l09",
   "segments": [
-    {
-      "type": "path", "gear": "forward", "speed_mph": 10,
-      "points": [
-        [-45, 2], [15.95, 2]
-      ]
-    },
+    { "type": "path", "gear": "forward", "speed_mph": 8, "points": [[-98.0, 2.0], [-96.0, 2.0], [-86.93, 0.96], [-78.34, -2.11], [-69.75, -5.18], [-60.68, -6.22], [-31.18, -6.22], [-22.11, -5.18], [-13.52, -2.11], [-4.93, 0.96], [4.14, 2.0], [15.95, 2.0]] },
     { "type": "arc", "gear": "reverse", "steer": 1, "distance_ft": 10.11, "speed_mph": 3 },
     { "type": "arc", "gear": "reverse", "steer": -1, "distance_ft": 10.11, "speed_mph": 3 }
   ]
