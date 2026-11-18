@@ -1,7 +1,7 @@
 // 測試共用：不開 WebGL，把一關「立在場地上的東西」照 createGameScene 的組法組出來
 // （原型關是路緣＋停車場擺設，其餘是環境模組；再加關卡的障礙物與邊界），並提供打視線用的實心網格。
 // 地面、天空、車位標線、特效不在裡面：它們擋不住鏡頭。
-import { Group, Mesh, type Material, type Object3D } from 'three';
+import { Group, Mesh, Raycaster, type Material, type Object3D, type Vector3 } from 'three';
 import { DEFAULT_SEED } from '../src/core/gameConfig';
 import type { LevelDefinition } from '../src/level/levelSchema';
 import { createEnvironmentLayout } from '../src/props/environmentLayout';
@@ -53,4 +53,33 @@ export function solidMeshes(root: Object3D): Mesh[] {
     }
   });
   return meshes;
+}
+
+/** 路燈（含掛在燈桿上的監視器）與樹：擋到時只淡不擋（細桿、樹冠），視線穿過它們不算「被場景擋住」。 */
+export const PASSABLE_MESHES: ReadonlySet<string> = new Set([
+  'lampPosts',
+  'lampLenses',
+  'cameras',
+  'treeTrunks',
+  'treeFoliage',
+]);
+
+const raycaster = new Raycaster();
+
+/**
+ * from 與 to 之間有沒有被 meshes 擋住（回傳擋住的網格名稱）。兩個方向各打一次：Raycaster 與算圖一樣只算正面，
+ * 鏡頭在實心方塊裡面時，從鏡頭打出去只碰得到背面（不算），從另一頭打回來才碰得到正面。
+ */
+export function blockedBetween(from: Vector3, to: Vector3, meshes: Mesh[]): string | undefined {
+  const direction = to.clone().sub(from);
+  const distance = direction.length();
+  direction.normalize();
+  raycaster.far = distance;
+  raycaster.set(from, direction);
+  const hit = raycaster.intersectObjects(meshes, false)[0];
+  if (hit !== undefined) {
+    return hit.object.name;
+  }
+  raycaster.set(to, direction.clone().negate());
+  return raycaster.intersectObjects(meshes, false)[0]?.object.name;
 }

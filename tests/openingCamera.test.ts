@@ -22,22 +22,13 @@ import { QUALITY_LEVELS } from '../src/render/quality';
 import { CAR_VISUAL_CONFIG, GAME_CAMERA_CONFIG, QUALITY_PRESETS } from '../src/render/renderConfig';
 import type { VehiclePose } from '../src/vehicle/bicycleModel';
 import { VEHICLE_CONFIG_SI } from '../src/vehicle/vehicleConfig';
-import { buildLevelWorld, solidMeshes } from './levelWorld';
+import { PASSABLE_MESHES, blockedBetween, buildLevelWorld, solidMeshes } from './levelWorld';
 
 /** 橫式（e2e 與桌面）與直式手機（使用者回報用的視窗）。 */
 const ASPECTS = [
   ['橫式 16:9', 16 / 9],
   ['直式 412×892', 412 / 892],
 ] as const;
-
-/** 路燈（含掛在燈桿上的監視器）與樹：擋到時只淡不擋（細桿、樹冠），視線穿過它們不算「被場景擋住」。 */
-const PASSABLE_MESHES: ReadonlySet<string> = new Set([
-  'lampPosts',
-  'lampLenses',
-  'cameras',
-  'treeTrunks',
-  'treeFoliage',
-]);
 
 const HALF_LENGTH_M = VEHICLE_CONFIG_SI.lengthM / 2;
 const HALF_WIDTH_M = VEHICLE_CONFIG_SI.widthM / 2;
@@ -110,24 +101,6 @@ function carOnScreen(camera: PerspectiveCamera, pose: VehiclePose): CarOnScreen 
 }
 
 const raycaster = new Raycaster();
-
-/**
- * from 與 to 之間有沒有被 meshes 擋住。兩個方向各打一次：Raycaster 與算圖一樣只算正面，
- * 鏡頭在實心方塊裡面時，從鏡頭打出去只碰得到背面（不算），從另一頭打回來才碰得到正面。
- */
-function blockedBetween(from: Vector3, to: Vector3, meshes: Mesh[]): string | undefined {
-  const direction = to.clone().sub(from);
-  const distance = direction.length();
-  direction.normalize();
-  raycaster.far = distance;
-  raycaster.set(from, direction);
-  const hit = raycaster.intersectObjects(meshes, false)[0];
-  if (hit !== undefined) {
-    return hit.object.name;
-  }
-  raycaster.set(to, direction.clone().negate());
-  return raycaster.intersectObjects(meshes, false)[0]?.object.name;
-}
 
 /** 鏡頭看車身上 9 個點，各被什麼擋住（沒被擋的不列）。 */
 function sightBlockers(camera: PerspectiveCamera, pose: VehiclePose, meshes: Mesh[]): string[] {
