@@ -281,7 +281,7 @@ describe('停車種類與車頭入庫的方向（挑戰計畫 §1）', () => {
   const HEAD_IN_DEG: ReadonlyArray<readonly [string, number | null]> = [
     ['prototype', 0],
     ['w1_l01', 90],
-    ['w1_l02', 90],
+    ['w1_l02', 270],
     ['w1_l03', 90],
     ['w1_l04', 90],
     ['w1_l05', 180],
@@ -303,23 +303,36 @@ describe('停車種類與車頭入庫的方向（挑戰計畫 §1）', () => {
     expect(level?.layout.spot.headInHeadingRad).toBe(headInDeg === null ? null : degToRad(headInDeg));
   });
 
-  test('一般車位的底部（車頭入庫時車頭朝的那一端）比另一端靠近邊界：車頭朝內、通道在車尾', () => {
+  test('一般車位的底部（車頭入庫時車頭朝的那一端）被擋住：邊界、障礙物或另一排車位；車尾那一端是通道', () => {
+    /** 點 (x, z) 在不在這個矩形裡（英尺）。 */
+    const inBox = (
+      box: { centerXFt: number; centerZFt: number; widthFt: number; lengthFt: number; headingDeg: number },
+      x: number,
+      z: number,
+    ): boolean => {
+      const along = forward(degToRad(box.headingDeg));
+      const dx = x - box.centerXFt;
+      const dz = z - box.centerZFt;
+      return (
+        Math.abs(dx * along.x + dz * along.z) <= box.lengthFt / 2 &&
+        Math.abs(dx * -along.z + dz * along.x) <= box.widthFt / 2
+      );
+    };
     for (const level of LEVELS) {
       const { boundsFt, spotFt } = level;
       if (boundsFt === undefined || spotFt.headInHeadingDeg === undefined) {
         continue;
       }
       const toward = forward(degToRad(spotFt.headInHeadingDeg));
-      /** 從車位中心沿 direction 走到邊界的距離（ft）；方向都是軸向。 */
-      const roomFt = (sign: 1 | -1): number => {
-        const dx = toward.x * sign;
-        const dz = toward.z * sign;
-        if (Math.abs(dx) > Math.abs(dz)) {
-          return dx > 0 ? boundsFt.maxXFt - spotFt.centerXFt : spotFt.centerXFt - boundsFt.minXFt;
-        }
-        return dz > 0 ? boundsFt.maxZFt - spotFt.centerZFt : spotFt.centerZFt - boundsFt.minZFt;
+      /** 從車位中心往車頭（+1）或車尾（−1）走一個車位長的那一點，是不是被擋住。 */
+      const blocked = (sign: 1 | -1): boolean => {
+        const x = spotFt.centerXFt + toward.x * sign * spotFt.lengthFt;
+        const z = spotFt.centerZFt + toward.z * sign * spotFt.lengthFt;
+        const outside = x <= boundsFt.minXFt || x >= boundsFt.maxXFt || z <= boundsFt.minZFt || z >= boundsFt.maxZFt;
+        return outside || [...level.obstaclesFt, ...level.stallsFt].some((box) => inBox(box, x, z));
       };
-      expect(roomFt(1), level.id).toBeLessThan(roomFt(-1));
+      expect(blocked(1), `${level.id} 車頭那一端`).toBe(true);
+      expect(blocked(-1), `${level.id} 車尾那一端`).toBe(false);
     }
   });
 });

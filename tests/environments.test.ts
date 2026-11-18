@@ -63,7 +63,16 @@ describe.each(BOUNDED.map((level) => [level.id, level] as const))('%s 的環境'
   const inside = (x: number, z: number, marginM = EPSILON_M): boolean =>
     x > minX + marginM && x < maxX - marginM && z > minZ + marginM && z < maxZ - marginM;
 
-  test.each(QUALITY_LEVELS)('%s 畫質：bounds 裡沒有背景車、路燈、樹、建築、桶、錐、標誌', (quality) => {
+  /** 這個擺設的中心是不是某一座安全島的中心。 */
+  const onIsland = (placement: { x: number; z: number }): boolean =>
+    level.obstaclesFt.some(
+      (obstacle) =>
+        obstacle.type === 'lamp_island' &&
+        Math.abs(placement.x - ftToM(obstacle.centerXFt)) < EPSILON_M &&
+        Math.abs(placement.z - ftToM(obstacle.centerZFt)) < EPSILON_M,
+    );
+
+  test.each(QUALITY_LEVELS)('%s 畫質：bounds 裡沒有背景車、路燈、樹、建築、桶、錐、標誌（安全島上的路燈除外）', (quality) => {
     const layout = createEnvironmentLayout(level, QUALITY_PRESETS[quality].props);
     expect(layout).toBeDefined();
     for (const category of PROP_CATEGORIES) {
@@ -71,6 +80,10 @@ describe.each(BOUNDED.map((level) => [level.id, level] as const))('%s 的環境'
         continue;
       }
       for (const placement of layout?.lot[category] ?? []) {
+        // 例外：立在關卡 JSON 的安全島（會撞到）上的路燈，與掛在那盞燈上的監視器。
+        if ((category === 'lamps' || category === 'cameras') && onIsland(placement)) {
+          continue;
+        }
         for (const point of placementFootprint(placement)) {
           expect(inside(point.x, point.z), `${category} @ ${placement.x}, ${placement.z}`).toBe(false);
         }

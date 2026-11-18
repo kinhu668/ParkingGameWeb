@@ -243,7 +243,7 @@ describe('每關的「N 秒內」門檻', () => {
   const EXPECTED: ReadonlyArray<readonly [string, number]> = [
     ['prototype', 21],
     ['w1_l01', 13],
-    ['w1_l02', 14],
+    ['w1_l02', 24],
     ['w1_l03', 15],
     ['w1_l04', 18],
     ['w1_l05', 13],
