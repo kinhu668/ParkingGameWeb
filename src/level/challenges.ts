@@ -5,6 +5,7 @@ import { ftToM } from '../core/units';
 import type { VehicleState } from '../vehicle/bicycleModel';
 import { parkFacing, type ParkingSpot } from './parkingJudge';
 import { secondsToSteps } from './scoring';
+import type { Session } from './session';
 
 /** 挑戰的 id（也是存檔裡的字串），依顯示順序。 */
 export const CHALLENGE_IDS = ['time', 'no_collisions', 'centered', 'head_in', 'back_in'] as const;
@@ -96,4 +97,19 @@ export function earnedChallenges(input: ChallengeInput): readonly ChallengeId[] 
     back_in: facing === 'back_in',
   };
   return challengesForSpot(spot).filter((id) => earned[id]);
+}
+
+/** 停妥的一局拿到哪些挑戰（結算畫面與存檔用同一份）；還沒停妥或失敗是空的。 */
+export function sessionChallenges(session: Session, timeS: number): readonly ChallengeId[] {
+  const { result } = session;
+  if (result === null) {
+    return [];
+  }
+  return earnedChallenges({
+    spot: session.layout.spot,
+    vehicle: session.vehicle,
+    timeSteps: result.timeSteps,
+    collisions: result.collisions,
+    challengeTimeS: timeS,
+  });
 }

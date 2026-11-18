@@ -40,7 +40,10 @@ const THROWING_STORAGE: SaveStorage = {
 
 const SAMPLE: SaveData = {
   version: SAVE_VERSION,
-  levels: { w1_l01: { stars: 3, bestTimeS: 7.5 }, w1_l03: { stars: 1, bestTimeS: 41.25 } },
+  levels: {
+    w1_l01: { stars: 3, bestTimeS: 7.5, challenges: ['time', 'head_in'] },
+    w1_l03: { stars: 1, bestTimeS: 41.25, challenges: [] },
+  },
   settings: { locale: 'en' },
 };
 
@@ -144,9 +147,45 @@ describe('parseSave：形狀不對就整份不要', () => {
     });
     expect(parsed).toEqual({
       version: 1,
-      levels: { w7_l09: { stars: 2, bestTimeS: 30 } },
+      levels: { w7_l09: { stars: 2, bestTimeS: 30, challenges: [] } },
       settings: { locale: 'zh-TW' },
     });
+  });
+
+  test('加挑戰之前存的 v1（紀錄沒有 challenges）讀得回來，挑戰是空的，星數與時間不變', () => {
+    const old = {
+      version: 1,
+      levels: { w1_l01: { stars: 3, bestTimeS: 7.5 }, w1_l02: { stars: 1, bestTimeS: 33 } },
+      settings: { locale: 'en' },
+    };
+    expect(loadSave(memoryStorage({ [SAVE_STORAGE_KEY]: JSON.stringify(old) }))).toEqual({
+      version: 1,
+      levels: {
+        w1_l01: { stars: 3, bestTimeS: 7.5, challenges: [] },
+        w1_l02: { stars: 1, bestTimeS: 33, challenges: [] },
+      },
+      settings: { locale: 'en' },
+    });
+  });
+
+  test('challenges：不認得的 id 留著（之後的版本可能有），重複的只留一個', () => {
+    const parsed = parseSave({
+      version: 1,
+      levels: { w1_l01: { stars: 2, bestTimeS: 9, challenges: ['head_in', 'someday_new', 'head_in'] } },
+      settings: {},
+    });
+    expect(parsed?.levels.w1_l01?.challenges).toEqual(['head_in', 'someday_new']);
+  });
+
+  test.each([
+    ['challenges 不是陣列', 'time'],
+    ['challenges 是物件', { time: true }],
+    ['challenges 是 null', null],
+    ['challenges 裡有不是字串的東西', ['time', 3]],
+  ])('%s → 整份不要', (_name, challenges) => {
+    expect(
+      parseSave({ version: 1, levels: { w1_l01: { stars: 2, bestTimeS: 9, challenges } }, settings: {} }),
+    ).toBeUndefined();
   });
 });
 
@@ -173,7 +212,7 @@ describe('updateSave / levelRecord / withLocale', () => {
   });
 
   test('levelRecord：有紀錄回傳紀錄；沒過關、或 id 剛好是物件內建屬性名 → undefined', () => {
-    expect(levelRecord(SAMPLE, 'w1_l01')).toEqual({ stars: 3, bestTimeS: 7.5 });
+    expect(levelRecord(SAMPLE, 'w1_l01')).toEqual({ stars: 3, bestTimeS: 7.5, challenges: ['time', 'head_in'] });
     expect(levelRecord(SAMPLE, 'w1_l02')).toBeUndefined();
     expect(levelRecord(SAMPLE, 'toString')).toBeUndefined();
     expect(levelRecord(SAMPLE, 'constructor')).toBeUndefined();

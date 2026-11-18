@@ -27,7 +27,7 @@ import {
   parseUrlMode,
   type CameraPreset,
 } from './core/urlParams';
-import { challengeTimeS } from './level/challenges';
+import { challengeTimeS, sessionChallenges } from './level/challenges';
 import { DEMO_ROUTE_STEPS, demoVehicleAfterSteps } from './level/demoRoute';
 import {
   LEVEL_IDS,
@@ -38,7 +38,7 @@ import {
 } from './level/levelCatalog';
 import { vehicleOnRouteAt } from './level/levelRoutes';
 import { PROTOTYPE_WORLD, type LevelDefinition } from './level/levelSchema';
-import { recordResult } from './level/progress';
+import { bestChallenges, recordResult } from './level/progress';
 import { bakedSurfaces } from './materials/surfaceLibrary';
 import { PROTOTYPE_LEVEL } from './level/prototypeLayout';
 import type { SpotGlowSnapshot } from './props/spotGlow';
@@ -163,6 +163,8 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
   const gameScene = createLevelScene(renderer, quality, level);
   // 按鍵綁定：讀存檔（壞檔會被丟掉並回到預設）；玩家在按鍵設定裡改了就立刻生效並存起來。
   const storage = browserStorage();
+  /** 這一關「N 秒內」挑戰的 N（秒）。 */
+  const levelChallengeTimeS = challengeTimeS(level.id);
   let bindings = loadBindings(storage);
   const input = attachKeyboardInput(window, () => bindings);
 
@@ -208,7 +210,12 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
       setPaused(false);
     },
     controlsAccess,
-    { timeS: challengeTimeS(level.id), best: () => [] },
+    {
+      timeS: levelChallengeTimeS,
+      // 原型關不存檔，只顯示這一局的打鉤。
+      best: () =>
+        level.world === PROTOTYPE_WORLD ? [] : bestChallenges(loadSave(storage), level.id),
+    },
   );
   function setPaused(next: boolean): void {
     paused = next;
@@ -353,15 +360,18 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
       session = stepSession(session, driveInput);
     }
 
-    // 剛停妥：把成績併進存檔（星數取大、時間取小）。原型關不存。
+    // 剛停妥：把成績併進存檔（星數取大、時間取小、挑戰取聯集）。原型關不存。
+    // 在 hud.update 之前寫：結算畫面讀存檔時已經含這一局。
     const { result } = session;
     if (result !== null && result !== savedResult) {
       savedResult = result;
       if (level.world !== PROTOTYPE_WORLD) {
+        const challenges = sessionChallenges(session, levelChallengeTimeS);
         updateSave(storage, (save) =>
           recordResult(save, level.id, {
             stars: result.stars,
             timeS: stepsToSeconds(result.timeSteps),
+            challenges,
           }),
         );
       }

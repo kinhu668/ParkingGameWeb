@@ -11,6 +11,8 @@ export interface LevelResult {
   readonly stars: SavedStars;
   /** 成績時間（秒）。 */
   readonly timeS: number;
+  /** 這一次拿到的挑戰 id。 */
+  readonly challenges: readonly string[];
 }
 
 /** 這一關存下來的最佳星數；沒過關是 0。 */
@@ -56,8 +58,13 @@ export function isUnlocked(levelId: string, save: SaveData, unlockAll = false): 
   );
 }
 
+/** 這一關存檔裡曾經拿過的挑戰 id；沒過關是空的。 */
+export function bestChallenges(save: SaveData, levelId: string): readonly string[] {
+  return levelRecord(save, levelId)?.challenges ?? [];
+}
+
 /**
- * 把一次過關的成績併進存檔：星數取大、時間取小（兩者各自取最好的，不一定來自同一次）。
+ * 把一次過關的成績併進存檔：星數取大、時間取小、挑戰取聯集（各自取最好的，不一定來自同一次）。
  * 回傳新的存檔，不改傳進來的那一份。
  */
 export function recordResult(save: SaveData, levelId: string, result: LevelResult): SaveData {
@@ -66,5 +73,7 @@ export function recordResult(save: SaveData, levelId: string, result: LevelResul
     previous !== undefined && previous.stars > result.stars ? previous.stars : result.stars;
   const bestTimeS =
     previous !== undefined ? Math.min(previous.bestTimeS, result.timeS) : result.timeS;
-  return { ...save, levels: { ...save.levels, [levelId]: { stars, bestTimeS } } };
+  // 聯集：先前拿過的照原本的順序，後面接這一次新拿到的。
+  const challenges = [...new Set([...(previous?.challenges ?? []), ...result.challenges])];
+  return { ...save, levels: { ...save.levels, [levelId]: { stars, bestTimeS, challenges } } };
 }

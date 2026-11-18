@@ -10,6 +10,7 @@ import {
   challengeTimeS,
   challengesForSpot,
   earnedChallenges,
+  sessionChallenges,
   type ChallengeInput,
 } from '../src/level/challenges';
 import { LEVELS, levelById } from '../src/level/levelCatalog';
@@ -174,6 +175,32 @@ describe('earnedChallenges：五種規則', () => {
         challengeTimeS: TIME_S,
       }),
     ).toEqual([]);
+  });
+});
+
+describe('sessionChallenges：結算畫面與存檔共用', () => {
+  const level = levelById('w1_l01');
+  if (level === undefined) {
+    throw new Error('w1_l01 不在目錄裡');
+  }
+  const route = routeForLevel(level.id);
+  if (route === undefined) {
+    throw new Error('w1_l01 沒有參考路線');
+  }
+
+  test('還沒停妥（剛開局、開到一半）→ 空的', () => {
+    expect(sessionChallenges(startSession(level.layout), 11)).toEqual([]);
+    const driving = runRoute(level.layout, route, { maxSteps: PHYSICS_HZ });
+    expect(driving.status).toBe('driving');
+    expect(sessionChallenges(driving, 11)).toEqual([]);
+  });
+
+  test('停妥：用那一局的成績時間、碰撞與車姿', () => {
+    const parked = runRoute(level.layout, route, { maxSteps: 60 * PHYSICS_HZ });
+    expect(parked.status).toBe('parked');
+    expect(sessionChallenges(parked, 11)).toEqual(['time', 'no_collisions', 'centered', 'head_in']);
+    // 門檻比這一局的時間緊就沒有「N 秒內」。
+    expect(sessionChallenges(parked, 3)).toEqual(['no_collisions', 'centered', 'head_in']);
   });
 });
 

@@ -1,4 +1,4 @@
-// 存檔：每關的最佳星數與最佳時間，加上設定（目前只有語言）。
+// 存檔：每關的最佳星數、最佳時間與曾經拿過的挑戰，加上設定（目前只有語言）。
 // 不碰 DOM：Storage 由呼叫端注入（瀏覽器是 localStorage，測試給同樣形狀的物件）。
 // 壞資料（不是 JSON、形狀不對、版本不符）一律當作沒存檔；storage 不能用時遊戲照常，只是不保存。
 // 「已解鎖」不存在這裡：它由各關星數推導（level/progress.ts），存檔只有一個事實來源。
@@ -19,11 +19,16 @@ const MAX_STARS = 3;
 /** 存下來的星數：過關才會有紀錄，所以至少 1 顆。 */
 export type SavedStars = 1 | 2 | 3;
 
-/** 一關的最佳紀錄。星數與時間各自取最好的，不一定來自同一次過關。 */
+/** 一關的最佳紀錄。星數、時間與挑戰各自取最好的，不一定來自同一次過關。 */
 export interface LevelRecord {
   readonly stars: SavedStars;
   /** 最佳成績時間（秒）。 */
   readonly bestTimeS: number;
+  /**
+   * 曾經拿過的挑戰 id（歷次過關的聯集，不重複）。加這個欄位之前存的紀錄沒有它，讀進來是空的。
+   * 存的是字串：這一版不認得的 id 照樣留著（之後的版本可能有）。
+   */
+  readonly challenges: readonly string[];
 }
 
 /** 設定。之後的畫質、鏡頭也併進來。 */
@@ -61,7 +66,19 @@ function parseLevelRecord(raw: unknown): LevelRecord | undefined {
   if (typeof bestTimeS !== 'number' || !Number.isFinite(bestTimeS) || bestTimeS < 0) {
     return undefined;
   }
-  return { stars, bestTimeS };
+  const challenges = parseChallenges(raw.challenges);
+  return challenges === undefined ? undefined : { stars, bestTimeS, challenges };
+}
+
+/** 紀錄裡的 `challenges`：沒有這個欄位（舊紀錄）= 空的；有就必須是字串陣列，重複的只留一個。 */
+function parseChallenges(raw: unknown): readonly string[] | undefined {
+  if (raw === undefined) {
+    return [];
+  }
+  if (!Array.isArray(raw) || !raw.every((id): id is string => typeof id === 'string')) {
+    return undefined;
+  }
+  return [...new Set(raw)];
 }
 
 /**

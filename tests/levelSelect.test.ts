@@ -39,7 +39,7 @@ describe('關卡選擇的卡片', () => {
   });
 
   test('第 1 關過關：卡片顯示星數與最佳時間，下一張做好的關解鎖', () => {
-    const save = recordResult(EMPTY_SAVE, 'w1_l01', { stars: 2, timeS: 12.5 });
+    const save = recordResult(EMPTY_SAVE, 'w1_l01', { stars: 2, timeS: 12.5, challenges: [] });
     const made = levelCards(slots, save, false).filter((card) => card.state !== 'soon');
     expect(made[0]).toMatchObject({ id: 'w1_l01', state: 'unlocked', stars: 2, bestTimeS: 12.5 });
     expect(made[1]).toMatchObject({ state: 'unlocked', stars: 0, bestTimeS: undefined });

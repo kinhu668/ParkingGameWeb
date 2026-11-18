@@ -1,11 +1,7 @@
 // 結算面板：停妥（成功）或失敗後顯示。成功有星數與一排挑戰打鉤，失敗有原因；兩者都列出時間、碰撞、角度誤差，
 // 以及下一關／重來／關卡選擇的按鈕。掛在 HUD 的 `#hud-status` 裡；還在開的時候整塊隱藏。
 import { onLocaleChange, t, type TranslationKey } from '../core/i18n';
-import {
-  challengesForSpot,
-  earnedChallenges,
-  type ChallengeId,
-} from '../level/challenges';
+import { challengesForSpot, sessionChallenges, type ChallengeId } from '../level/challenges';
 import { angleErrorRad } from '../level/parkingJudge';
 import { UNLIMITED_RULES, stepsToSeconds, type FailReason } from '../level/scoring';
 import type { Session } from '../level/session';
@@ -72,22 +68,14 @@ export interface ResultReadout {
   readonly challengeTimeS: number;
 }
 
-/** 停妥的一局：這個車位的每一項挑戰是這一局拿到、以前拿過，還是都沒有。 */
+/** 停妥的一局：這個車位的每一項挑戰是這一局拿到、以前拿過，還是都沒有。失敗的一局是空的。 */
 function challengeChecks(session: Session, context: ChallengeContext): readonly ChallengeCheck[] {
-  const { result } = session;
-  if (result === null) {
+  if (session.result === null) {
     return [];
   }
-  const { spot } = session.layout;
-  const earned = earnedChallenges({
-    spot,
-    vehicle: session.vehicle,
-    timeSteps: result.timeSteps,
-    collisions: result.collisions,
-    challengeTimeS: context.timeS,
-  });
+  const earned = sessionChallenges(session, context.timeS);
   const best = context.best();
-  return challengesForSpot(spot).map((id) => ({
+  return challengesForSpot(session.layout.spot).map((id) => ({
     id,
     state: earned.includes(id) ? 'earned' : best.includes(id) ? 'best' : 'none',
   }));
