@@ -14,11 +14,11 @@ import {
   type BufferGeometry,
   type Mesh,
 } from 'three';
-import { forward, headingToRotationY } from '../core/heading';
+import { forward, headingToRotationY, right } from '../core/heading';
 import { degToRad, ftToM } from '../core/units';
 import type { BoundsFt, ObbFt } from '../level/collision';
 import type { CarModelId } from '../vehicle/carModels';
-import { signText } from '../level/environmentSigns';
+import { PROP_SIGNS, signText } from '../level/environmentSigns';
 import type { LevelEnvironment } from '../level/levelSchema';
 import {
   OBSTACLE_DEFAULT_SIZE_FT,
@@ -44,7 +44,7 @@ import { createLampIslandGeometry } from './lampIsland';
 import { createPillarGeometry } from './pillar';
 import { createPineappleStandeeGeometry } from './pineappleStandee';
 import { createSurfSuvGeometry } from './surfSuv';
-import { createSignMesh } from './signs';
+import { createSignMesh, type SignStyleId } from './signs';
 
 /** 要畫的東西：關卡的障礙物、（選填的）可行駛範圍與環境。LevelDefinition 本身就符合這個形狀。 */
 export interface ObstacleSource {
@@ -434,14 +434,48 @@ const BOUNDS_SIDE_VARIATION = [
 ] as const;
 
 /**
- * 貼在模型上的字：投遞箱前面的 MAIL、推車回收架招牌兩面的 CART RETURN。其他種類沒有。
+ * 貼在模型上的字：投遞箱前面的 MAIL、推車回收架招牌兩面的 CART RETURN、餐車車頂招牌兩面的店名、
+ * 貨車車身兩側的字樣。其他種類沒有。
  * 每一片都有自己專用的材質，所以可以跟著它的模型一起淡（遮擋半透明）。
  */
 function obstacleLabels(type: ModelObstacleType, obstacle: ObbFt): Mesh[] {
   const headingRad = degToRad(obstacle.headingDeg);
   const ahead = forward(headingRad);
+  const side = right(headingRad);
   const x = ftToM(obstacle.centerXFt);
   const z = ftToM(obstacle.centerZFt);
+  /** 車身兩側各一片：牌面中心在模型本地（右 rightFt、前 aheadFt、高 yFt），字朝車外。 */
+  const sidePlates = (
+    text: string,
+    style: SignStyleId,
+    rightFt: readonly [number, number],
+    aheadFt: number,
+    yFt: number,
+    widthFt: number,
+    heightFt: number,
+    glow: number,
+  ): Mesh[] =>
+    rightFt.map((offsetFt, index) =>
+      createSignMesh({
+        text,
+        style,
+        x: x + ftToM(side.x * offsetFt + ahead.x * aheadFt),
+        y: ftToM(yFt),
+        z: z + ftToM(side.z * offsetFt + ahead.z * aheadFt),
+        facingRad: headingRad + (index === 0 ? Math.PI / 2 : -Math.PI / 2),
+        widthM: ftToM(widthFt),
+        heightM: ftToM(heightFt),
+        glow,
+      }),
+    );
+  if (type === 'food_truck') {
+    // 車頂招牌板的兩面（foodTruck.ts 的 marqueeParts：板面在本地 X = 2.35 與 2.05）。
+    return sidePlates(PROP_SIGNS.foodTruck, 'foodTruck', [2.37, 2.03], -1.5, 11.15, 9, 1.3, 0.3);
+  }
+  if (type === 'delivery_van') {
+    // 貨廂兩側、色帶上方的字樣（deliveryVan.ts：車身側面在本地 X = ±3.22）。
+    return sidePlates(PROP_SIGNS.deliveryVan, 'parcel', [3.27, -3.27], -3.2, 6.7, 7.5, 1.5, 0);
+  }
   if (type === 'mailbox') {
     const outM = ftToM(obstacle.lengthFt / 2 + 0.03);
     return [

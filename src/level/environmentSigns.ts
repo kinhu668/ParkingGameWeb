@@ -38,6 +38,12 @@ export const ENVIRONMENT_SIGNS: Readonly<Record<LevelEnvironment, EnvironmentSig
   },
 };
 
+/** 貼在哪個環境都會出現的道具上的字：餐車車頂招牌的店名、併排貨車車身的字樣。同樣是虛構名稱。 */
+export const PROP_SIGNS = {
+  foodTruck: 'ALOHA PLATE',
+  deliveryVan: 'PELICAN PARCEL',
+} as const;
+
 /** 一個環境的全部招牌文字（主招牌在最前面）。 */
 export function signTextsFor(environment: LevelEnvironment): readonly string[] {
   const { main, secondary } = ENVIRONMENT_SIGNS[environment];

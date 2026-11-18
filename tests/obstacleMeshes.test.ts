@@ -4,6 +4,7 @@ import { Box3, Group, InstancedMesh, Matrix4, Vector3 } from 'three';
 import { describe, expect, test } from 'vitest';
 import { ftToM, mToFt } from '../src/core/units';
 import { obbCorners, type Obb } from '../src/level/collision';
+import { PROP_SIGNS } from '../src/level/environmentSigns';
 import { LEVELS, levelById } from '../src/level/levelCatalog';
 import type { LevelDefinition } from '../src/level/levelSchema';
 import { OBSTACLE_DEFAULT_SIZE_FT, OBSTACLE_TYPES } from '../src/level/obstacleTypes';
@@ -211,6 +212,71 @@ describe.each(LEVELS.map((level) => [level.id, level] as const))('%s 的障礙�
     expect(Math.max(...(inner[2] ?? []).map((corner) => corner.x))).toBeCloseTo(ftToM(minXFt), 4);
     expect(Math.min(...(inner[3] ?? []).map((corner) => corner.x))).toBeCloseTo(ftToM(maxXFt), 4);
     expect(obstacleCount + 4).toBe(boxes.length);
+  });
+});
+
+describe('貼在模型上的字', () => {
+  /** 一個障礙物（中心 (20, −10) ft）身上的牌子：文字、位置（英尺）、字朝哪個方向（世界座標的單位向量）。 */
+  function labelsOf(type: ModelObstacleType, headingDeg: number) {
+    const size = OBSTACLE_DEFAULT_SIZE_FT[type];
+    if (size === null) {
+      throw new Error(`${type} 沒有預設尺寸`);
+    }
+    const group = createObstacleMeshes({
+      obstaclesFt: [{ type, centerXFt: 20, centerZFt: -10, widthFt: size.widthFt, lengthFt: size.lengthFt, headingDeg }],
+    });
+    return group.children
+      .filter((child) => child.name === 'sign')
+      .map((sign) => ({
+        text: sign.userData.signText as string,
+        xFt: mToFt(sign.position.x) - 20,
+        yFt: mToFt(sign.position.y),
+        zFt: mToFt(sign.position.z) + 10,
+        facing: new Vector3(0, 0, 1).applyQuaternion(sign.quaternion),
+      }));
+  }
+
+  test('餐車：車頂招牌兩面都是虛構的店名，在出餐面（車身右側）那一邊、比車頂高，一面朝外一面朝內', () => {
+    // heading 90：車頭朝 +X，右側（出餐面）朝 +Z。
+    const labels = labelsOf('food_truck', 90);
+    expect(labels.map((label) => label.text)).toEqual([PROP_SIGNS.foodTruck, PROP_SIGNS.foodTruck]);
+    const [outer, inner] = labels;
+    expect(outer?.zFt).toBeCloseTo(2.37, 4);
+    expect(inner?.zFt).toBeCloseTo(2.03, 4);
+    for (const label of labels) {
+      // 招牌的中心在車身中心後方 1.5 ft（遮陽棚的正上方），高過車頂（10 ft）。
+      expect(label.xFt).toBeCloseTo(-1.5, 4);
+      expect(label.yFt).toBeGreaterThan(10.5);
+    }
+    expect(outer?.facing.z).toBeCloseTo(1, 5);
+    expect(inner?.facing.z).toBeCloseTo(-1, 5);
+    // 牌面在模型的招牌板上：板子比牌面高、比牌面寬。
+    const geometry = createObstacleGeometry('food_truck');
+    geometry.computeBoundingBox();
+    expect(mToFt(geometry.boundingBox?.max.y ?? 0)).toBeGreaterThan(11.15 + 0.65);
+  });
+
+  test('貨車：貨廂兩側各一片虛構的字樣，貼在車身外側、字朝車外', () => {
+    // heading 0：車頭朝 −Z，右側朝 +X。
+    const labels = labelsOf('delivery_van', 0);
+    expect(labels.map((label) => label.text)).toEqual([PROP_SIGNS.deliveryVan, PROP_SIGNS.deliveryVan]);
+    const [rightSide, leftSide] = labels;
+    expect(rightSide?.xFt).toBeCloseTo(3.27, 4);
+    expect(leftSide?.xFt).toBeCloseTo(-3.27, 4);
+    expect(rightSide?.facing.x).toBeCloseTo(1, 5);
+    expect(leftSide?.facing.x).toBeCloseTo(-1, 5);
+    for (const label of labels) {
+      // 在貨廂上（車身中心後方 3.2 ft）、色帶上方，沒有超出 7 ft 寬的碰撞盒。
+      expect(label.zFt).toBeCloseTo(3.2, 4);
+      expect(label.yFt).toBeGreaterThan(5);
+      expect(Math.abs(label.xFt)).toBeLessThan(OBSTACLE_DEFAULT_SIZE_FT.delivery_van.widthFt / 2);
+    }
+  });
+
+  test('交通錐、柱子、鳳梨立牌身上沒有字', () => {
+    for (const type of ['cone', 'pillar', 'pineapple_standee'] as const) {
+      expect(labelsOf(type, 0)).toEqual([]);
+    }
   });
 });
 

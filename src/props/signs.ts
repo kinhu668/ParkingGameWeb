@@ -39,6 +39,10 @@ export const SIGN_STYLES = {
   shopC: { background: '#e9dfc3', color: '#2b4a5a' },
   shopD: { background: '#3b3a36', color: '#f0b64a' },
   shopE: { background: '#27566b', color: '#f4f2ea' },
+  /** 餐車車頂的店名招牌：米白底、青綠字（配餐車的色帶）。 */
+  foodTruck: { background: '#fff3d6', color: '#12807a' },
+  /** 貨車車身的字樣：深藍底、米白字、橘框（配車身的色帶）。 */
+  parcel: { background: '#1f4e8c', color: '#f4f1e6', border: '#e8862e' },
   /** 巷子牆上的噴漆牌：黃底黑字。 */
   alley: { background: '#e2c33b', color: '#1b1b1a', border: '#1b1b1a' },
   /** 禁止停車：白底、暗紅字。 */

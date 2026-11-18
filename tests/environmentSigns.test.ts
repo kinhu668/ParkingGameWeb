@@ -1,6 +1,7 @@
-// 招牌文字（計畫 §3.2）：每個環境都有一筆、主招牌是計畫定的虛構名稱、字元合規、不含真實品牌。
+// 招牌文字（計畫 §3.2）：每個環境都有一筆、主招牌是計畫定的虛構名稱、字元合規、不含真實品牌；
+// 貼在道具上的字（餐車的店名、貨車的字樣）也守同樣的規則。
 import { describe, expect, test } from 'vitest';
-import { ENVIRONMENT_SIGNS, signTextsFor } from '../src/level/environmentSigns';
+import { ENVIRONMENT_SIGNS, PROP_SIGNS, signTextsFor } from '../src/level/environmentSigns';
 import { worldLevels } from '../src/level/levelCatalog';
 import { LEVEL_ENVIRONMENTS } from '../src/level/levelSchema';
 
@@ -66,8 +67,13 @@ describe('環境招牌', () => {
     }
   });
 
-  test.each(LEVEL_ENVIRONMENTS)('%s：字元合規、沒有重複、不含真實品牌', (environment) => {
-    const texts = signTextsFor(environment);
+  /** 每個環境的招牌，加上貼在道具上的字（餐車的店名、貨車的字樣）。 */
+  const SIGN_SETS: readonly (readonly [string, readonly string[]])[] = [
+    ...LEVEL_ENVIRONMENTS.map((environment) => [environment, signTextsFor(environment)] as const),
+    ['道具', Object.values(PROP_SIGNS)],
+  ];
+
+  test.each(SIGN_SETS)('%s：字元合規、沒有重複、不含真實品牌', (_name, texts) => {
     expect(new Set(texts).size).toBe(texts.length);
     for (const text of texts) {
       expect(text, text).toMatch(SIGN_PATTERN);
