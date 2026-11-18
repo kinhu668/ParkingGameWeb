@@ -44,7 +44,7 @@ const CHALLENGE_TIME_S: ReadonlyMap<string, number> = new Map([
   ['w1_l07', 36],
   ['w1_l08', 35],
   ['w1_l09', 28],
-  ['w1_l10', 35],
+  ['w1_l10', 38],
 ]);
 
 /** 這一關「N 秒內」的 N（秒）。目錄裡的每一關都有（由測試把關）；沒有就是資料漏了，直接丟錯。 */
