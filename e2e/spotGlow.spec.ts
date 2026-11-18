@@ -131,10 +131,10 @@ test('原型關、近距離跟車：停妥後標記變綠再淡出，重來後�
 });
 
 test('窄巷、側向停車、低畫質、?fx=off：進場都有標記，圍著各自的車位', async ({ page }) => {
-  // 窄巷（雨、倒車入庫）。
+  // 窄巷（雨、倒車入庫）：卸貨位在死巷底的凹槽裡，從起點看不到，標記照樣圍著它。
   await page.goto('/?level=w1_l08&lang=zh-TW&view=cockpit');
   await expect(page.locator('#game-canvas')).toBeVisible();
-  expectGlowAround(await glowSnapshot(page), { xFt: 3, zFt: -30.75, widthFt: 9, lengthFt: 17.5 });
+  expectGlowAround(await glowSnapshot(page), { xFt: 46, zFt: -25.75, widthFt: 9, lengthFt: 17.5 });
   await expectCanvasDrawn(page);
 
   // 側向停車（heading 90°、車位長 21.5 ft；晴天，畫面統計才不受夜色影響）：一樣貼著車位、方向跟著車位；低畫質也有。

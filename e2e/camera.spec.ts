@@ -203,8 +203,8 @@ async function canvasPatchColor(
   );
 }
 
-/** w1_l08：車在巷子南端，車尾後面 2.5 ft 就是南面那棟樓（bounds 的 z = 90 ft）；巷子在 x = −6.75～6.75 ft 之間。 */
-const ALLEY = { startZFt: 80, southWallZFt: 90, minXFt: -6.75, maxXFt: 6.75 } as const;
+/** w1_l08：車在巷子南端，車尾後面 2.5 ft 就是南面那棟樓（bounds 的 z = 90 ft）；巷子的第一段在 x = −7～7 ft 之間。 */
+const ALLEY = { startZFt: 80, southWallZFt: 90, minXFt: -7, maxXFt: 7 } as const;
 
 /** 鏡頭在巷子裡（南牆的前面、兩面牆之間、高過車頂），車身中心在畫面中央，那裡畫的是藍色的車漆。 */
 async function expectCarShownInAlley(page: Page, view: GameCameraView): Promise<void> {
