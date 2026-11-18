@@ -107,6 +107,7 @@ describe('recordResult：星數取大、時間取小、挑戰取聯集', () => {
   test('不改傳進來的存檔，也不動其他關與設定', () => {
     const before: SaveData = {
       version: 1,
+      levelsRevision: 2,
       levels: { w1_l03: { stars: 2, bestTimeS: 20, challenges: [] } },
       settings: { locale: 'en' },
     };
@@ -114,6 +115,7 @@ describe('recordResult：星數取大、時間取小、挑戰取聯集', () => {
     expect(before.levels).toEqual({ w1_l03: { stars: 2, bestTimeS: 20, challenges: [] } });
     expect(after).toEqual({
       version: 1,
+      levelsRevision: 2,
       levels: { w1_l03: { stars: 2, bestTimeS: 20, challenges: [] }, w1_l01: { stars: 1, bestTimeS: 30, challenges: [] } },
       settings: { locale: 'en' },
     });
@@ -167,6 +169,7 @@ describe('recordResult：挑戰是歷次過關的聯集', () => {
   test('舊存檔（紀錄沒有 challenges）讀進來是空的，過關後併進這一次的；不認得的 id 留著', () => {
     const old = parseSave({
       version: 1,
+      levelsRevision: 2,
       levels: { w1_l01: { stars: 2, bestTimeS: 12 }, w1_l02: { stars: 1, bestTimeS: 30, challenges: ['someday_new'] } },
       settings: {},
     });
