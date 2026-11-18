@@ -5,18 +5,15 @@
 import {
   BoxGeometry,
   Color,
-  CylinderGeometry,
   Group,
   InstancedMesh,
   Matrix4,
   MeshStandardMaterial,
   Quaternion,
-  SphereGeometry,
   Vector3,
   type BufferGeometry,
   type Mesh,
 } from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { forward, headingToRotationY } from '../core/heading';
 import { degToRad, ftToM } from '../core/units';
 import type { BoundsFt, ObbFt } from '../level/collision';
@@ -40,6 +37,12 @@ import {
   type Occluder,
 } from './occluders';
 import { createParkedCars } from './parkedCars';
+import { assemble, bar, blob, box, cylinder, lerp, roller, type Point } from './partShapes';
+import { createDeliveryVanGeometry } from './deliveryVan';
+import { createFoodTruckGeometry } from './foodTruck';
+import { createPillarGeometry } from './pillar';
+import { createPineappleStandeeGeometry } from './pineappleStandee';
+import { createSurfSuvGeometry } from './surfSuv';
 import { createSignMesh } from './signs';
 
 /** 要畫的東西：關卡的障礙物、（選填的）可行駛範圍與環境。LevelDefinition 本身就符合這個形狀。 */
@@ -85,77 +88,6 @@ export const WALL_STYLES: Readonly<Record<LevelEnvironment, { heightFt: number; 
   city_street: { heightFt: 7, color: 0x9a8b7d },
   narrow_alley: { heightFt: 22, color: 0x82584a },
 };
-
-// ── 零件（單位：英尺；最後整個模型一起換成公尺）──────────────────────────
-
-/** 盒子：寬（X）、高、長（Z），中心在 (x, z)、底面在 y。 */
-function box(
-  width: number,
-  height: number,
-  length: number,
-  x: number,
-  y: number,
-  z: number,
-  color: number,
-): BufferGeometry {
-  return tinted(new BoxGeometry(width, height, length).translate(x, y + height / 2, z), color);
-}
-
-/** 直立的圓柱（可以上下不同半徑），底面在 y。 */
-function cylinder(
-  topRadius: number,
-  bottomRadius: number,
-  height: number,
-  x: number,
-  y: number,
-  z: number,
-  color: number,
-  segments = 12,
-): BufferGeometry {
-  return tinted(
-    new CylinderGeometry(topRadius, bottomRadius, height, segments).translate(x, y + height / 2, z),
-    color,
-  );
-}
-
-/** 橫躺的圓柱（軸沿 X）：輪子、郵筒的圓頂。中心在 (x, y, z)。 */
-function roller(radius: number, width: number, x: number, y: number, z: number, color: number): BufferGeometry {
-  return tinted(
-    new CylinderGeometry(radius, radius, width, 12).rotateZ(Math.PI / 2).translate(x, y, z),
-    color,
-  );
-}
-
-type Point = readonly [number, number, number];
-
-/** 細桿：從 from 到 to 的一根方桿。 */
-function bar(from: Point, to: Point, thickness: number, color: number): BufferGeometry {
-  const start = new Vector3(...from);
-  const end = new Vector3(...to);
-  const direction = end.clone().sub(start);
-  const geometry = new BoxGeometry(thickness, thickness, direction.length());
-  geometry.applyQuaternion(
-    new Quaternion().setFromUnitVectors(new Vector3(0, 0, 1), direction.normalize()),
-  );
-  const middle = start.add(end).multiplyScalar(0.5);
-  return tinted(geometry.translate(middle.x, middle.y, middle.z), color);
-}
-
-/** 球（灌木）。 */
-function blob(radius: number, x: number, y: number, z: number, color: number): BufferGeometry {
-  return tinted(new SphereGeometry(radius, 8, 6).translate(x, y, z), color);
-}
-
-function lerp(from: number, to: number, t: number): number {
-  return from + (to - from) * t;
-}
-
-/** 英尺的零件合成一個公尺的幾何。 */
-function assemble(parts: readonly BufferGeometry[]): BufferGeometry {
-  const merged = mergeGeometries([...parts]);
-  const scale = ftToM(1);
-  return merged.scale(scale, scale, scale);
-}
 
 // ── 各種障礙物的零件（本地 X = 橫向、−Z = 前方，與車的模型相同）─────────────
 
@@ -407,6 +339,16 @@ export function createObstacleGeometry(type: ModelObstacleType): BufferGeometry 
       return assemble(barrierParts());
     case 'planter':
       return assemble(planterParts());
+    case 'pillar':
+      return createPillarGeometry();
+    case 'food_truck':
+      return createFoodTruckGeometry();
+    case 'delivery_van':
+      return createDeliveryVanGeometry();
+    case 'surf_suv':
+      return createSurfSuvGeometry();
+    case 'pineapple_standee':
+      return createPineappleStandeeGeometry();
     case 'wall':
       return tinted(new BoxGeometry(1, 1, 1).translate(0, 0.5, 0), 0xffffff);
   }
@@ -428,6 +370,11 @@ export const OBSTACLE_SURFACES: Readonly<Record<Exclude<ObstacleType, 'parked_ca
   bollard: 'paintedMetal',
   barrier: 'plastic',
   planter: 'concrete',
+  pillar: 'concrete',
+  food_truck: 'paintedMetal',
+  delivery_van: 'paintedMetal',
+  surf_suv: 'paintedMetal',
+  pineapple_standee: 'plastic',
 };
 
 /** 牆（JSON 的 wall 與巷子的邊界）在各環境是什麼表面：郵局與巷子是磚，其餘是水泥。 */

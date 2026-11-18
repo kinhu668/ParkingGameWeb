@@ -26,6 +26,16 @@ export const OBSTACLE_DEFAULT_SIZE_FT = {
   bollard: { widthFt: 0.8, lengthFt: 0.8 },
   barrier: { widthFt: 6, lengthFt: 1.5 },
   planter: { widthFt: 4, lengthFt: 4 },
+  /** 柱子：方形水泥柱。 */
+  pillar: { widthFt: 2, lengthFt: 2 },
+  /** 餐車：車身 7.5 ft 寬靠左（−X），右側 2.5 ft 是撐開的遮陽棚與出餐檯；長度含車頭。 */
+  food_truck: { widthFt: 10, lengthFt: 22 },
+  /** 郵務／快遞的廂型貨車。 */
+  delivery_van: { widthFt: 7, lengthFt: 20 },
+  /** 車頂綁著衝浪板的休旅車：車身 16 ft，衝浪板往車尾（+Z）多伸出 3 ft。 */
+  surf_suv: { widthFt: 6.6, lengthFt: 19 },
+  /** 巨型鳳梨吉祥物立牌（含底座）。 */
+  pineapple_standee: { widthFt: 4, lengthFt: 4 },
   wall: null,
 } as const satisfies Readonly<Record<string, ObstacleSizeFt | null>>;
 

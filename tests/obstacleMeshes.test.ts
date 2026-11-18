@@ -52,6 +52,9 @@ function expectFootprintMatches(corners: readonly Vector3[], box: Obb): void {
 
 const MODEL_TYPES = OBSTACLE_TYPES.filter((type): type is ModelObstacleType => type !== 'parked_car');
 
+/** 比人高的大型障礙物（柱子、餐車、貨車、鳳梨立牌）；其餘的都不到 8 ft。 */
+const TALL_TYPES: readonly ModelObstacleType[] = ['pillar', 'food_truck', 'delivery_van', 'pineapple_standee'];
+
 describe('各種障礙物的模型', () => {
   test.each(MODEL_TYPES.filter((type) => type !== 'wall'))('%s：不是一個方塊，底面在地上，有顏色', (type) => {
     const geometry = createObstacleGeometry(type);
@@ -62,7 +65,7 @@ describe('各種障礙物的模型', () => {
     expect(geometry.getAttribute('color')).toBeDefined();
     expect(Math.abs(box.min.y)).toBeLessThan(0.01);
     expect(mToFt(box.max.y)).toBeGreaterThan(0.3);
-    expect(mToFt(box.max.y)).toBeLessThan(8);
+    expect(mToFt(box.max.y)).toBeLessThan(TALL_TYPES.includes(type) ? 13 : 8);
   });
 
   test.each(MODEL_TYPES.filter((type) => type !== 'wall'))(
