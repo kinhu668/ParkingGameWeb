@@ -239,6 +239,38 @@ function servingParts(): BufferGeometry[] {
   return parts;
 }
 
+/**
+ * 車頂的店名招牌：立在出餐側的車頂邊（遮陽棚正上方），兩面都留白給店名
+ * （文字由別處貼在兩面中央的 9.2 × 1.45 英尺），外圈是邊框與端蓋，
+ * 下面三個腳座，背面（−X）兩端各一根斜撐，上緣一排燈泡。
+ */
+function marqueeParts(): BufferGeometry[] {
+  const x = 2.2;
+  const from = -3.4;
+  const to = 6.4;
+  const middle = (from + to) / 2;
+  const parts = [
+    // 板面（厚 0.3，兩面在 x = 2.05 與 2.35）與上下邊框
+    box(0.3, 1.8, to - from, x, 10.25, middle, CREAM),
+    box(0.4, 0.15, to - from - 0.6, x, 10.25, middle, TEAL),
+    box(0.4, 0.15, to - from - 0.6, x, 11.9, middle, TEAL),
+  ];
+  for (const z of [from + 0.15, to - 0.15]) {
+    parts.push(
+      // 端蓋、從車頂撐到端蓋背面的斜撐
+      box(0.4, 1.8, 0.3, x, 10.25, z, TEAL),
+      bar([1.1, 10.1, z], [2, 11.6, z], 0.1, CHROME),
+    );
+  }
+  for (const z of [from + 1, middle, to - 1]) {
+    parts.push(box(0.3, 0.25, 0.4, x, 10, z, CHROME));
+  }
+  for (let i = 0; i < 9; i += 1) {
+    parts.push(blob(0.12, x, 12.1, from + 0.5 + i * 1.1, YELLOW));
+  }
+  return parts;
+}
+
 /** 餐車的幾何（公尺，底面在 y = 0，帶頂點顏色）。 */
 export function createFoodTruckGeometry(): BufferGeometry {
   return assemble([
@@ -247,5 +279,6 @@ export function createFoodTruckGeometry(): BufferGeometry {
     ...cargoParts(),
     ...rearParts(),
     ...servingParts(),
+    ...marqueeParts(),
   ]);
 }
