@@ -5,14 +5,16 @@
 // 測試不寫死下一關的 id：一律用「做好的關」（有 data-level 的卡）的第 1、第 2 張；
 // 「即將推出」的格子現在是 0 張，那幾個迴圈留著給之後還沒做完的世界。
 import type { Locator, Page } from '@playwright/test';
-import { driveIntoSpot, nextSnapshot } from './driving';
+import { driveRoute, nextSnapshot, W1_L01_HEAD_IN } from './driving';
 import { challengeIdsInState, expect, OUTPUT_DIR, test } from './fixtures';
 
 /** 存檔在 localStorage 的鍵（src/core/save.ts 的 SAVE_STORAGE_KEY）。 */
 const SAVE_KEY = 'parkinggame.save.v1';
-/** 第 1 關：車從 (0, 0) ft 朝北出發，車位中心在正前方 (0, −60) ft。 */
+/** 現在的關卡版次（src/core/save.ts 的 LEVELS_REVISION）；存檔一寫就帶著它。 */
+const LEVELS_REVISION = 2;
+/** 第 1 關：車從 (−4, 55) ft 朝北出發，直行後右轉進東側那一排的空位（e2e/driving.ts 的 W1_L01_HEAD_IN）。 */
 const FIRST_LEVEL_ID = 'w1_l01';
-const FIRST_LEVEL_SPOT_Z_FT = -60;
+const FIRST_LEVEL_START_Z_FT = 55;
 /** 一個世界的格子數。 */
 const CARD_COUNT = 10;
 /** 位置比對的容許誤差（ft）。 */
@@ -24,6 +26,7 @@ const MOVE_DEADLINE_MS = 30_000;
 
 interface SavedData {
   readonly version: number;
+  readonly levelsRevision: number;
   readonly levels: Record<
     string,
     { readonly stars: number; readonly bestTimeS: number; readonly challenges: readonly string[] }
@@ -73,6 +76,7 @@ async function driveForwardABit(page: Page): Promise<number> {
 test('驗收：選關 → 停好車 → 結算有星 → 回選單星數還在、下一關解鎖 → 重新整理後仍在', async ({
   page,
 }) => {
+  test.slow();
   // 清空 localStorage 再開首頁。
   await page.goto('/?lang=zh-TW');
   await page.evaluate(() => {
@@ -92,7 +96,7 @@ test('驗收：選關 → 停好車 → 結算有星 → 回選單星數還在�
   await expect(firstCard).toHaveAttribute('data-state', 'unlocked');
   await expect(firstCard).toHaveAttribute('data-stars', '0');
   await expect(firstCard).toBeEnabled();
-  await expect(firstCard.locator('.level-card-name')).toHaveText('第一個車位');
+  await expect(firstCard.locator('.level-card-name')).toHaveText('第一格');
   await expect(firstCard.locator('.level-card-stars')).toHaveText('☆☆☆');
   await expect(nextCard).toHaveAttribute('data-state', 'locked');
   await expect(nextCard).toBeDisabled();
@@ -117,7 +121,7 @@ test('驗收：選關 → 停好車 → 結算有星 → 回選單星數還在�
   expect(await readSave(page)).toBeNull();
 
   // 用真實鍵盤把車停進車位。
-  const parked = await driveIntoSpot(page, FIRST_LEVEL_SPOT_Z_FT);
+  const parked = await driveRoute(page, W1_L01_HEAD_IN);
   expect(parked.status).toBe('parked');
   const earnedStars = parked.stars ?? 0;
   expect(earnedStars).toBeGreaterThanOrEqual(1);
@@ -142,6 +146,7 @@ test('驗收：選關 → 停好車 → 結算有星 → 回選單星數還在�
   expect(earnedChallenges).toContain('head_in');
   const expectedSave: SavedData = {
     version: 1,
+    levelsRevision: LEVELS_REVISION,
     levels: {
       [FIRST_LEVEL_ID]: {
         stars: earnedStars,
@@ -191,11 +196,12 @@ test('驗收：選關 → 停好車 → 結算有星 → 回選單星數還在�
 });
 
 test('結算的「重來」留在頁內、「下一關」換網址並保留參數；成績只會變好', async ({ page }) => {
+  test.slow();
   await page.goto(`/?level=${FIRST_LEVEL_ID}&lang=zh-TW&view=top&quality=low`);
   const status = page.locator('#hud-status');
   await expect(page.locator('#hud-speed')).toHaveText('0.0');
 
-  const first = await driveIntoSpot(page, FIRST_LEVEL_SPOT_Z_FT);
+  const first = await driveRoute(page, W1_L01_HEAD_IN);
   await expect(status).toBeVisible();
   const firstSave = await readSave(page);
   const firstChallenges = await challengeIdsInState(page, 'earned');
@@ -212,12 +218,12 @@ test('結算的「重來」留在頁內、「下一關」換網址並保留參�
   const restarted = await nextSnapshot(page);
   expect(restarted.status).toBe('ready');
   expect(restarted.elapsedS).toBe(0);
-  expect(Math.abs(restarted.zFt)).toBeLessThan(POSITION_TOLERANCE_FT);
+  expect(Math.abs(restarted.zFt - FIRST_LEVEL_START_Z_FT)).toBeLessThan(POSITION_TOLERANCE_FT);
   expect(page.url()).toBe(urlBefore);
   expect(await readSave(page)).toEqual(firstSave);
 
   // 再過一次：星數取大、時間取小、挑戰取聯集（先前拿過的在前面）。
-  const second = await driveIntoSpot(page, FIRST_LEVEL_SPOT_Z_FT);
+  const second = await driveRoute(page, W1_L01_HEAD_IN);
   await expect(status).toBeVisible();
   const secondChallenges = await challengeIdsInState(page, 'earned');
   expect((await readSave(page))?.levels[FIRST_LEVEL_ID]).toEqual({
@@ -247,7 +253,7 @@ test('Esc 暫停：車與計時都停住；繼續後照常；暫停面板可以�
 
   // 先開一小段，計時開始。
   const movedZFt = await driveForwardABit(page);
-  expect(movedZFt).toBeLessThan(0);
+  expect(movedZFt).toBeLessThan(FIRST_LEVEL_START_Z_FT);
 
   // Esc：暫停面板出現；之後車不動、計時不走，按住 W 也沒用。
   await page.keyboard.press('Escape');
@@ -283,7 +289,7 @@ test('Esc 暫停：車與計時都停住；繼續後照常；暫停面板可以�
   await expect(pause).toBeHidden();
   const restarted = await nextSnapshot(page);
   expect(restarted.status).toBe('ready');
-  expect(Math.abs(restarted.zFt)).toBeLessThan(POSITION_TOLERANCE_FT);
+  expect(Math.abs(restarted.zFt - FIRST_LEVEL_START_Z_FT)).toBeLessThan(POSITION_TOLERANCE_FT);
 
   // 暫停面板的「關卡選擇」：回首頁。沒過關，所以沒有存檔。
   await page.keyboard.press('Escape');
@@ -349,8 +355,13 @@ test('語言按鈕的選擇寫進存檔：重新整理、進關都沿用；?lang
   await page.locator('#select-language').click();
   await expect(html).toHaveAttribute('lang', 'zh-TW');
   await expect(page.locator('.select-title')).toHaveText('選擇關卡');
-  await expect(madeCards(page).nth(0).locator('.level-card-name')).toHaveText('第一個車位');
-  expect(await readSave(page)).toEqual({ version: 1, levels: {}, settings: { locale: 'zh-TW' } });
+  await expect(madeCards(page).nth(0).locator('.level-card-name')).toHaveText('第一格');
+  expect(await readSave(page)).toEqual({
+    version: 1,
+    levelsRevision: LEVELS_REVISION,
+    levels: {},
+    settings: { locale: 'zh-TW' },
+  });
 
   // 重新整理：還是中文。
   await page.reload();

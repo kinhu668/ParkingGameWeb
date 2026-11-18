@@ -1,8 +1,14 @@
 // e2e 用鍵盤照路線開車（e2e/driving.ts 的 driveRoute）：這裡用同一份規劃邏輯在物理模型上跑，
-// 確認第 1 關的車頭入庫與倒車入庫兩條路線在各種幀率下都停得進去、不碰到任何東西。
+// 確認第 1 關的車頭入庫與倒車入庫、第 3 關的倒車出庫再倒車入庫，在各種幀率下都停得進去、不碰到任何東西。
 // e2e 一次要幾十秒；路線或關卡改了，先在這裡知道。
 import { describe, expect, it } from 'vitest';
-import { W1_L01_BACK_IN, W1_L01_HEAD_IN, createRoutePlanner, type RouteLeg } from '../e2e/driving';
+import {
+  W1_L01_BACK_IN,
+  W1_L01_HEAD_IN,
+  W1_L03_BACK_OUT_AND_IN,
+  createRoutePlanner,
+  type RouteLeg,
+} from '../e2e/driving';
 import { PHYSICS_HZ } from '../src/core/gameConfig';
 import { sessionChallenges } from '../src/level/challenges';
 import { levelById } from '../src/level/levelCatalog';
@@ -48,22 +54,25 @@ function drive(levelId: string, legs: readonly RouteLeg[], stepsPerFrame: number
   return session;
 }
 
-describe('e2e 的鍵盤路線（w1_l01）', () => {
-  const routes: readonly (readonly [string, readonly RouteLeg[], 'head_in' | 'back_in'])[] = [
-    ['車頭入庫', W1_L01_HEAD_IN, 'head_in'],
-    ['倒車入庫', W1_L01_BACK_IN, 'back_in'],
+describe('e2e 的鍵盤路線', () => {
+  const routes: readonly (readonly [string, string, readonly RouteLeg[], 'head_in' | 'back_in'])[] = [
+    ['w1_l01 車頭入庫', 'w1_l01', W1_L01_HEAD_IN, 'head_in'],
+    ['w1_l01 倒車入庫', 'w1_l01', W1_L01_BACK_IN, 'back_in'],
+    ['w1_l03 倒車出庫再倒車入庫', 'w1_l03', W1_L03_BACK_OUT_AND_IN, 'back_in'],
   ];
   // 60、30、10、6、4 FPS。
   const framesSteps = [1, 2, 6, 10, 15] as const;
 
-  for (const [name, legs, challenge] of routes) {
+  for (const [name, levelId, legs, challenge] of routes) {
     it.each(framesSteps)(`${name}：每幀 %i 步物理都停妥、零碰撞，拿到對應的挑戰`, (stepsPerFrame) => {
-      const session = drive('w1_l01', legs, stepsPerFrame);
+      const session = drive(levelId, legs, stepsPerFrame);
       expect(session.status).toBe('parked');
       expect(session.collisions).toBe(0);
       const earned = sessionChallenges(session, CHALLENGE_TIME_S);
       expect(earned).toContain(challenge);
       expect(earned).not.toContain(challenge === 'head_in' ? 'back_in' : 'head_in');
+      // 起點停在車位裡的關才有「安全出車」，而且這條路線要拿得到。
+      expect(earned.includes('clean_exit')).toBe(levelId === 'w1_l03');
     });
   }
 });

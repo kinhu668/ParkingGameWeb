@@ -261,6 +261,20 @@ export const W1_L01_BACK_IN: readonly RouteLeg[] = [
 ];
 
 /**
+ * w1_l03（src/levels/w1_l03.json）：起點車頭朝南停在南排的車位裡 (−18, 21) ft，兩側都有車；目標是北排的空位 (27, −21) ft。
+ * 整條路都掛 R 檔：直退 10.25 ft（9.5–11 ft 都可以：太短車頭會掃到西邊的鄰車，太長第二個弧會擦到目標車位旁的車），
+ * 左打到底倒到車頭朝西（車身中心 (−9.65, −6.6)），沿走道直退到 x = 9.65（後軸在目標車位中線以西 R），
+ * 右打到底倒到車頭朝南，直退進車位。停妥是倒車入庫，出車位時沒有碰撞（安全出車）。
+ */
+export const W1_L03_BACK_OUT_AND_IN: readonly RouteLeg[] = [
+  { kind: 'straight', axis: 'z', stopAtFt: 10.75, reverse: true },
+  { kind: 'arc', steer: 'left', untilHeadingDeg: 270, reverse: true },
+  { kind: 'straight', axis: 'x', stopAtFt: 9.65, reverse: true },
+  { kind: 'arc', steer: 'right', untilHeadingDeg: 180, reverse: true },
+  { kind: 'straight', axis: 'z', stopAtFt: -21, reverse: true },
+];
+
+/**
  * 照路線把車開到停妥：每幀讀狀態 → 規劃 → 只對有變化的鍵送 keydown／keyup；換檔都在停住的時候。
  * 進場時必須是 D 檔（新的一局）。回傳時已停妥，所有鍵都已放開；這一局失敗、路線走完或超過時間還沒停妥就丟例外。
  */
