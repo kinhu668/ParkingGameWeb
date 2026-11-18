@@ -1,6 +1,11 @@
-// 結算面板：停妥（成功）或失敗後顯示。成功有星數，失敗有原因；兩者都列出時間、碰撞、角度誤差，
+// 結算面板：停妥（成功）或失敗後顯示。成功有星數與一排挑戰打鉤，失敗有原因；兩者都列出時間、碰撞、角度誤差，
 // 以及下一關／重來／關卡選擇的按鈕。掛在 HUD 的 `#hud-status` 裡；還在開的時候整塊隱藏。
 import { onLocaleChange, t, type TranslationKey } from '../core/i18n';
+import {
+  challengesForSpot,
+  earnedChallenges,
+  type ChallengeId,
+} from '../level/challenges';
 import { angleErrorRad } from '../level/parkingJudge';
 import { UNLIMITED_RULES, stepsToSeconds, type FailReason } from '../level/scoring';
 import type { Session } from '../level/session';
@@ -14,6 +19,41 @@ const FAIL_REASON_LABELS: Readonly<Record<FailReason, TranslationKey>> = {
   collisions: 'status.failCollisions',
 };
 
+/** 挑戰 → 名稱的翻譯鍵；少列一個挑戰會編譯失敗。「N 秒內」的文字裡有 `{seconds}`。 */
+const CHALLENGE_LABELS: Readonly<Record<ChallengeId, TranslationKey>> = {
+  time: 'challenge.time',
+  no_collisions: 'challenge.noCollisions',
+  centered: 'challenge.centered',
+  head_in: 'challenge.headIn',
+  back_in: 'challenge.backIn',
+};
+
+/**
+ * 一項挑戰在結算畫面上的狀態：earned = 這一局拿到（實心的勾）；
+ * best = 這一局沒拿到、但存檔裡以前拿過（較淡的勾）；none = 還沒拿過（空框）。
+ */
+export type ChallengeState = 'earned' | 'best' | 'none';
+
+/** 狀態 → 給螢幕閱讀器與提示文字的說明。 */
+const CHALLENGE_STATE_LABELS: Readonly<Record<ChallengeState, TranslationKey>> = {
+  earned: 'challenge.stateEarned',
+  best: 'challenge.stateBest',
+  none: 'challenge.stateNone',
+};
+
+export interface ChallengeCheck {
+  readonly id: ChallengeId;
+  readonly state: ChallengeState;
+}
+
+/** 算挑戰要用到、但不在一局裡的資料。 */
+export interface ChallengeContext {
+  /** 這一關「N 秒內」的 N（秒）。 */
+  readonly timeS: number;
+  /** 存檔裡這一關曾經拿過的挑戰 id（讀當下的存檔）；原型關不存檔，永遠是空的。 */
+  readonly best: () => readonly string[];
+}
+
 /** 結算面板要顯示的內容（數值已經換成文字）。 */
 export interface ResultReadout {
   readonly outcome: 'parked' | 'failed';
@@ -24,12 +64,37 @@ export interface ResultReadout {
   /** 花掉的時間 `m:ss.s`：停妥是成績時間，失敗是到失敗那一步為止。 */
   readonly time: string;
   readonly collisions: string;
-  /** 結束當下車頭與車位方向的夾角。 */
+  /** 結束當下車頭與合法朝向的夾角（一般車位取較近的那個朝向）。 */
   readonly angle: string;
+  /** 這一關的挑戰（依顯示順序）與各自的狀態；失敗的一局沒有挑戰，是空的。 */
+  readonly challenges: readonly ChallengeCheck[];
+  /** 「N 秒內」的 N（秒），填進那一項的名稱。 */
+  readonly challengeTimeS: number;
+}
+
+/** 停妥的一局：這個車位的每一項挑戰是這一局拿到、以前拿過，還是都沒有。 */
+function challengeChecks(session: Session, context: ChallengeContext): readonly ChallengeCheck[] {
+  const { result } = session;
+  if (result === null) {
+    return [];
+  }
+  const { spot } = session.layout;
+  const earned = earnedChallenges({
+    spot,
+    vehicle: session.vehicle,
+    timeSteps: result.timeSteps,
+    collisions: result.collisions,
+    challengeTimeS: context.timeS,
+  });
+  const best = context.best();
+  return challengesForSpot(spot).map((id) => ({
+    id,
+    state: earned.includes(id) ? 'earned' : best.includes(id) ? 'best' : 'none',
+  }));
 }
 
 /** 由一局的現況算出結算內容；還沒結束（ready、driving）回傳 null。 */
-export function resultReadout(session: Session): ResultReadout | null {
+export function resultReadout(session: Session, challenges: ChallengeContext): ResultReadout | null {
   if (session.status !== 'parked' && session.status !== 'failed') {
     return null;
   }
@@ -39,6 +104,8 @@ export function resultReadout(session: Session): ResultReadout | null {
     outcome: session.status,
     stars: result?.stars ?? null,
     failReason: session.failReason,
+    challenges: challengeChecks(session, challenges),
+    challengeTimeS: challenges.timeS,
     time: formatTime(stepsToSeconds(result?.timeSteps ?? session.elapsedSteps)),
     collisions: formatCollisions(result?.collisions ?? session.collisions, rules.maxCollisions),
     angle: formatAngleDeg(result?.angleErrorRad ?? angleErrorRad(session.vehicle, session.layout.spot)),
@@ -62,7 +129,8 @@ export interface ResultsPanel {
 
 /**
  * 在 root 裡建立結算面板（一開始隱藏），並訂閱語言切換。
- * `#hud-status[data-status]` 是 parked 或 failed；成功時 `#result-stars[data-stars]` 是星數。
+ * `#hud-status[data-status]` 是 parked 或 failed；成功時 `#result-stars[data-stars]` 是星數，
+ * `#result-challenges` 裡每一項 `[data-challenge]` 的 `data-state` 是 earned、best 或 none。
  * @param restartKeys 目前綁在「重來」上的鍵（提示文字用）
  */
 export function createResultsPanel(
@@ -82,6 +150,10 @@ export function createResultsPanel(
   detail.id = 'hud-status-detail';
   const starsText = document.createElement('span');
   starsText.id = 'result-stars';
+
+  // 挑戰打鉤：星星下面一排，只有成功時顯示。
+  const challengeList = ui.element('ul', 'result-challenges', panel);
+  challengeList.id = 'result-challenges';
 
   // 時間、碰撞、角度誤差。
   const rows = ui.element('dl', 'result-rows', panel);
@@ -110,6 +182,25 @@ export function createResultsPanel(
 
   let shown: ResultReadout | null = null;
 
+  /** 一項挑戰：勾選框（樣式看 data-state）＋ 名稱。狀態另外寫進 aria-label 與提示文字。 */
+  function challengeItem(check: ChallengeCheck, seconds: number): HTMLElement {
+    const item = document.createElement('li');
+    item.className = 'result-challenge';
+    item.dataset.challenge = check.id;
+    item.dataset.state = check.state;
+    const label = fillTemplate(t(CHALLENGE_LABELS[check.id]), { seconds: String(seconds) });
+    const state = t(CHALLENGE_STATE_LABELS[check.state]);
+    item.setAttribute('aria-label', `${label} (${state})`);
+    item.title = state;
+    const box = document.createElement('span');
+    box.className = 'result-check';
+    box.setAttribute('aria-hidden', 'true');
+    const text = document.createElement('span');
+    text.textContent = label;
+    item.append(box, text);
+    return item;
+  }
+
   function render(): void {
     overlay.hidden = shown === null;
     if (shown === null) {
@@ -118,6 +209,10 @@ export function createResultsPanel(
       return;
     }
     overlay.dataset.status = shown.outcome;
+    const { challenges, challengeTimeS } = shown;
+    challengeList.hidden = challenges.length === 0;
+    challengeList.setAttribute('aria-label', t('result.challenges'));
+    challengeList.replaceChildren(...challenges.map((check) => challengeItem(check, challengeTimeS)));
     if (shown.outcome === 'parked') {
       const stars = shown.stars ?? 0;
       title.textContent = t('status.parked');

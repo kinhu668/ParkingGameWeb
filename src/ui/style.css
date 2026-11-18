@@ -334,6 +334,71 @@ body {
   font-size: 15px;
 }
 
+/* 挑戰打鉤：星星下面一排，放不下就換行。display 會蓋掉 hidden 的預設樣式，所以明確寫隱藏規則。 */
+.result-challenges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 18px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.result-challenges[hidden] {
+  display: none;
+}
+
+.result-challenge {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--ui-text-dim);
+  font-size: 15px;
+  white-space: nowrap;
+}
+
+/* 勾選框：空框 = 還沒拿過。 */
+.result-check {
+  position: relative;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid rgb(255 255 255 / 0.4);
+  border-radius: 4px;
+}
+
+/* 勾：兩條邊轉 45°。這一局拿到是金色實心框、深色的勾；以前拿過是空框裡一個較淡的勾。 */
+.result-challenge[data-state='earned'] .result-check::after,
+.result-challenge[data-state='best'] .result-check::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 1.5px;
+  width: 4px;
+  height: 8.5px;
+  border: solid #14171c;
+  border-width: 0 2.5px 2.5px 0;
+  transform: rotate(45deg);
+}
+
+.result-challenge[data-state='earned'] {
+  color: inherit;
+}
+
+.result-challenge[data-state='earned'] .result-check {
+  border-color: #ffd45e;
+  background: #ffd45e;
+}
+
+.result-challenge[data-state='best'] .result-check {
+  border-style: dashed;
+}
+
+.result-challenge[data-state='best'] .result-check::after {
+  border-color: rgb(255 212 94 / 0.6);
+}
+
 /* 結算的數字：時間、碰撞、角度誤差，三欄並排。 */
 .result-rows {
   display: grid;
@@ -861,6 +926,14 @@ body {
 
   .result-rows {
     column-gap: 18px;
+  }
+
+  .result-challenges {
+    gap: 6px 12px;
+  }
+
+  .result-challenge {
+    font-size: 13px;
   }
 }
 

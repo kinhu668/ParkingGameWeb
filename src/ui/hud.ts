@@ -15,7 +15,12 @@ import { createControlsPanel, keyText, keysText, type ControlsAccess } from './c
 import { createUiBuilder } from './dom';
 import { GEAR_LABELS, formatAngleDeg, formatCollisions, formatTime } from './format';
 import { createPausePanel } from './pausePanel';
-import { createResultsPanel, resultReadout, type LevelActions } from './results';
+import {
+  createResultsPanel,
+  resultReadout,
+  type ChallengeContext,
+  type LevelActions,
+} from './results';
 
 // 這幾個函式搬到共用的檔案了；這裡照舊匯出，既有的呼叫端與測試不必改。
 export { otherLocale } from './dom';
@@ -147,12 +152,14 @@ export interface Hud {
  * @param actions 結算與暫停面板、關卡選擇按鈕要做的事
  * @param resume 暫停面板按「繼續」要做的事
  * @param controls 按鍵綁定的存取（操作說明、提示文字、按鍵設定面板都用它）
+ * @param challenges 這一關「N 秒內」的門檻與存檔裡拿過的挑戰（結算的打鉤用）
  */
 export function createHud(
   root: HTMLElement,
   actions: LevelActions,
   resume: () => void,
   controls: ControlsAccess,
+  challenges: ChallengeContext,
 ): Hud {
   const ui = createUiBuilder();
   const { element, translatedElement } = ui;
@@ -308,7 +315,7 @@ export function createHud(
         next.stars !== previous.stars ||
         next.failReason !== previous.failReason
       ) {
-        results.show(resultReadout(session));
+        results.show(resultReadout(session, challenges));
       }
     },
     setPaused(next: boolean): void {

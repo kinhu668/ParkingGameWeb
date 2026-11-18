@@ -27,6 +27,7 @@ import {
   parseUrlMode,
   type CameraPreset,
 } from './core/urlParams';
+import { challengeTimeS } from './level/challenges';
 import { DEMO_ROUTE_STEPS, demoVehicleAfterSteps } from './level/demoRoute';
 import {
   LEVEL_IDS,
@@ -207,6 +208,7 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
       setPaused(false);
     },
     controlsAccess,
+    { timeS: challengeTimeS(level.id), best: () => [] },
   );
   function setPaused(next: boolean): void {
     paused = next;
