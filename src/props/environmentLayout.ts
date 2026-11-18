@@ -1130,6 +1130,28 @@ function addNarrowAlley(builder: Builder, source: EnvironmentSource, bounds: Bou
       const besideDock = dockAlong + 16 <= frame.to - 6 ? dockAlong + 16 : dockAlong - 16;
       if (visible(besideDock)) {
         builder.sign(frame, signText('narrow_alley', 'DELIVERIES ONLY'), 'notice', besideDock, 0, 8.4, 9, 1.6, 0.2);
+      } else {
+        // 卸貨口凹在 JSON 的牆裡、這面牆的旁邊被擋住：改掛在相鄰的牆上，離卸貨口最近、整塊都露在外面的位置。
+        const dock = frame.point(dockAlong, 0);
+        const alongX = side === 'n' || side === 's';
+        let nearest: { readonly frame: SideFrame; readonly along: number; readonly distance: number } | undefined;
+        for (const other of SIDES.filter((candidate) => (candidate === 'n' || candidate === 's') !== alongX)) {
+          const otherFrame = sideFrame(bounds, other);
+          for (let along = otherFrame.from + 6; along <= otherFrame.to - 6; along += 1) {
+            const clear = [along - 4.5, along, along + 4.5].every((at) => {
+              const inside = otherFrame.point(at, -0.5);
+              return !insideWall(source, inside.x, inside.z);
+            });
+            const at = otherFrame.point(along, 0);
+            const distance = Math.hypot(at.x - dock.x, at.z - dock.z);
+            if (clear && (nearest === undefined || distance < nearest.distance)) {
+              nearest = { frame: otherFrame, along, distance };
+            }
+          }
+        }
+        if (nearest !== undefined) {
+          builder.sign(nearest.frame, signText('narrow_alley', 'DELIVERIES ONLY'), 'notice', nearest.along, 0, 8.4, 9, 1.6, 0.2);
+        }
       }
     }
   }
