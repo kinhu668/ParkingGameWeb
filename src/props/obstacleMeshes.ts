@@ -375,9 +375,10 @@ export const OBSTACLE_SURFACES: Readonly<Record<Exclude<ObstacleType, 'parked_ca
   planter: 'concrete',
   lamp_island: 'concrete',
   pillar: 'concrete',
-  food_truck: 'paintedMetal',
-  delivery_van: 'paintedMetal',
-  surf_suv: 'paintedMetal',
+  // 三台車用車漆（沒有髒污與水痕的疊層）：塗裝鋼的鏽斑會點在深色的玻璃與輪胎上。
+  food_truck: 'carPaint',
+  delivery_van: 'carPaint',
+  surf_suv: 'carPaint',
   pineapple_standee: 'plastic',
 };
 
