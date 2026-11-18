@@ -91,20 +91,21 @@ describe('HUD 的車位方向指標', () => {
     throw new Error('找不到 w1_l04');
   }
 
-  test('進行中才顯示：停妥或失敗之後收起', () => {
+  test('進行中、掛前進檔才顯示：停妥或失敗之後收起；掛倒檔時讓給倒車輔助層', () => {
     const session = startSession(far.layout);
-    expect(targetPointerReadout(session, IN_VIEW, false)).not.toBeNull();
-    expect(targetPointerReadout({ ...session, status: 'parked' }, IN_VIEW, true)).toBeNull();
-    expect(targetPointerReadout({ ...session, status: 'failed' }, IN_VIEW, true)).toBeNull();
+    expect(targetPointerReadout(session, 'forward', IN_VIEW, false)).not.toBeNull();
+    expect(targetPointerReadout(session, 'reverse', IN_VIEW, true)).toBeNull();
+    expect(targetPointerReadout({ ...session, status: 'parked' }, 'forward', IN_VIEW, true)).toBeNull();
+    expect(targetPointerReadout({ ...session, status: 'failed' }, 'forward', IN_VIEW, true)).toBeNull();
   });
 
   test('原型關（車位在正前方 60 ft）：開場箭頭朝上、60 ft；開到 36 ft 以內、車位在畫面裡就收起', () => {
     const session = startSession(PROTOTYPE_LEVEL.layout);
     const view: TargetView = { yawRad: session.vehicle.headingRad, spotScreen: { x: 0, y: 0.2 } };
-    expect(targetPointerReadout(session, view, false)).toEqual({ angleRad: 0, distanceFt: 60 });
+    expect(targetPointerReadout(session, 'forward', view, false)).toEqual({ angleRad: 0, distanceFt: 60 });
     const { spot } = session.layout;
     const near = { ...session, vehicle: { ...session.vehicle, z: spot.z + ftToM(35) } };
-    expect(targetPointerReadout(near, view, true)).toBeNull();
+    expect(targetPointerReadout(near, 'forward', view, true)).toBeNull();
   });
 
   test('鏡頭狀態：俯視是北方朝上；其餘鏡頭的畫面上方就是鏡頭朝向（開場時 = 車頭方向）', () => {

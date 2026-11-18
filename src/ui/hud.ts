@@ -126,17 +126,21 @@ export function spotHintVisible(session: Session, gear: Gear, shown: boolean): b
 }
 
 /**
- * 車位方向指標要顯示什麼：這一局還在進行、車位離得遠或不在畫面裡才有（core/targetPointer.ts）；不顯示是 null。
+ * 車位方向指標要顯示什麼：這一局還在進行、掛著前進檔，而且車位離得遠或不在畫面裡才有（core/targetPointer.ts）；
+ * 不顯示是 null。掛倒檔時不顯示：倒車輔助層的上排小畫面就在它的位置，而且已經在看後面了。
  * @param view 鏡頭的朝向與車位在畫面上的位置（render/gameCamera.ts 的 targetView）
  * @param shown 上一幀有沒有在顯示（在門檻附近時維持原狀）
  */
 export function targetPointerReadout(
   session: Session,
+  gear: Gear,
   view: TargetView,
   shown: boolean,
 ): TargetPointer | null {
   const running = session.status === 'ready' || session.status === 'driving';
-  return running ? targetPointer(session.vehicle, session.layout.spot, view, shown) : null;
+  return running && gear === 'forward'
+    ? targetPointer(session.vehicle, session.layout.spot, view, shown)
+    : null;
 }
 
 export interface Hud {
@@ -333,7 +337,7 @@ export function createHud(
         spotHintShown = hintNow;
         spotHint.hidden = !hintNow;
       }
-      const pointerNow = targetPointerReadout(session, view, pointerShown !== null);
+      const pointerNow = targetPointerReadout(session, gear, view, pointerShown !== null);
       if ((pointerNow === null) !== (pointerShown === null)) {
         pointer.hidden = pointerNow === null;
       }

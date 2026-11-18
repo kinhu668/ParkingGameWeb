@@ -232,7 +232,7 @@ async function overlaps(page: Page, first: string, second: string): Promise<bool
   return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
 }
 
-test('車位方向指標：車位離得遠就有箭頭與距離，俯視是北方朝上；不擋行車資訊與「車位在後方」；停妥後收起', async ({
+test('車位方向指標：車位離得遠就有箭頭與距離，俯視是北方朝上；不擋行車資訊與「車位在後方」；掛倒檔與停妥後收起', async ({
   page,
 }) => {
   const pointer = page.locator('#hud-target-pointer');
@@ -257,6 +257,14 @@ test('車位方向指標：車位離得遠就有箭頭與距離，俯視是北�
   expect(await overlaps(page, '#hud-target-pointer', '#hud-spot-hint')).toBe(false);
   expect(await overlaps(page, '#hud-spot-hint', '.hud-stats')).toBe(false);
   await page.screenshot({ path: `${OUTPUT_DIR}/target-pointer-w1_l03-cockpit.png` });
+
+  // 掛倒檔：指標收起（倒車輔助層的上排小畫面就在那個位置）；切回 D 檔又出現。
+  await page.keyboard.press('KeyR');
+  await expect(page.locator('#hud-gear')).toHaveAttribute('data-gear', 'reverse');
+  await expect(pointer).toBeHidden();
+  await page.keyboard.press('KeyR');
+  await expect(page.locator('#hud-gear')).toHaveAttribute('data-gear', 'forward');
+  await expect(pointer).toBeVisible();
 
   // 俯視：北方朝上，箭頭朝右上（東北）。直式手機的畫面也一樣放得下。
   await page.setViewportSize({ width: 412, height: 892 });

@@ -2,7 +2,7 @@
 // 1. 開場：每一關 × 每個遊戲鏡頭 × 橫式／直式——發光標記有一部分在畫面裡、沒被實心的東西擋住，
 //    不然 HUD 有指標（車位方向指標，或「車位在後方」的提示）。
 // 2. 沿參考路線開一趟（第 1 世界）：每半秒檢查一次，「看得到發光標記、或有車位方向指標」一路成立
-//    （離車位中心 12 ft 內、車已經在車位上或正要進去時除外）。
+//    （離車位中心 12 ft 內、車已經在車位上或正要進去時除外；倒車時指標收起、倒車輔助層接手，也除外）。
 // 3. 要找車位的只有 w1_l02：其餘各關在橫式畫面的四個行車鏡頭下，參考路線轉完第一個彎之後 1 秒內，
 //    發光標記已經進過畫面（沒有彎的 w1_l09 是開場就看得到）。
 // 不開 WebGL：場景照 createGameScene 的組法在 Node 裡組出來（tests/levelWorld.ts），視線用真的網格打 Raycaster。
@@ -23,6 +23,7 @@ import { createGameCamera, targetView, type GameCamera } from '../src/render/gam
 import type { SightBox } from '../src/render/occlusionFade';
 import { QUALITY_PRESETS, SPOT_GLOW_CONFIG } from '../src/render/renderConfig';
 import { spotHintVisible, targetPointerReadout } from '../src/ui/hud';
+import type { Gear } from '../src/vehicle/gearbox';
 import { PASSABLE_MESHES, blockedBetween, buildLevelWorld, solidMeshes } from './levelWorld';
 
 const ASPECTS = [
@@ -152,7 +153,7 @@ describe.each(LEVELS.map((level) => [level.id, level] as const))('%s 開場', (_
       const game = cameraAtStart(view, level, world, aspect);
       const session = startSession(level.layout);
       const seen = glowSeen(game.camera, spot, world.glow, world.hardMeshes);
-      const pointer = targetPointerReadout(session, targetView(game, spot), false) !== null;
+      const pointer = targetPointerReadout(session, 'forward', targetView(game, spot), false) !== null;
       const hint = spotHintVisible(session, 'forward', false);
       expect(seen || pointer || hint).toBe(true);
     });
@@ -193,6 +194,8 @@ function driveRoute(
   let session = startSession(level.layout);
   let driver = INITIAL_DRIVER_STATE;
   let pointerShown = false;
+  // 檔位照參考路線的油門：倒車的時候是 R 檔（指標收起、倒車輔助層接手看後面），那一段不要求有標記。
+  let gear: Gear = 'forward';
   let firstTurnS: number | null = null;
   let firstSeenS: number | null = null;
   const unmarkedS: number[] = [];
@@ -201,7 +204,7 @@ function driveRoute(
     const { vehicle } = session;
     const onTheSpot =
       Math.hypot(spot.x - vehicle.x, spot.z - vehicle.z) < TARGET_POINTER_RULES.minDistanceM;
-    const needsMark = !pointerShown && !onTheSpot;
+    const needsMark = gear === 'forward' && !pointerShown && !onTheSpot;
     if (!needsMark && !(trackFirstSeen && firstSeenS === null)) {
       return;
     }
@@ -214,7 +217,7 @@ function driveRoute(
     }
   };
 
-  pointerShown = targetPointerReadout(session, targetView(game, spot), pointerShown) !== null;
+  pointerShown = targetPointerReadout(session, gear, targetView(game, spot), pointerShown) !== null;
   check(0);
   let steps = 0;
   while (session.status !== 'parked' && session.status !== 'failed') {
@@ -224,7 +227,11 @@ function driveRoute(
     const pose = session.vehicle;
     game.update(pose, pose.speedMps, FIXED_STEP_SECONDS);
     steps += 1;
-    pointerShown = targetPointerReadout(session, targetView(game, spot), pointerShown) !== null;
+    if (decision.input.throttle !== 0) {
+      gear = decision.input.throttle < 0 ? 'reverse' : 'forward';
+    }
+    pointerShown =
+      targetPointerReadout(session, gear, targetView(game, spot), pointerShown) !== null;
     const seconds = steps * FIXED_STEP_SECONDS;
     const turnedDeg = Math.abs(radToDeg(headingDelta(start.headingRad, pose.headingRad)));
     if (firstTurnS === null && turnedDeg >= FIRST_TURN_DEG) {
