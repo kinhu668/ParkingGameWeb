@@ -2,7 +2,8 @@
 // 以及這一輪釘住的兩個方向：w1_l03 的起點 heading 是 180（面向目標）、原型關是 0。
 import { describe, expect, test } from 'vitest';
 import { forward } from '../src/core/heading';
-import { degToRad } from '../src/core/units';
+import { degToRad, ftToM } from '../src/core/units';
+import { obbCorners, obbFromFt, obbsOverlap, vehicleObb, type ObbFt } from '../src/level/collision';
 import {
   LEVELS,
   LEVEL_IDS,
@@ -278,6 +279,92 @@ describe('w1_l01（第一格）', () => {
       expect(stall.centerZFt + stall.widthFt / 2).toBeLessThan(bounds.maxZFt);
     }
   });
+});
+
+describe('第 1 世界的 10 關（重做計畫 §2）', () => {
+  /** id、環境、天氣、起點是不是停在車位裡、這一關少不了的障礙物類型。 */
+  const PLAN: readonly (readonly [string, string, string, boolean, readonly string[]])[] = [
+    ['w1_l01', 'open_lot', 'clear', false, ['parked_car']],
+    ['w1_l02', 'open_lot', 'clear', false, ['parked_car', 'lamp_island', 'shopping_cart']],
+    ['w1_l03', 'warehouse_club', 'dusk', true, ['parked_car', 'cart_corral']],
+    ['w1_l04', 'warehouse_club', 'wet', false, ['parked_car', 'shopping_cart', 'cart_corral']],
+    ['w1_l05', 'post_office', 'clear', false, ['parked_car', 'delivery_van', 'mailbox']],
+    ['w1_l06', 'open_lot', 'dusk', false, ['parked_car', 'food_truck', 'cone', 'pineapple_standee', 'lamp_island']],
+    ['w1_l07', 'warehouse_club', 'storm', true, ['parked_car', 'pillar', 'surf_suv', 'cone']],
+    ['w1_l08', 'narrow_alley', 'rain', false, ['wall', 'dumpster', 'pallet', 'pallet_stack', 'trash_bin']],
+    ['w1_l09', 'city_street', 'night', false, ['parked_car', 'delivery_van', 'cone', 'planter']],
+    [
+      'w1_l10',
+      'warehouse_club',
+      'rain',
+      true,
+      ['parked_car', 'pillar', 'food_truck', 'shopping_cart', 'cart_corral', 'pineapple_standee', 'lamp_island', 'cone'],
+    ],
+  ];
+
+  test.each(PLAN)('%s：%s、%s，起點在車位裡 = %s，障礙物類型齊全', (id, environment, weather, parked, obstacleTypes) => {
+    const level = mustFind(id);
+    expect(level.world).toBe(1);
+    expect(level.environment).toBe(environment);
+    expect(level.weather).toBe(weather);
+    expect(level.layout.startStall !== undefined).toBe(parked);
+    const types = new Set<string>(level.obstaclesFt.map((obstacle) => obstacle.type));
+    for (const type of obstacleTypes) {
+      expect(types.has(type), `${id} 應該有 ${type}`).toBe(true);
+    }
+    expect(level.boundsFt, `${id} 必須有邊界`).toBeDefined();
+  });
+
+  test('五種環境、六種天氣都用到', () => {
+    const levels = worldLevels(1);
+    expect(new Set(levels.map((level) => level.environment)).size).toBe(5);
+    expect(new Set(levels.map((level) => level.weather)).size).toBe(6);
+  });
+
+  test('平行停車只有 w1_l09：車位長邊沿著路（比寬邊長得多），前後各有一台同向的停放車', () => {
+    const parallel = worldLevels(1).filter((level) => level.parking === 'parallel');
+    expect(parallel.map((level) => level.id)).toEqual(['w1_l09']);
+    const level = mustFind('w1_l09');
+    expect(level.spotFt.lengthFt).toBeGreaterThan(level.spotFt.widthFt * 2.5);
+    const neighbours = level.obstaclesFt.filter(
+      (obstacle) =>
+        obstacle.type === 'parked_car' &&
+        obstacle.headingDeg === level.spotFt.headingDeg &&
+        Math.abs(obstacle.centerXFt - level.spotFt.centerXFt) < 25,
+    );
+    expect(neighbours).toHaveLength(2);
+  });
+
+  test.each(worldLevels(1).map((level) => [level.id, level] as const))(
+    '%s：障礙物、每一格車位、目標與起點都在 bounds 裡；沒有東西壓在目標車位或起點的車身上',
+    (id, level) => {
+      const bounds = level.boundsFt;
+      if (bounds === undefined) {
+        throw new Error(`${id} 沒有 bounds`);
+      }
+      const slack = ftToM(0.01);
+      const inside = (box: ObbFt, what: string): void => {
+        for (const corner of obbCorners(obbFromFt(box))) {
+          expect(corner.x, `${id} ${what} x`).toBeGreaterThanOrEqual(ftToM(bounds.minXFt) - slack);
+          expect(corner.x, `${id} ${what} x`).toBeLessThanOrEqual(ftToM(bounds.maxXFt) + slack);
+          expect(corner.z, `${id} ${what} z`).toBeGreaterThanOrEqual(ftToM(bounds.minZFt) - slack);
+          expect(corner.z, `${id} ${what} z`).toBeLessThanOrEqual(ftToM(bounds.maxZFt) + slack);
+        }
+      };
+      const spotBox: ObbFt = { ...level.spotFt, headingDeg: level.spotFt.headingDeg ?? 0 };
+      inside(spotBox, '目標車位');
+      level.stallsFt.forEach((stall, index) => inside(stall, `車位 ${index}`));
+      const spot = obbFromFt(spotBox);
+      const car = vehicleObb(level.layout.startState);
+      level.obstaclesFt.forEach((obstacle, index) => {
+        const what = `${obstacle.type} ${index} (${obstacle.centerXFt}, ${obstacle.centerZFt})`;
+        inside(obstacle, what);
+        const box = obbFromFt(obstacle);
+        expect(obbsOverlap(box, spot), `${id} ${what} 壓到目標車位`).toBe(false);
+        expect(obbsOverlap(box, car), `${id} ${what} 壓到起點的車`).toBe(false);
+      });
+    },
+  );
 });
 
 describe('停車種類與車頭入庫的方向（挑戰計畫 §1）', () => {
