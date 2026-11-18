@@ -521,3 +521,173 @@ describe('parseLevel：停車種類與車頭入庫的方向', () => {
     expect(errorOf(sampleWith({ parking }))).toMatch(/^sample\.json: parking 必須是 bay、parallel 其中之一/);
   });
 });
+
+describe('parseLevel：車排（rows）與停在車位裡的起點（start.parked）', () => {
+  /** 一排 4 格、往東排、車頭朝南（heading 90 + angle 90 = 180），第 1 格是空的。 */
+  const row = { pos: [-10, 0, -20], heading: 90, count: 4, empty: [1] };
+
+  test('沒有 rows：stallsFt 是空的，沒有 startStallFt，layout 沒有 startStall', () => {
+    const level = parseLevel(sample(), SOURCE);
+    expect(level.stallsFt).toEqual([]);
+    expect(level.startStallFt).toBeUndefined();
+    expect(level.layout.startStall).toBeUndefined();
+  });
+
+  test('一排垂直車位：每 9 ft 一格、預設 9 × 18，車頭方向 = heading + angle', () => {
+    const level = parseLevel(sampleWith({ rows: [row] }), SOURCE);
+    expect(level.stallsFt.map((stall) => [stall.centerXFt, stall.centerZFt])).toEqual([
+      [-10, -20],
+      [-1, -20],
+      [8, -20],
+      [17, -20],
+    ]);
+    for (const stall of level.stallsFt) {
+      expect(stall.headingDeg).toBe(180);
+      expect(stall.widthFt).toBe(9);
+      expect(stall.lengthFt).toBe(18);
+    }
+    expect(level.stallsFt.map((stall) => stall.occupied)).toEqual([true, false, true, true]);
+  });
+
+  test('有停車的格子展開成 parked_car，接在 JSON 的障礙物後面；空格不放車', () => {
+    const level = parseLevel(sampleWith({ rows: [row] }), SOURCE);
+    const listed = parseLevel(sample(), SOURCE).obstaclesFt.length;
+    const rowCars = level.obstaclesFt.slice(listed);
+    expect(rowCars.map((car) => car.type)).toEqual(['parked_car', 'parked_car', 'parked_car']);
+    expect(rowCars.map((car) => [car.centerXFt, car.centerZFt])).toEqual([
+      [-10, -20],
+      [8, -20],
+      [17, -20],
+    ]);
+    // 碰撞盒是那款車的外框，也進了 layout。
+    for (const car of rowCars) {
+      const dims = CAR_MODEL_DIMS_FT[car.model ?? 'sedan'];
+      expect(car.widthFt).toBe(dims.widthFt);
+      expect(car.lengthFt).toBe(dims.lengthFt);
+    }
+    // 會撞到的矩形 = 障礙物 + 四面邊界。
+    expect(level.layout.obstacles).toHaveLength(level.obstaclesFt.length + 4);
+  });
+
+  test('垂直車位每 4 格有一台倒車入庫的車（方向相反），每一排錯開；斜角車位一律車頭入庫', () => {
+    const straight = parseLevel(
+      sampleWith({ obstacles: [], rows: [{ pos: [-10, 0, -20], heading: 90, count: 8 }] }),
+      SOURCE,
+    );
+    expect(straight.obstaclesFt.map((car) => car.headingDeg)).toEqual([180, 180, 180, 0, 180, 180, 180, 0]);
+    const angled = parseLevel(
+      sampleWith({ obstacles: [], rows: [{ pos: [-10, 0, -30], heading: 90, angle: 45, count: 4 }] }),
+      SOURCE,
+    );
+    expect(angled.obstaclesFt.map((car) => car.headingDeg)).toEqual([135, 135, 135, 135]);
+  });
+
+  test('斜角車位：間距 = 寬 ÷ sin(angle)，車頭方向 = heading + angle', () => {
+    const level = parseLevel(
+      sampleWith({ rows: [{ pos: [0, 0, 30], heading: 0, angle: 45, count: 3, size: [9, 19] }] }),
+      SOURCE,
+    );
+    const pitchFt = 9 / Math.sin(degToRad(45));
+    level.stallsFt.forEach((stall, index) => {
+      expect(stall.centerXFt).toBeCloseTo(0, 9);
+      expect(stall.centerZFt).toBeCloseTo(30 - pitchFt * index, 9);
+      expect(stall.headingDeg).toBe(45);
+      expect(stall.lengthFt).toBe(19);
+    });
+  });
+
+  test('angle 270：車頭朝車排方向的左手邊；heading + angle 超過 360 會繞回來', () => {
+    const level = parseLevel(
+      sampleWith({ rows: [{ pos: [0, 0, 0], heading: 180, angle: 270, count: 2 }] }),
+      SOURCE,
+    );
+    expect(level.stallsFt.map((stall) => stall.headingDeg)).toEqual([90, 90]);
+    expect(level.stallsFt[1]?.centerZFt).toBeCloseTo(9, 9);
+  });
+
+  test('多排：stallsFt 依 rows 的順序接起來', () => {
+    const level = parseLevel(
+      sampleWith({ rows: [row, { pos: [-10, 0, 30], heading: 90, angle: 270, count: 2 }] }),
+      SOURCE,
+    );
+    expect(level.stallsFt).toHaveLength(6);
+    expect(level.stallsFt[4]?.headingDeg).toBe(0);
+  });
+
+  test('start.parked：起點在空格裡，startStallFt 是那一格，layout.startStall 是它的矩形（公尺）', () => {
+    const level = parseLevel(
+      sampleWith({ rows: [row], start: { pos: [-1, 0, -19], heading: 0, parked: true } }),
+      SOURCE,
+    );
+    expect(level.startStallFt).toEqual({
+      centerXFt: -1,
+      centerZFt: -20,
+      headingDeg: 180,
+      widthFt: 9,
+      lengthFt: 18,
+      occupied: false,
+    });
+    expect(level.layout.startStall).toEqual({
+      x: ftToM(-1),
+      z: ftToM(-20),
+      halfWidthM: ftToM(4.5),
+      halfLengthM: ftToM(9),
+      headingRad: degToRad(180),
+    });
+    // 起點本身不帶 parked。
+    expect(level.startFt).toEqual({ xFt: -1, zFt: -19, headingDeg: 0 });
+  });
+
+  test('start.parked 是 false 與不寫一樣', () => {
+    const level = parseLevel(
+      sampleWith({ rows: [row], start: { pos: [1, 0, -33], heading: 180, parked: false } }),
+      SOURCE,
+    );
+    expect(level.startStallFt).toBeUndefined();
+  });
+
+  test('start.parked 的錯誤：沒有 rows、不在空格裡、在有車的格子裡、方向歪了、不是布林', () => {
+    const parkedStart = { pos: [-1, 0, -19], heading: 0, parked: true };
+    expect(errorOf(sampleWith({ start: parkedStart }))).toContain('sample.json: start parked 是 true 時');
+    expect(
+      errorOf(sampleWith({ rows: [row], start: { ...parkedStart, pos: [-1, 0, -40] } })),
+    ).toContain('必須在 rows 的一個空格裡');
+    expect(
+      errorOf(sampleWith({ rows: [row], start: { ...parkedStart, pos: [8, 0, -20] } })),
+    ).toContain('必須在 rows 的一個空格裡');
+    expect(
+      errorOf(sampleWith({ rows: [row], start: { ...parkedStart, heading: 10 } })),
+    ).toContain('heading 與那一格同向或反向');
+    expect(errorOf(sampleWith({ rows: [row], start: { ...parkedStart, parked: 'yes' } }))).toBe(
+      'sample.json: start.parked 必須是 true 或 false，拿到 "yes"',
+    );
+  });
+
+  test('rows 的錯誤指出是第幾排的哪個欄位', () => {
+    expect(errorOf(sampleWith({ rows: {} }))).toContain('sample.json: rows 必須是陣列');
+    expect(errorOf(sampleWith({ rows: [{ heading: 90, count: 4 }] }))).toBe(
+      'sample.json: rows[0].pos 是必填欄位',
+    );
+    expect(errorOf(sampleWith({ rows: [row, { ...row, count: 0 }] }))).toContain(
+      'sample.json: rows[1].count 必須是 1–60 的整數',
+    );
+    expect(errorOf(sampleWith({ rows: [{ ...row, count: 2.5 }] }))).toContain('rows[0].count');
+    expect(errorOf(sampleWith({ rows: [{ ...row, empty: [4] }] }))).toContain(
+      'sample.json: rows[0].empty[0] 必須是 0–3 的整數',
+    );
+    expect(errorOf(sampleWith({ rows: [{ ...row, empty: [1, 1] }] }))).toContain(
+      'sample.json: rows[0].empty[1] 重複了',
+    );
+    expect(errorOf(sampleWith({ rows: [{ ...row, empty: 1 }] }))).toContain(
+      'sample.json: rows[0].empty 必須是格子索引的陣列',
+    );
+    expect(errorOf(sampleWith({ rows: [{ ...row, angle: 10 }] }))).toContain(
+      'sample.json: rows[0].angle 與車排方向的夾角至少要 30 度',
+    );
+    expect(errorOf(sampleWith({ rows: [{ ...row, angle: 180 }] }))).toContain('rows[0].angle');
+    expect(errorOf(sampleWith({ rows: [{ ...row, size: [9] }] }))).toContain('rows[0].size');
+    expect(errorOf(sampleWith({ rows: [{ ...row, pitch: 9 }] }))).toContain(
+      'sample.json: rows[0] 有不認得的欄位：pitch',
+    );
+  });
+});

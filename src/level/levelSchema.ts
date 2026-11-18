@@ -5,7 +5,12 @@ import { PARKING_RULES } from '../core/gameConfig';
 import { degToRad, ftToM } from '../core/units';
 import { CAR_MODEL_DIMS_FT, carModelMix, type CarModelId } from '../vehicle/carModels';
 import { boundsWallsFt, obbFromFt } from './collision';
-import { defaultObstacleSizeFt, isObstacleType, type ObstacleType } from './obstacleTypes';
+import {
+  OBSTACLE_DEFAULT_SIZE_FT,
+  defaultObstacleSizeFt,
+  isObstacleType,
+  type ObstacleType,
+} from './obstacleTypes';
 import { parkingSpotFromFt, type ParkingSpotFt } from './parkingJudge';
 import { rulesFromLevel, type SessionRules } from './scoring';
 import type { SessionLayout } from './session';
@@ -52,6 +57,24 @@ const LEVEL_ID_PATTERN = /^[a-z0-9_]+$/;
 /** heading 的範圍是 [0, 360)。 */
 const FULL_TURN_DEG = 360;
 
+/** `rows[].angle` 不填時的值：車位與車排垂直。 */
+const DEFAULT_ROW_ANGLE_DEG = 90;
+
+/** 車位與車排方向的夾角至少要這麼大（再小車位就疊在一起了）。 */
+const MIN_ROW_ANGLE_DEG = 30;
+
+/** `rows[].size` 不填時的車位大小（英尺）：寬 9、長 18。 */
+const DEFAULT_STALL_SIZE_FT = { widthFt: 9, lengthFt: 18 } as const;
+
+/** 一排最多幾格。 */
+const MAX_ROW_COUNT = 60;
+
+/** 垂直車位的車有一部分倒車入庫：每 ROW_BACKED_IN_EVERY 格一台（斜角車位一律車頭入庫）。 */
+const ROW_BACKED_IN_EVERY = 4;
+
+/** `start.parked` 的起點方向與車位方向（或反向）最多差這麼多度。 */
+const PARKED_START_HEADING_EPSILON_DEG = 0.01;
+
 /** 夾角容許值的上限：180° 等於完全不檢查方向，再大沒有意義。 */
 const MAX_ANGLE_TOLERANCE_DEG = 180;
 
@@ -60,6 +83,20 @@ export interface LevelStartFt {
   readonly xFt: number;
   readonly zFt: number;
   readonly headingDeg: number;
+}
+
+/** 車排（`rows`）展開後的一格車位（英尺、度）。 */
+export interface LevelStallFt {
+  readonly centerXFt: number;
+  readonly centerZFt: number;
+  /** 車頭入庫時車頭朝的方向。 */
+  readonly headingDeg: number;
+  /** 橫向（垂直於 heading）的寬度。 */
+  readonly widthFt: number;
+  /** 縱向（沿 heading）的長度。 */
+  readonly lengthFt: number;
+  /** 這一格有沒有停車（有 = 展開成一台 parked_car）。 */
+  readonly occupied: boolean;
 }
 
 /** 可行駛範圍：軸對齊矩形（英尺）。 */
@@ -107,7 +144,12 @@ export interface LevelDefinition {
   readonly parking: LevelParking;
   /** 目標車位；angleToleranceDeg 一定有值。 */
   readonly spotFt: ParkingSpotFt;
+  /** 障礙物：JSON 的 `obstacles`（依原順序）在前，`rows` 展開的停放車在後。 */
   readonly obstaclesFt: readonly LevelObstacleFt[];
+  /** `rows` 展開的全部車位（含空格），依 rows 的順序；畫標線與輪擋用。沒有 rows 是空的。 */
+  readonly stallsFt: readonly LevelStallFt[];
+  /** `start.parked`：起點所在的那一格（一定是空格）。沒有 = 起點不在車位裡。 */
+  readonly startStallFt?: LevelStallFt;
   /**
    * 判定、物理與算圖用的配置（公尺、弧度）。車一開始靜止、方向盤回正；
    * obstacles 是障礙物加四面邊界的碰撞盒，rules 是換成步數的時間與碰撞上限。
@@ -258,15 +300,132 @@ function readSize(
   return { widthFt, lengthFt };
 }
 
-function readStart(value: unknown, at: Cursor): LevelStartFt {
+function readBoolean(value: unknown, at: Cursor): boolean {
+  return typeof value === 'boolean' ? value : fail(at, `必須是 true 或 false，${got(value)}`);
+}
+
+/** `start`：位置、方向，以及（選填）`parked` = 起點停在 `rows` 的一個空格裡。 */
+function readStart(value: unknown, at: Cursor): LevelStartFt & { readonly parked: boolean } {
   const fields = fieldsOf(value, at);
   const pos = fields.required('pos');
   const heading = fields.required('heading');
+  const parked = fields.optional('parked');
   fields.done();
   return {
     ...readGroundPos(pos.value, pos.at),
     headingDeg: readHeadingDeg(heading.value, heading.at),
+    parked: parked === undefined ? false : readBoolean(parked.value, parked.at),
   };
+}
+
+/**
+ * `rows[]` 的一排車位：`pos` 是第 0 格的中心，`heading` 是車排的方向（格子往這個方向排下去）。
+ * `angle` 是從車排方向順時針轉到「車頭入庫方向」的角度：90（預設）= 車頭朝車排方向的右手邊、
+ * 270 = 朝左手邊、45 或 135 之類 = 斜角車位。`count` 是格數，`empty` 是不停車的格子索引，
+ * `size` 是每一格的 [寬, 長]（預設 9 × 18）。相鄰兩格的間距 = 車位寬 ÷ |sin(angle)|。
+ */
+function readRow(value: unknown, at: Cursor, rowIndex: number): readonly LevelStallFt[] {
+  const fields = fieldsOf(value, at);
+  const pos = fields.required('pos');
+  const heading = fields.required('heading');
+  const count = fields.required('count');
+  const angle = fields.optional('angle');
+  const empty = fields.optional('empty');
+  const size = fields.optional('size');
+  fields.done();
+
+  const origin = readGroundPos(pos.value, pos.at);
+  const rowHeadingDeg = readHeadingDeg(heading.value, heading.at);
+  const stallCount = readInteger(count.value, count.at, 1, MAX_ROW_COUNT);
+  const angleDeg = angle === undefined ? DEFAULT_ROW_ANGLE_DEG : readHeadingDeg(angle.value, angle.at);
+  const sine = Math.sin(degToRad(angleDeg));
+  if (angle !== undefined && Math.abs(sine) < Math.sin(degToRad(MIN_ROW_ANGLE_DEG)) - 1e-9) {
+    fail(angle.at, `與車排方向的夾角至少要 ${MIN_ROW_ANGLE_DEG} 度，${got(angleDeg)}`);
+  }
+  const emptyIndices = new Set<number>();
+  if (empty !== undefined) {
+    if (!Array.isArray(empty.value)) {
+      fail(empty.at, `必須是格子索引的陣列，${got(empty.value)}`);
+    }
+    const items: readonly unknown[] = empty.value;
+    items.forEach((item, index) => {
+      const itemAt = child(empty.at, index);
+      const stallIndex = readInteger(item, itemAt, 0, stallCount - 1);
+      if (emptyIndices.has(stallIndex)) {
+        fail(itemAt, `重複了，${got(stallIndex)}`);
+      }
+      emptyIndices.add(stallIndex);
+    });
+  }
+  const { widthFt, lengthFt } =
+    size === undefined ? DEFAULT_STALL_SIZE_FT : readSize(size.value, size.at);
+  const pitchFt = widthFt / Math.abs(sine);
+  const rowRad = degToRad(rowHeadingDeg);
+  // heading 0 朝 −Z、順時針為正：前進方向 = (sin, −cos)。
+  const stepXFt = Math.sin(rowRad) * pitchFt;
+  const stepZFt = -Math.cos(rowRad) * pitchFt;
+  const headInDeg = (rowHeadingDeg + angleDeg) % FULL_TURN_DEG;
+  const perpendicular = angleDeg % (FULL_TURN_DEG / 2) === DEFAULT_ROW_ANGLE_DEG;
+  return Array.from({ length: stallCount }, (_, index) => ({
+    centerXFt: origin.xFt + stepXFt * index,
+    centerZFt: origin.zFt + stepZFt * index,
+    // 垂直車位每隔幾格有一台倒車入庫的（每一排錯開）；格子本身的方向不變，只有車掉頭。
+    headingDeg: headInDeg,
+    widthFt,
+    lengthFt,
+    occupied: !emptyIndices.has(index),
+    ...(perpendicular && (index + rowIndex) % ROW_BACKED_IN_EVERY === ROW_BACKED_IN_EVERY - 1
+      ? { backedIn: true }
+      : {}),
+  }));
+}
+
+/** `rows`：每一排展開成車位，接成一個陣列。 */
+function readRows(value: unknown, at: Cursor): readonly (LevelStallFt & { readonly backedIn?: boolean })[] {
+  if (!Array.isArray(value)) {
+    return fail(at, `必須是陣列，${got(value)}`);
+  }
+  const items: readonly unknown[] = value;
+  return items.flatMap((item, index) => readRow(item, child(at, index), index));
+}
+
+/** 停在車位裡的車：碰撞盒先用預設值，車款決定之後換成那款車的外框。 */
+function stallCar(stall: LevelStallFt & { readonly backedIn?: boolean }): LevelObstacleFt {
+  return {
+    type: 'parked_car',
+    centerXFt: stall.centerXFt,
+    centerZFt: stall.centerZFt,
+    headingDeg:
+      stall.backedIn === true ? (stall.headingDeg + FULL_TURN_DEG / 2) % FULL_TURN_DEG : stall.headingDeg,
+    ...OBSTACLE_DEFAULT_SIZE_FT.parked_car,
+  };
+}
+
+/**
+ * `start.parked` 的起點在哪一格：位置在一個空格裡面，方向與車位方向相同或相反。找不到就報錯。
+ */
+function startStallOf(
+  startFt: LevelStartFt,
+  stalls: readonly LevelStallFt[],
+  at: Cursor,
+): LevelStallFt {
+  const found = stalls.find((stall) => {
+    if (stall.occupied) {
+      return false;
+    }
+    const headingRad = degToRad(stall.headingDeg);
+    const dx = startFt.xFt - stall.centerXFt;
+    const dz = startFt.zFt - stall.centerZFt;
+    const along = dx * Math.sin(headingRad) - dz * Math.cos(headingRad);
+    const across = dx * Math.cos(headingRad) + dz * Math.sin(headingRad);
+    const turnDeg = Math.abs(((startFt.headingDeg - stall.headingDeg + 270) % 180) - 90);
+    return (
+      Math.abs(along) <= stall.lengthFt / 2 &&
+      Math.abs(across) <= stall.widthFt / 2 &&
+      turnDeg <= PARKED_START_HEADING_EPSILON_DEG
+    );
+  });
+  return found ?? fail(at, 'parked 是 true 時，pos 必須在 rows 的一個空格裡，heading 與那一格同向或反向');
 }
 
 function readTarget(value: unknown, at: Cursor, angleToleranceDeg: number): ParkingSpotFt {
@@ -361,15 +520,20 @@ function readObstacle(value: unknown, at: Cursor): LevelObstacleFt {
 }
 
 /**
- * 障礙物清單。停放車輛的車款由關卡 id 決定（固定種子，同一關永遠是同一組），碰撞盒換成那款車的外框：
+ * 障礙物清單：JSON 的 `obstacles` 在前，`rows` 展開的停放車（rowCars）在後。停放車輛的車款由關卡 id 決定（固定種子，同一關永遠是同一組），碰撞盒換成那款車的外框：
  * 看到的車有多大，會撞到的範圍就有多大。
  */
-function readObstacles(value: unknown, at: Cursor, levelId: string): readonly LevelObstacleFt[] {
+function readObstacles(
+  value: unknown,
+  at: Cursor,
+  levelId: string,
+  rowCars: readonly LevelObstacleFt[],
+): readonly LevelObstacleFt[] {
   if (!Array.isArray(value)) {
     return fail(at, `必須是陣列（可以是空的），${got(value)}`);
   }
   const items: readonly unknown[] = value;
-  const obstacles = items.map((item, index) => readObstacle(item, child(at, index)));
+  const obstacles = [...items.map((item, index) => readObstacle(item, child(at, index))), ...rowCars];
   const models = carModelMix(
     levelId,
     obstacles.filter((obstacle) => obstacle.type === 'parked_car').length,
@@ -396,6 +560,7 @@ function layoutOf(
   obstaclesFt: readonly LevelObstacleFt[],
   boundsFt: LevelBoundsFt | undefined,
   rules: SessionRules,
+  startStallFt: LevelStallFt | undefined,
 ): SessionLayout {
   const wallsFt = boundsFt === undefined ? [] : boundsWallsFt(boundsFt);
   return {
@@ -409,6 +574,7 @@ function layoutOf(
     },
     obstacles: [...obstaclesFt, ...wallsFt].map(obbFromFt),
     rules,
+    ...(startStallFt === undefined ? {} : { startStall: obbFromFt(startStallFt) }),
   };
 }
 
@@ -437,6 +603,7 @@ export function parseLevel(raw: unknown, source: string): LevelDefinition {
   const start = fields.required('start');
   const target = fields.required('target');
   const obstacles = fields.required('obstacles');
+  const rows = fields.optional('rows');
   fields.done();
 
   const levelId = readString(id.value, id.at);
@@ -458,7 +625,7 @@ export function parseLevel(raw: unknown, source: string): LevelDefinition {
     fail(angleTolerance.at, `不能超過 ${MAX_ANGLE_TOLERANCE_DEG}，${got(angleToleranceDeg)}`);
   }
 
-  const startFt = readStart(start.value, start.at);
+  const { parked: startParked, ...startFt } = readStart(start.value, start.at);
   const parking = readOneOf(parkingField.value, parkingField.at, LEVEL_PARKINGS);
   const strictSpotFt = readTarget(target.value, target.at, angleToleranceDeg);
   const headInHeadingDeg = readHeadInHeading(
@@ -471,7 +638,24 @@ export function parseLevel(raw: unknown, source: string): LevelDefinition {
     headInHeadingDeg === undefined ? strictSpotFt : { ...strictSpotFt, headInHeadingDeg };
   const maxCollisionCount = readInteger(maxCollisions.value, maxCollisions.at, 0, Infinity);
   const boundsFt = bounds === undefined ? undefined : readBounds(bounds.value, bounds.at);
-  const obstaclesFt = readObstacles(obstacles.value, obstacles.at, levelId);
+  const rowStalls = rows === undefined ? [] : readRows(rows.value, rows.at);
+  const obstaclesFt = readObstacles(
+    obstacles.value,
+    obstacles.at,
+    levelId,
+    rowStalls.filter((stall) => stall.occupied).map(stallCar),
+  );
+  const stallsFt: readonly LevelStallFt[] = rowStalls.map(
+    ({ centerXFt, centerZFt, headingDeg, widthFt, lengthFt, occupied }) => ({
+      centerXFt,
+      centerZFt,
+      headingDeg,
+      widthFt,
+      lengthFt,
+      occupied,
+    }),
+  );
+  const startStallFt = startParked ? startStallOf(startFt, stallsFt, start.at) : undefined;
 
   return {
     id: levelId,
@@ -491,12 +675,15 @@ export function parseLevel(raw: unknown, source: string): LevelDefinition {
     parking,
     spotFt,
     obstaclesFt,
+    stallsFt,
+    ...(startStallFt === undefined ? {} : { startStallFt }),
     layout: layoutOf(
       startFt,
       spotFt,
       obstaclesFt,
       boundsFt,
       rulesFromLevel(timeLimitS, targetTimeS, maxCollisionCount),
+      startStallFt,
     ),
   };
 }

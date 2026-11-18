@@ -26,6 +26,8 @@ export interface SessionLayout {
   readonly obstacles?: readonly Obb[];
   /** 時間上限、2 星門檻、碰撞上限。不填 = 不限時、不限碰撞次數。 */
   readonly rules?: SessionRules;
+  /** 起點停在車位裡的關卡：那一格車位的矩形（「安全出車」看車身離開它之前有沒有碰撞）。 */
+  readonly startStall?: Obb;
 }
 
 /**
