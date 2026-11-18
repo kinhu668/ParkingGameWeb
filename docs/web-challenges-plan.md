@@ -188,3 +188,29 @@
 5. §6 關卡格式：補上 `parking`（`bay` | `parallel`）與 bay 關的 `head_in_heading`。
 
 以上只是提案，等這批做完再決定要不要改規格檔。
+
+---
+
+## 11. 實作結果（2026-11-17，使用者核准後實作）
+
+| 步驟 | 做了什麼 | 主要檔案 |
+| --- | --- | --- |
+| 1 | 一般車位兩個朝向都算停妥（`headInHeadingRad` 有值的車位）；3 星、HUD 與結算的角度誤差看較近的合法朝向；平行車位不變 | `parkingJudge.ts` |
+| 2 | 關卡格式加必填 `parking`（`bay`／`parallel`）與 bay 關必填的 `head_in_heading`；11 份 JSON 填好，只有 w1_l08、w1_l09 是 `parallel` | `levelSchema.ts`、`src/levels/*.json` |
+| 3 | 挑戰純函式：`time`、`no_collisions`、`centered`（橫向、縱向各 ≤ 0.5 ft，含邊界）、`head_in`、`back_in`（看停妥的車頭朝向，不看檔位）；「N 秒內」的 N 是一張表 | `challenges.ts` |
+| 4 | 成功的結算畫面在星星下面加一排打鉤（`#result-challenges`，每項 `data-challenge`、`data-state`）；失敗畫面沒有；zh-TW 與 en 字串 | `results.ts`、`style.css`、`locale/*.json` |
+| 5 | 存檔每關多一個 `challenges`（歷次聯集，版本維持 1，舊紀錄讀進來是空的，欄位壞了只當空的）；本局拿到 `earned`、以前拿過 `best`、都沒有 `none`；原型關只看本局、不存 | `save.ts`、`progress.ts`、`main.ts` |
+| 6 | e2e：w1_l01 車頭入庫（舊格式存檔）、w1_l05 倒車入庫（先前的打鉤變淡、存檔聯集）、原型關不存檔、失敗畫面沒有挑戰列 | `e2e/challenges.spec.ts`、`e2e/collision.spec.ts`、`e2e/levelFlow.spec.ts` |
+| 7 | `stage-reviewer` 審查並修正（`cf0ca8e`） | — |
+
+「N 秒內」的 N = round(0.70 × `target_time`)，每一關都比 2 星的目標時間緊，官方路線（含判定的 1 秒）都在 N 以內，所以沒有放寬（`tests/challenges.test.ts` 把關）：
+
+| 關卡 | prototype | w1_l01 | w1_l02 | w1_l03 | w1_l04 | w1_l05 | w1_l06 | w1_l07 | w1_l08 | w1_l09 | w1_l10 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `target_time`（秒） | 30 | 15 | 20 | 22 | 25 | 18 | 30 | 34 | 30 | 40 | 50 |
+| N（秒） | 21 | 11 | 14 | 15 | 18 | 13 | 21 | 24 | 21 | 28 | 35 |
+| 官方路線（秒） | 5.23 | 5.85 | 7.40 | 8.72 | 10.22 | 5.88 | 13.27 | 13.45 | 13.82 | 13.68 | 23.32 |
+
+已知、留給之後：關卡選擇卡還不顯示打鉤；w1_l08、w1_l09 的官方路線縱向停得比中心短 1.5／2.3 ft，路線本身拿不到「停正置中」（玩家可以）；教學倒車的 w1_l05／06／07／10 現在也能車頭入庫過關（使用者的決定），「倒車入庫」打鉤是倒車的獎勵；手機橫式結算面板會蓋到上方行車資訊列的下緣（原本就有，這批讓面板高了約 31 px）。「換檔不超過 N 次」沒做。
+
+截圖在 `/workspace/parking-web-challenges-{desktop,phone}-{zh,en}.png`；進度、門檻實測與規格修正提議在 `~/parking-dev/logs/web-challenges-progress.md`（規格檔沒有改）。
