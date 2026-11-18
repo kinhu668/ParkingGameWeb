@@ -146,7 +146,7 @@ export interface LevelDefinition {
   readonly spotFt: ParkingSpotFt;
   /** 障礙物：JSON 的 `obstacles`（依原順序）在前，`rows` 展開的停放車在後。 */
   readonly obstaclesFt: readonly LevelObstacleFt[];
-  /** `rows` 展開的全部車位（含空格），依 rows 的順序；畫標線與輪擋用。沒有 rows 是空的。 */
+  /** `rows` 展開的全部車位（含空格），依 rows 的順序；畫標線用。沒有 rows 是空的。 */
   readonly stallsFt: readonly LevelStallFt[];
   /** `start.parked`：起點所在的那一格（一定是空格）。沒有 = 起點不在車位裡。 */
   readonly startStallFt?: LevelStallFt;
@@ -371,11 +371,11 @@ function readRow(value: unknown, at: Cursor, rowIndex: number): readonly LevelSt
   return Array.from({ length: stallCount }, (_, index) => ({
     centerXFt: origin.xFt + stepXFt * index,
     centerZFt: origin.zFt + stepZFt * index,
-    // 垂直車位每隔幾格有一台倒車入庫的（每一排錯開）；格子本身的方向不變，只有車掉頭。
     headingDeg: headInDeg,
     widthFt,
     lengthFt,
     occupied: !emptyIndices.has(index),
+    // 垂直車位每隔幾格有一台倒車入庫的（每一排錯開）；格子本身的方向不變，只有車掉頭。
     ...(perpendicular && (index + rowIndex) % ROW_BACKED_IN_EVERY === ROW_BACKED_IN_EVERY - 1
       ? { backedIn: true }
       : {}),

@@ -255,6 +255,7 @@ export function cameraSnapshot(gameCamera: GameCamera, pose: VehiclePose): Camer
 }
 
 const targetPoint = new Vector3();
+const targetInView = new Vector3();
 
 /**
  * HUD 的車位方向指標要的鏡頭狀態：畫面「上方」對應的地面方向，與車位中心（地面上）在畫面上的位置。
@@ -269,7 +270,7 @@ export function targetView(
   const direction = camera.getWorldDirection(targetPoint);
   const yawRad = gameCamera.view() === 'top' ? 0 : headingFromDirection(direction.x, direction.z);
   targetPoint.set(spot.x, 0, spot.z);
-  const inFront = targetPoint.clone().applyMatrix4(camera.matrixWorldInverse).z < -camera.near;
+  const inFront = targetInView.copy(targetPoint).applyMatrix4(camera.matrixWorldInverse).z < -camera.near;
   const screen = targetPoint.project(camera);
   return { yawRad, spotScreen: inFront ? { x: screen.x, y: screen.y } : null };
 }
