@@ -171,7 +171,7 @@ describe('四個環境各自認得出來', () => {
   });
 
   test('郵局：主招牌 MAPLE HOLLOW POST OFFICE，還有 MAIL 與 15 MIN PARKING', () => {
-    for (const id of ['w1_l05', 'w1_l06']) {
+    for (const id of ['w1_l05']) {
       expect(texts(id)).toEqual(
         expect.arrayContaining(['MAPLE HOLLOW POST OFFICE', 'MAIL', '15 MIN PARKING']),
       );

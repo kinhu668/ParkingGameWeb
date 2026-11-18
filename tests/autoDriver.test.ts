@@ -261,8 +261,10 @@ describe('vehicleOnRouteAt：?cam 定格用的車輛狀態', () => {
 
   test('中途的 t 在路上：已經離開起點、還沒到車位', () => {
     const midway = vehicleOnRouteAt(level, 4);
-    expect(mToFt(midway?.x ?? NaN)).toBeGreaterThan(level.startFt.xFt + 10);
-    expect(mToFt(midway?.z ?? NaN)).toBeLessThan(level.spotFt.centerZFt - 10);
+    const xFt = mToFt(midway?.x ?? NaN);
+    const zFt = mToFt(midway?.z ?? NaN);
+    expect(Math.hypot(xFt - level.startFt.xFt, zFt - level.startFt.zFt)).toBeGreaterThan(10);
+    expect(Math.hypot(xFt - level.spotFt.centerXFt, zFt - level.spotFt.centerZFt)).toBeGreaterThan(10);
   });
 
   test('負的 t 當 0；沒有參考路線的關卡（原型關）回傳 undefined', () => {

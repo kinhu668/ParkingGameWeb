@@ -1,4 +1,4 @@
-// 個別關卡的太陽方位（大賣場 w1_l03、郵局黃昏 w1_l06 的樓影要落在場地上）與晴天的亮度微調。
+// 個別關卡的太陽方位（大賣場 w1_l03、郵局 w1_l05 的樓影要落在場地上）與晴天的亮度微調。
 // 不開 WebGL：只測方位、影子的方向與天氣數值。
 import { describe, expect, test } from 'vitest';
 import { forward } from '../src/core/heading';
@@ -40,8 +40,8 @@ function shadowIntoLot(levelId: string, weather: (typeof WEATHER_IDS)[number]): 
 }
 
 describe('個別關卡的太陽方位 sunAzimuthDeg', () => {
-  test('只有 w1_l03 與 w1_l06 有覆寫；其餘關卡與原型關都是這種天氣的預設', () => {
-    expect(Object.keys(LEVEL_SUN_AZIMUTH_DEG).sort()).toEqual(['w1_l03', 'w1_l06']);
+  test('只有 w1_l03 與 w1_l05 有覆寫；其餘關卡與原型關都是這種天氣的預設', () => {
+    expect(Object.keys(LEVEL_SUN_AZIMUTH_DEG).sort()).toEqual(['w1_l03', 'w1_l05']);
     for (const weather of WEATHER_IDS) {
       const preset = WEATHER_PRESETS[weather].sun.azimuthDeg;
       expect(sunAzimuthDeg(weather)).toBe(preset);
@@ -67,23 +67,23 @@ describe('個別關卡的太陽方位 sunAzimuthDeg', () => {
     expect(Math.abs(shadow.x)).toBeLessThan(0.5);
   });
 
-  test('w1_l06（樓在東邊）：預設的黃昏影子只擦過東緣；覆寫後朝西落進場地', () => {
-    const level = levelById('w1_l06');
+  test('w1_l05（樓在東邊）：預設的晴天影子落在樓後面；覆寫後朝西落進場地', () => {
+    const level = levelById('w1_l05');
     expect(facingSide(level?.startFt.headingDeg ?? 0)).toBe('e');
-    const preset = shadowDirection(WEATHER_PRESETS.dusk.sun.azimuthDeg);
+    const preset = shadowDirection(WEATHER_PRESETS.clear.sun.azimuthDeg);
     expect(-preset.x).toBeLessThan(0.7);
-    expect(shadowIntoLot('w1_l06', 'dusk')).toBeGreaterThan(0.9);
-    expect(shadowDirection(sunAzimuthDeg('dusk', 'w1_l06')).x).toBeLessThan(-0.9);
-    // 不在正東：起點的車頭朝東，夕陽偏到樓的一側，不會正好壓在樓頂上把整個畫面洗白。
-    expect(Math.abs(sunAzimuthDeg('dusk', 'w1_l06') - 90)).toBeGreaterThanOrEqual(15);
+    expect(shadowIntoLot('w1_l05', 'clear')).toBeGreaterThan(0.9);
+    expect(shadowDirection(sunAzimuthDeg('clear', 'w1_l05')).x).toBeLessThan(-0.9);
+    // 不在正東：起點的車頭朝東，太陽偏到樓的一側，不會正好壓在樓頂上把整個畫面洗白。
+    expect(Math.abs(sunAzimuthDeg('clear', 'w1_l05') - 90)).toBeGreaterThanOrEqual(15);
   });
 
   test('`?weather=` 換了天氣，這兩關的方位覆寫仍然適用（樓的位置沒變）', () => {
     for (const weather of WEATHER_IDS) {
       expect(sunAzimuthDeg(weather, 'w1_l03')).toBe(LEVEL_SUN_AZIMUTH_DEG.w1_l03);
-      expect(sunAzimuthDeg(weather, 'w1_l06')).toBe(LEVEL_SUN_AZIMUTH_DEG.w1_l06);
+      expect(sunAzimuthDeg(weather, 'w1_l05')).toBe(LEVEL_SUN_AZIMUTH_DEG.w1_l05);
       expect(shadowIntoLot('w1_l03', weather), weather).toBeGreaterThan(0.85);
-      expect(shadowIntoLot('w1_l06', weather), weather).toBeGreaterThan(0.9);
+      expect(shadowIntoLot('w1_l05', weather), weather).toBeGreaterThan(0.9);
     }
   });
 
@@ -93,7 +93,7 @@ describe('個別關卡的太陽方位 sunAzimuthDeg', () => {
   });
 
   test('覆寫只動方位：仰角不變，太陽仍在地平線上方同一個高度', () => {
-    for (const [levelId, weather] of [['w1_l03', 'clear'], ['w1_l06', 'dusk']] as const) {
+    for (const [levelId, weather] of [['w1_l03', 'clear'], ['w1_l05', 'clear']] as const) {
       const elevationRad = degToRad(WEATHER_PRESETS[weather].sun.elevationDeg);
       const base = directionToSun(degToRad(WEATHER_PRESETS[weather].sun.azimuthDeg), elevationRad);
       const moved = directionToSun(degToRad(sunAzimuthDeg(weather, levelId)), elevationRad);
