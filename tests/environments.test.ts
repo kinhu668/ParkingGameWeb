@@ -285,3 +285,38 @@ describe('場內車排（rows）的車位線', () => {
     }
   });
 });
+
+describe('場內的安全島（lamp_island）上的路燈', () => {
+  const level = levelById('w1_l01');
+  if (level === undefined) {
+    throw new Error('沒有 w1_l01');
+  }
+  const island = {
+    type: 'lamp_island' as const,
+    centerXFt: 3,
+    centerZFt: -20,
+    headingDeg: 90,
+    widthFt: 8,
+    lengthFt: 17,
+  };
+  const withIsland = { ...level, obstaclesFt: [...level.obstaclesFt, island] };
+  const lampsAt = <T extends { x: number; z: number }>(lamps: readonly T[]): T[] =>
+    lamps.filter((lamp) => Math.abs(lamp.x - ftToM(3)) < EPSILON_M && Math.abs(lamp.z - ftToM(-20)) < EPSILON_M);
+
+  test('每一座安全島的中心立一盞路燈；沒有安全島就沒有這盞燈', () => {
+    expect(lampsAt(createEnvironmentLayout(level, ULTRA)?.lot.lamps ?? [])).toHaveLength(0);
+    const lamps = createEnvironmentLayout(withIsland, ULTRA)?.lot.lamps ?? [];
+    expect(lampsAt(lamps)).toHaveLength(1);
+    expect(lampsAt(lamps)[0]?.headingRad).toBeCloseTo(Math.PI / 2, 9);
+  });
+
+  test.each(QUALITY_LEVELS)('%s 畫質：路燈由近到遠取，離車位近的安全島的燈每一級都留著', (quality) => {
+    const near = { ...island, centerXFt: level.spotFt.centerXFt - 20, centerZFt: level.spotFt.centerZFt };
+    const lamps =
+      createEnvironmentLayout({ ...level, obstaclesFt: [near] }, QUALITY_PRESETS[quality].props)?.lot.lamps ?? [];
+    const kept = lamps.filter(
+      (lamp) => Math.abs(lamp.x - ftToM(near.centerXFt)) < EPSILON_M && Math.abs(lamp.z - ftToM(near.centerZFt)) < EPSILON_M,
+    );
+    expect(kept).toHaveLength(QUALITY_PRESETS[quality].props.lampHeads > 0 ? 1 : 0);
+  });
+});
