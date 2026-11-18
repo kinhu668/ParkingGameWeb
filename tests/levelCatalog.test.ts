@@ -17,6 +17,7 @@ import {
   PROTOTYPE_LAYOUT_FT,
   PROTOTYPE_LEVEL,
 } from '../src/level/prototypeLayout';
+import { startSession, stepSession } from '../src/level/session';
 import en from '../src/locale/en.json';
 import zhTW from '../src/locale/zh-TW.json';
 
@@ -217,6 +218,27 @@ describe('w1_l03（先出來）', () => {
     const mouths = level.stallsFt.map((stall) => Math.abs(stall.centerZFt) - stall.lengthFt / 2);
     expect(new Set(mouths)).toEqual(new Set([12]));
   });
+});
+
+describe('起點停在車位裡的關卡（安全出車）', () => {
+  const parked = LEVELS.filter((level) => level.layout.startStall !== undefined);
+
+  test('是 w1_l03、w1_l07、w1_l10', () => {
+    expect(parked.map((level) => level.id)).toEqual(['w1_l03', 'w1_l07', 'w1_l10']);
+  });
+
+  test.each(parked.map((level) => [level.id, level] as const))(
+    '%s：車頭前面擋著，直直往前開不出去（只能倒車出庫，不能從前面那一格穿過去抄捷徑）',
+    (_id, level) => {
+      let session = startSession(level.layout);
+      // 油門踩到底 8 秒：前面沒有東西擋的話，早就穿過前面那一格、開進下一條走道了。
+      for (let step = 0; step < 8 * 60; step += 1) {
+        session = stepSession(session, { throttle: 1, steer: 0 });
+      }
+      expect(session.exitCollisions).toBeGreaterThan(0);
+      expect(session.inStartStall).toBe(true);
+    },
+  );
 });
 
 describe('w1_l01（第一格）', () => {

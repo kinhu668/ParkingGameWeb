@@ -14,6 +14,8 @@
   "start": { "pos": [13.5, 0, 30], "heading": 0, "parked": true },
   "target": { "pos": [5.25, 0, -30], "heading": 0, "size": [8.5, 18] },
   "obstacles": [
+    { "type": "cone", "pos": [11.9, 0, 19] },
+    { "type": "cone", "pos": [15.1, 0, 19] },
     { "type": "food_truck", "pos": [51, 0, -9], "heading": 180 },
     { "type": "cone", "pos": [43.5, 0, -14] },
     { "type": "cone", "pos": [40, 0, -14] },
