@@ -16,7 +16,7 @@
   "obstacles": [
     { "type": "delivery_van", "pos": [6.5, 0, 13.5], "heading": 0 },
     { "type": "mailbox", "pos": [9.65, 0, -19.6] },
-    { "type": "trash_bin", "pos": [-10.8, 0, -44.5] },
+    { "type": "trash_bin", "pos": [-10.2, 0, -44.5] },
     { "type": "planter", "pos": [23, 0, 58] },
     { "type": "planter", "pos": [23, 0, 46] }
   ],

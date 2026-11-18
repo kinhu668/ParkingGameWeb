@@ -14,7 +14,7 @@
   "start": { "pos": [-27, 0, 60], "heading": 0 },
   "target": { "pos": [12, 0, 0], "heading": 270, "size": [9, 18] },
   "obstacles": [
-    { "type": "lamp_island", "pos": [3, 0, -40.5], "heading": 90, "size": [9, 36] },
+    { "type": "lamp_island", "pos": [3, 0, -36], "heading": 90, "size": [9, 36] },
     { "type": "lamp_island", "pos": [3, 0, 45], "heading": 90, "size": [9, 36] },
     { "type": "shopping_cart", "pos": [40, 0, -60], "heading": 35 }
   ],
