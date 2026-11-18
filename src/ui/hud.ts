@@ -6,7 +6,8 @@ import type { GameCameraView } from '../core/cameraView';
 import type { ControlAction, ControlBindings } from '../core/controls';
 import { onLocaleChange, t, type TranslationKey } from '../core/i18n';
 import { spotBehindHint } from '../core/spotHint';
-import { mpsToMph } from '../core/units';
+import { targetPointer, type TargetPointer } from '../core/targetPointer';
+import { mpsToMph, radToDeg } from '../core/units';
 import { angleErrorRad } from '../level/parkingJudge';
 import { UNLIMITED_RULES, stepsToSeconds, type FailReason } from '../level/scoring';
 import type { Session } from '../level/session';
@@ -124,14 +125,29 @@ export function spotHintVisible(session: Session, gear: Gear, shown: boolean): b
   return running && gear === 'forward' && spotBehindHint(session.vehicle, session.layout.spot, shown);
 }
 
+/**
+ * 車位方向指標要顯示什麼：這一局還在進行、車位離得遠才有（core/targetPointer.ts）；不顯示是 null。
+ * @param viewYawRad 畫面上方對應的地面方向（俯視是 0，其餘是鏡頭朝向）
+ * @param shown 上一幀有沒有在顯示（距離在門檻附近時維持原狀）
+ */
+export function targetPointerReadout(
+  session: Session,
+  viewYawRad: number,
+  shown: boolean,
+): TargetPointer | null {
+  const running = session.status === 'ready' || session.status === 'driving';
+  return running ? targetPointer(session.vehicle, session.layout.spot, viewYawRad, shown) : null;
+}
+
 export interface Hud {
   /**
    * 每幀呼叫；顯示的文字有變才動 DOM。
    * 停妥或失敗時顯示結算面板（星數或原因、時間、碰撞、角度誤差、按鈕），重來後收起來。
    * @param session 這一局的現況
    * @param gear 目前的檔位（main.ts 每幀算好）
+   * @param viewYawRad 畫面上方對應的地面方向（heading 約定；車位方向指標的箭頭用）
    */
-  update(session: Session, gear: Gear): void;
+  update(session: Session, gear: Gear, viewYawRad: number): void;
   /**
    * 顯示目前的鏡頭名稱（進場與每次切換時呼叫）：短暫出現後淡出。
    * 淡出只是看不見，`#hud-camera` 的文字與 `data-view` 一直留著。
@@ -192,6 +208,17 @@ export function createHud(
   spotHint.setAttribute('role', 'status');
   spotHint.hidden = true;
   let spotHintShown = false;
+
+  // 車位方向指標：提示的下面。箭頭指向車位、旁邊是距離；車位離得遠（隔著幾排車、或在俯視的畫面外）才顯示。
+  const pointer = element('div', 'hud-panel hud-target-pointer', root);
+  pointer.id = 'hud-target-pointer';
+  pointer.hidden = true;
+  const pointerArrow = element('span', 'hud-target-arrow', pointer);
+  pointerArrow.textContent = '▲';
+  translatedElement('span', 'hud-target-label', pointer, 'hud.targetPointer');
+  const pointerDistance = element('span', 'hud-target-distance', pointer);
+  pointerDistance.id = 'hud-target-distance';
+  let pointerShown: TargetPointer | null = null;
 
   // 右上角：語言按鈕（顯示「會切到的語言」的名稱），下面是回關卡選擇的按鈕。
   const cornerButtons = element('div', 'hud-corner', root);
@@ -282,7 +309,7 @@ export function createHud(
   onLocaleChange(renderTexts);
 
   return {
-    update(session: Session, gear: Gear): void {
+    update(session: Session, gear: Gear, viewYawRad: number): void {
       const next = hudReadout(session);
       const previous = shown;
       shown = next;
@@ -306,6 +333,22 @@ export function createHud(
         spotHintShown = hintNow;
         spotHint.hidden = !hintNow;
       }
+      const pointerNow = targetPointerReadout(session, viewYawRad, pointerShown !== null);
+      if ((pointerNow === null) !== (pointerShown === null)) {
+        pointer.hidden = pointerNow === null;
+      }
+      if (pointerNow !== null) {
+        // 箭頭轉到整數度：鏡頭微微晃動時不用每一幀都改樣式。
+        const degrees = Math.round(radToDeg(pointerNow.angleRad));
+        if (pointerShown === null || degrees !== Math.round(radToDeg(pointerShown.angleRad))) {
+          pointerArrow.style.transform = `rotate(${degrees}deg)`;
+          pointer.dataset.angle = String(degrees);
+        }
+        if (pointerNow.distanceFt !== pointerShown?.distanceFt) {
+          pointerDistance.textContent = `${pointerNow.distanceFt} ft`;
+        }
+      }
+      pointerShown = pointerNow;
       if (gear !== shownGear) {
         shownGear = gear;
         renderGear();

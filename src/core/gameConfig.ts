@@ -47,3 +47,13 @@ export const SPOT_HINT_RULES = {
   hideWithinDeg: 100,
   minDistanceM: 3.6576,
 } as const;
+
+/**
+ * 車位方向指標（core/targetPointer.ts）：車位中心離車超過 showBeyondM（45 ft）才出現，回到 hideWithinM（36 ft）以內才收起；
+ * 距離取到 distanceStepFt 的倍數，數字不會每一幀都在跳。
+ */
+export const TARGET_POINTER_RULES = {
+  showBeyondM: 13.716,
+  hideWithinM: 10.9728,
+  distanceStepFt: 5,
+} as const;

@@ -6,7 +6,7 @@
 // `?cam=` 的固定鏡頭在 followCamera.ts，與這裡無關。
 import { PerspectiveCamera, Vector3 } from 'three';
 import type { GameCameraView } from '../core/cameraView';
-import { forward, headingDelta, normalizeHeading, right } from '../core/heading';
+import { forward, headingDelta, headingFromDirection, normalizeHeading, right } from '../core/heading';
 import { degToRad, mToFt } from '../core/units';
 import type { VehiclePose } from '../vehicle/bicycleModel';
 import { VEHICLE_CONFIG_SI } from '../vehicle/vehicleConfig';
@@ -251,6 +251,20 @@ export function cameraSnapshot(gameCamera: GameCamera, pose: VehiclePose): Camer
     fovDeg: camera.fov,
     carScreen: inFront ? { x: screen.x, y: screen.y } : null,
   };
+}
+
+const yawDirection = new Vector3();
+
+/**
+ * 畫面「上方」對應的地面方向（heading 約定）：HUD 的車位方向指標用它把箭頭轉到畫面上的方向。
+ * 俯視是北方朝上（0）；其餘鏡頭是鏡頭朝向在地面上的方向。
+ */
+export function viewYawRad(gameCamera: GameCamera): number {
+  if (gameCamera.view() === 'top') {
+    return 0;
+  }
+  const direction = gameCamera.camera.getWorldDirection(yawDirection);
+  return headingFromDirection(direction.x, direction.z);
 }
 
 /**

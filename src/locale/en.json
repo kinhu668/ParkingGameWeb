@@ -20,6 +20,7 @@
   "hud.gearReverse": "Reverse",
   "hud.angle": "Angle off",
   "hud.spotBehind": "▼ Spot is behind you",
+  "hud.targetPointer": "Spot",
   "camera.chase_near": "Chase Cam (Near)",
   "camera.chase_far": "Chase Cam (Far)",
   "camera.hood": "Hood Cam",

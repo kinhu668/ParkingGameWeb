@@ -54,7 +54,12 @@ import {
 import { runBench } from './render/benchMode';
 import { focusForGameView, focusForPreset } from './render/depthOfField';
 import { createPresetCamera } from './render/followCamera';
-import { cameraSnapshot, createGameCamera, type CameraSnapshot } from './render/gameCamera';
+import {
+  cameraSnapshot,
+  createGameCamera,
+  viewYawRad,
+  type CameraSnapshot,
+} from './render/gameCamera';
 import { motionSubjectAt } from './render/motionBlur';
 import { resolveQuality } from './render/quality';
 import {
@@ -407,7 +412,7 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
             motion: motionSubjectAt(pose.x, pose.z),
           },
     );
-    hud.update(session, gear);
+    hud.update(session, gear, viewYawRad(gameCamera));
     // 觸控層只在能開車的時候顯示：暫停、結算、按鍵設定開著時收起來，不擋面板上的按鈕。
     touch.update(
       {
