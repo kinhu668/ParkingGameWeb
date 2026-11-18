@@ -1077,6 +1077,12 @@ function insideWall(source: EnvironmentSource, x: number, z: number): boolean {
   });
 }
 
+/** 邊界的這一面牆上，沿邊 along 這一點是不是露在外面（沒有被 JSON 的牆蓋住）。 */
+function wallFaceVisible(source: EnvironmentSource, frame: SideFrame, along: number): boolean {
+  const inside = frame.point(along, -0.5);
+  return !insideWall(source, inside.x, inside.z);
+}
+
 /**
  * 窄巷：bounds 的四面就是兩旁的建築（obstacleMeshes 畫成很高的磚牆）。這裡補上牆面上的後門、窗、
  * 卸貨口的捲門與招牌、屋頂上的設備、伸到巷子上方的壁燈，以及地上的黃色邊線。
@@ -1087,10 +1093,7 @@ function addNarrowAlley(builder: Builder, source: EnvironmentSource, bounds: Bou
   const dockSide = facingSide(spot.headingDeg + 180);
   for (const side of SIDES) {
     const frame = sideFrame(bounds, side);
-    const visible = (along: number): boolean => {
-      const inside = frame.point(along, -0.5);
-      return !insideWall(source, inside.x, inside.z);
-    };
+    const visible = (along: number): boolean => wallFaceVisible(source, frame, along);
     const dockAlong = side === 'n' || side === 's' ? spot.centerXFt : spot.centerZFt;
     // 沿牆每隔一段擺一樣東西：後門、窗、窗、後門…；被 JSON 的牆擋住的那一段不擺。
     let slot = 0;
@@ -1121,12 +1124,20 @@ function addNarrowAlley(builder: Builder, source: EnvironmentSource, bounds: Bou
       builder.sideSlab('solid', frame, along - 4, along + 4, 10 + 6 * rng(), 18 + 6 * rng(), 20, 29, ALLEY.roofUnit);
     }
     if (side === dockSide) {
-      // 卸貨口：一扇大捲門＋橫紋，上面是 LOADING ZONE。
-      builder.sideSlab('decal', frame, dockAlong - 6, dockAlong + 6, -DECAL_DEPTH_FT, 0, 0, 11, ALLEY.rollUp);
-      for (let rib = 1; rib <= 6; rib += 1) {
-        builder.sideSlab('decal', frame, dockAlong - 6, dockAlong + 6, -DECAL_DEPTH_FT - 0.03, 0, rib * 1.55, rib * 1.55 + 0.18, ALLEY.rollUpRib);
+      // 卸貨口：一扇大捲門＋橫紋，上面是 LOADING ZONE。門 12 ft、招牌 13 ft；
+      // 卸貨口夾在 JSON 的牆之間（凹槽）時縮到凹槽裡，門的兩側各留半英尺的門框。
+      let clearHalf = 0;
+      while (clearHalf < 7 && visible(dockAlong - clearHalf - 0.25) && visible(dockAlong + clearHalf + 0.25)) {
+        clearHalf += 0.5;
       }
-      builder.sign(frame, signText('narrow_alley', 'LOADING ZONE'), 'alley', dockAlong, 0, 13, 13, 2.1, 0.3);
+      if (clearHalf >= 2) {
+        const doorHalf = Math.min(6, clearHalf - 0.5);
+        builder.sideSlab('decal', frame, dockAlong - doorHalf, dockAlong + doorHalf, -DECAL_DEPTH_FT, 0, 0, 11, ALLEY.rollUp);
+        for (let rib = 1; rib <= 6; rib += 1) {
+          builder.sideSlab('decal', frame, dockAlong - doorHalf, dockAlong + doorHalf, -DECAL_DEPTH_FT - 0.03, 0, rib * 1.55, rib * 1.55 + 0.18, ALLEY.rollUpRib);
+        }
+        builder.sign(frame, signText('narrow_alley', 'LOADING ZONE'), 'alley', dockAlong, 0, 13, Math.min(13, 2 * clearHalf - 0.5), 2.1, 0.3);
+      }
       const besideDock = dockAlong + 16 <= frame.to - 6 ? dockAlong + 16 : dockAlong - 16;
       if (visible(besideDock)) {
         builder.sign(frame, signText('narrow_alley', 'DELIVERIES ONLY'), 'notice', besideDock, 0, 8.4, 9, 1.6, 0.2);
@@ -1138,10 +1149,7 @@ function addNarrowAlley(builder: Builder, source: EnvironmentSource, bounds: Bou
         for (const other of SIDES.filter((candidate) => (candidate === 'n' || candidate === 's') !== alongX)) {
           const otherFrame = sideFrame(bounds, other);
           for (let along = otherFrame.from + 6; along <= otherFrame.to - 6; along += 1) {
-            const clear = [along - 4.5, along, along + 4.5].every((at) => {
-              const inside = otherFrame.point(at, -0.5);
-              return !insideWall(source, inside.x, inside.z);
-            });
+            const clear = [-4.5, -3, -1.5, 0, 1.5, 3, 4.5].every((offset) => wallFaceVisible(source, otherFrame, along + offset));
             const at = otherFrame.point(along, 0);
             const distance = Math.hypot(at.x - dock.x, at.z - dock.z);
             if (clear && (nearest === undefined || distance < nearest.distance)) {

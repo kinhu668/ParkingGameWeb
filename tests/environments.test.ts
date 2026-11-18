@@ -2,7 +2,7 @@
 // 招牌文字只來自 environmentSigns 的表；原型關不走這裡。不開 WebGL。
 import { InstancedMesh } from 'three';
 import { describe, expect, test, vi } from 'vitest';
-import { ftToM } from '../src/core/units';
+import { ftToM, mToFt } from '../src/core/units';
 import { ENVIRONMENT_SIGNS, signText, signTextsFor } from '../src/level/environmentSigns';
 import { LEVELS, levelById } from '../src/level/levelCatalog';
 import {
@@ -192,6 +192,22 @@ describe('四個環境各自認得出來', () => {
     expect(layout.slabs.filter((slab) => slab.kind === 'decal').length).toBeGreaterThan(5);
     expect(layout.lot.parkedCars).toHaveLength(0);
     expect(layout.lot.trees).toHaveLength(0);
+  });
+
+  test('w1_l08：卸貨口凹在兩道牆之間（10 ft），LOADING ZONE 比凹槽窄；DELIVERIES ONLY 只有一塊，掛在死巷底露在外面的牆上', () => {
+    const signs = layoutOf('w1_l08').signs;
+    const loading = signs.filter((sign) => sign.text === 'LOADING ZONE');
+    expect(loading).toHaveLength(1);
+    expect(mToFt(loading[0]?.x ?? 0)).toBeCloseTo(46, 5);
+    expect(mToFt(loading[0]?.widthM ?? 0)).toBe(9.5);
+    const notices = signs.filter((sign) => sign.text === 'DELIVERIES ONLY');
+    expect(notices).toHaveLength(1);
+    // 死巷底的牆在 x = 55；整塊告示都在第二段巷子（z −17..0）的範圍裡。
+    expect(mToFt(notices[0]?.x ?? 0)).toBeCloseTo(55, 0);
+    const centerZ = mToFt(notices[0]?.z ?? 0);
+    const half = mToFt(notices[0]?.widthM ?? 0) / 2;
+    expect(centerZ - half).toBeGreaterThan(-17);
+    expect(centerZ + half).toBeLessThan(0);
   });
 
   test('空地：沒有招牌，四周是假車位與背景車', () => {

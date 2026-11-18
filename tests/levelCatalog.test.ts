@@ -2,7 +2,7 @@
 // 以及這一輪釘住的兩個方向：w1_l03 的起點 heading 是 180（面向目標）、原型關是 0。
 import { describe, expect, test } from 'vitest';
 import { forward } from '../src/core/heading';
-import { degToRad, ftToM } from '../src/core/units';
+import { degToRad, ftToM, radToDeg } from '../src/core/units';
 import { obbCorners, obbFromFt, obbsOverlap, vehicleObb, type ObbFt } from '../src/level/collision';
 import {
   LEVELS,
@@ -309,11 +309,11 @@ describe('w1_l08（死巷角落）', () => {
     });
   });
 
-  test('卸貨位是死巷底北側的凹槽：兩側的牆相距 13 ft，底是北邊界，開口在 z = −17', () => {
+  test('卸貨位是死巷底北側的凹槽：兩側的牆相距 10 ft（車位 9 ft 寬），底是北邊界，開口在 z = −17', () => {
     const beside = walls.filter((wall) => wall.minZ < spot.centerZFt && wall.maxZ > spot.centerZFt);
     expect(beside).toHaveLength(2);
-    expect(Math.max(...beside.map((wall) => wall.minX))).toBe(52.5);
-    expect(Math.min(...beside.map((wall) => wall.maxX))).toBe(39.5);
+    expect(Math.max(...beside.map((wall) => wall.minX))).toBe(51);
+    expect(Math.min(...beside.map((wall) => wall.maxX))).toBe(41);
     expect(beside.map((wall) => wall.maxZ)).toEqual([-17, -17]);
     expect(level.boundsFt?.minZFt).toBe(spot.centerZFt - spot.lengthFt / 2);
   });
@@ -343,6 +343,55 @@ describe('w1_l08（死巷角落）', () => {
     }
     expect(session.status).toBe('parked');
     expect(session.collisions).toBe(0);
+  });
+});
+
+describe('w1_l08：車頭一把轉不進凹槽（要三點調頭，或倒車進去）', () => {
+  /**
+   * 從第二段巷子朝東的每一條車道、每一個時機把方向盤往左打到底，轉正之後直行進車位；
+   * 回傳沒有碰撞就停妥的那幾次（車道 z、開始打方向盤時車身中心的 x，ft）。
+   */
+  function cleanNoseIns(level: LevelDefinition): string[] {
+    const clean: string[] = [];
+    for (let laneZFt = -14; laneZFt <= -3; laneZFt += 1) {
+      for (let turnInXFt = 33; turnInXFt <= 41; turnInXFt += 0.25) {
+        let session = startSession({
+          ...level.layout,
+          startState: { ...level.layout.startState, x: ftToM(turnInXFt), z: ftToM(laneZFt), headingRad: degToRad(90) },
+        });
+        let straight = false;
+        for (let step = 0; step < 30 * 60 && session.status !== 'parked' && session.collisions === 0; step += 1) {
+          const headingDeg = radToDeg(session.vehicle.headingRad);
+          straight = straight || headingDeg < 1.5 || headingDeg > 358.5;
+          const inBay = session.vehicle.z <= ftToM(level.spotFt.centerZFt + 1.5);
+          const slow = Math.abs(session.vehicle.speedMps) < 1.2;
+          session = stepSession(session, { throttle: slow && !inBay ? 1 : 0, steer: straight ? 0 : -1, brake: inBay });
+        }
+        if (session.status === 'parked' && session.collisions === 0) {
+          clean.push(`${laneZFt}, ${turnInXFt}`);
+        }
+      }
+    }
+    return clean;
+  }
+
+  test('凹槽 13 ft 寬的話一把就轉得進去（對照組）；10 ft 寬就不行', () => {
+    const raw = RAW_FILES['../src/levels/w1_l08.json'] as { obstacles: { type: string; pos: number[]; size?: number[] }[] };
+    const wide = parseLevel(
+      {
+        ...raw,
+        obstacles: raw.obstacles.map((obstacle) =>
+          obstacle.type !== 'wall' || obstacle.pos[2] !== -25.75
+            ? obstacle
+            : (obstacle.pos[0] ?? 0) < 46
+              ? { ...obstacle, pos: [16.25, 0, -25.75], size: [46.5, 17.5] }
+              : { ...obstacle, pos: [53.75, 0, -25.75], size: [2.5, 17.5] },
+        ),
+      },
+      'w1_l08（13 ft 凹槽）',
+    );
+    expect(cleanNoseIns(wide).length).toBeGreaterThan(0);
+    expect(cleanNoseIns(mustFind('w1_l08'))).toEqual([]);
   });
 });
 
