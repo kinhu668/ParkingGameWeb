@@ -378,7 +378,7 @@ for (const [name, viewport, previous] of [
     test('鏡頭鍵依 V 的順序循環；輔助小窗明顯變小但仍可見、不與操作層重疊；沒有鍵帽與鍵盤提示', async ({
       page,
     }) => {
-      await page.goto('/?level=w1_l05&view=chase_near&lang=zh-TW');
+      await page.goto('/?level=w1_l07&weather=clear&view=chase_near&lang=zh-TW');
       const camera = page.locator('#touch-camera');
       const label = page.locator('#hud-camera');
       await expect(camera).toBeVisible();

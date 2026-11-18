@@ -203,7 +203,7 @@ async function canvasPatchColor(
   );
 }
 
-/** w1_l10：車在巷子南端，車尾後面 2.5 ft 就是南面那棟樓（bounds 的 z = 90 ft）；巷子在 x = −6.75～6.75 ft 之間。 */
+/** w1_l08：車在巷子南端，車尾後面 2.5 ft 就是南面那棟樓（bounds 的 z = 90 ft）；巷子在 x = −6.75～6.75 ft 之間。 */
 const ALLEY = { startZFt: 80, southWallZFt: 90, minXFt: -6.75, maxXFt: 6.75 } as const;
 
 /** 鏡頭在巷子裡（南牆的前面、兩面牆之間、高過車頂），車身中心在畫面中央，那裡畫的是藍色的車漆。 */
@@ -230,11 +230,11 @@ async function expectCarShownInAlley(page: Page, view: GameCameraView): Promise<
   expect(paint.b - paint.g, `${view}：畫面中央不是車漆 ${JSON.stringify(paint)}`).toBeGreaterThan(20);
 }
 
-test('巷子關（w1_l10）開場：遠、近距離跟車都在巷子裡看得到車，不是只看到屋頂的磚；重來後也一樣', async ({
+test('巷子關（w1_l08）開場：遠、近距離跟車都在巷子裡看得到車，不是只看到屋頂的磚；重來後也一樣', async ({
   page,
 }) => {
   // 關卡自己的天氣（雨）、不關特效：就是玩家回報的那個畫面。
-  await page.goto('/?level=w1_l10&view=chase_far&lang=zh-TW&touch=off');
+  await page.goto('/?level=w1_l08&view=chase_far&lang=zh-TW&touch=off');
   await expect(page.locator('#game-canvas')).toBeVisible();
   await expectCarShownInAlley(page, 'chase_far');
   const opening = await cameraSnapshot(page);

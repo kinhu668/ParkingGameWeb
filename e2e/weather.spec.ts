@@ -85,7 +85,7 @@ test('雷雨的定格：t=0 沒有在閃，t=2 是第一道閃電（閃光＋電
   await expect(html).toHaveAttribute('data-lightning', 'none');
 });
 
-/** 看得到一大片地面與停著的車的定格：大賣場關（JSON 是晴天），鏡頭在車位旁的低角度。 */
+/** 看得到一大片地面與停著的車的定格：大賣場關（JSON 是黃昏；下面每一張都明講天氣），鏡頭在車位旁的低角度。 */
 const MIRROR_SHOT = 'level=w1_l03&cam=spot_low&t=0';
 
 test('濕地的倒影：有積水的天氣 medium 以上是平面反射（軟體算圖自動選到的只映天空）；low 與乾的天氣沒有', async ({ page }) => {
@@ -114,7 +114,7 @@ test('濕地的倒影：有積水的天氣 medium 以上是平面反射（軟體
 });
 
 test('平面反射的一般遊戲（雨天的巷子關）：每幀先畫倒影再畫主畫面，掛倒車檔叫出小畫面也沒有錯誤', async ({ page }) => {
-  await page.goto('/?level=w1_l10&quality=medium&lang=zh-TW');
+  await page.goto('/?level=w1_l08&quality=medium&lang=zh-TW');
   await expect(page.locator('#hud-camera')).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('data-ground-mirror', 'planar');
   // 倒車輔助層的小畫面用別的鏡頭畫同一個場景（地面退回只映天空）。

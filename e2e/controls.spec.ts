@@ -7,6 +7,13 @@ import { nextSnapshot } from './driving';
 import { expect, OUTPUT_DIR, test } from './fixtures';
 
 const CONTROLS_KEY = 'parkinggame.controls.v1';
+/** w1_l01 的起點 z（ft）：車頭朝北（−Z），前面是 100 多 ft 的走道。 */
+const W1_L01_START_Z_FT = 55;
+/**
+ * 要來回倒車的測試用的關：w1_l07 的起點車頭朝北（−Z）停在車位裡，正後方是 24 ft 的走道、正前方是空格與另一條走道，
+ * 前後都有路。換成晴天：這些測試看的是按鍵與檔位，雷雨的特效只會拖慢軟體算圖。
+ */
+const REVERSE_LEVEL_URL = '/?level=w1_l07&weather=clear';
 /** 位置比對的容許誤差（ft）。 */
 const POSITION_TOLERANCE_FT = 0.01;
 
@@ -235,11 +242,11 @@ test('HUD 顯示預設綁定；按鍵設定可重綁、擋同一鍵、三個鍵�
 
   // 新的綁定立刻生效：開一小段（油門的主要鍵 /）後按 R 是重來（不是換檔），
   // E 與空白鍵才是切換檔位（按一下到 R、再按一下回 D）。
-  const moved = await holdUntil(page, 'Slash', (snapshot) => snapshot.zFt < -1);
+  const moved = await holdUntil(page, 'Slash', (snapshot) => snapshot.zFt < W1_L01_START_Z_FT - 1);
   expect(moved.status).toBe('driving');
   await page.keyboard.press('KeyR');
   await expect.poll(async () => (await nextSnapshot(page)).status).toBe('ready');
-  expect(Math.abs((await nextSnapshot(page)).zFt)).toBeLessThan(POSITION_TOLERANCE_FT);
+  expect(Math.abs((await nextSnapshot(page)).zFt - W1_L01_START_Z_FT)).toBeLessThan(POSITION_TOLERANCE_FT);
   await expect(gear).toHaveAttribute('data-gear', 'forward');
   await page.keyboard.press('KeyE');
   await expect(gear).toHaveAttribute('data-gear', 'reverse');
@@ -355,7 +362,7 @@ test('舊存檔正好是上一版官方預設：當作沒自訂，改走新預�
   const gear = page.locator('#hud-gear');
   const moving = await holdUntil(page, 'Slash', (snapshot) => snapshot.speedMph > 1.5);
   expect(moving.status).toBe('driving');
-  expect(moving.zFt).toBeLessThan(0);
+  expect(moving.zFt).toBeLessThan(W1_L01_START_Z_FT);
   const stopped = await holdUntil(page, 'Period', (snapshot) => snapshot.speedMph === 0);
   expect(stopped.status).toBe('driving');
   await page.keyboard.press('Space');
@@ -485,7 +492,7 @@ test('舊存檔遷移（倒車油門、掛 D／掛 R、handbrake）：照常讀�
       pause: ['Escape'],
     },
   });
-  await page.goto('/?level=w1_l05&lang=zh-TW&touch=off');
+  await page.goto(`${REVERSE_LEVEL_URL}&lang=zh-TW&touch=off`);
   await expect(page.locator('#hud-speed')).toHaveText('0.0');
   await page.evaluate(
     ({ key, value }) => {
@@ -565,7 +572,7 @@ test('舊存檔遷移（倒車油門、掛 D／掛 R、handbrake）：照常讀�
 test('回歸：倒車關按空白鍵切到 R 檔後按住油門是倒車（不是剎車）；.／S／↓ 剎車；按 R 回 D；Backspace 重來回到 D 檔', async ({
   page,
 }) => {
-  await page.goto('/?level=w1_l05&view=chase_near&lang=zh-TW');
+  await page.goto(`${REVERSE_LEVEL_URL}&view=chase_near&lang=zh-TW`);
   const gear = page.locator('#hud-gear');
   const assist = page.locator('#reverse-assist');
   await expect(gear).toHaveAttribute('data-gear', 'forward');
@@ -650,8 +657,8 @@ test('回歸：倒車關按空白鍵切到 R 檔後按住油門是倒車（不�
   await page.screenshot({ path: `${OUTPUT_DIR}/controls-restart-backspace.png` });
 });
 
-test('回歸：w1_l06（倒車入庫）切到 R 檔後按住油門，車沿車尾方向後退', async ({ page }) => {
-  await page.goto('/?level=w1_l06&view=chase_near&lang=zh-TW');
+test('回歸：起點車頭朝東的關（w1_l09）切到 R 檔後按住油門，車沿車尾方向後退', async ({ page }) => {
+  await page.goto('/?level=w1_l09&view=chase_near&lang=zh-TW');
   const gear = page.locator('#hud-gear');
   await expect(gear).toHaveAttribute('data-gear', 'forward');
   const start = await nextSnapshot(page);
@@ -678,7 +685,7 @@ test('回歸：w1_l06（倒車入庫）切到 R 檔後按住油門，車沿車�
 });
 
 test('重來一律回到 D 檔：按著轉向或油門重來、T、暫停面板的重來按鈕', async ({ page }) => {
-  await page.goto('/?level=w1_l05&view=chase_near&lang=zh-TW');
+  await page.goto(`${REVERSE_LEVEL_URL}&view=chase_near&lang=zh-TW`);
   const gear = page.locator('#hud-gear');
   const assist = page.locator('#reverse-assist');
   await expect(gear).toHaveAttribute('data-gear', 'forward');

@@ -15,7 +15,7 @@ async function stop(page: Page): Promise<void> {
 }
 
 test('R 檔顯示輔助層（油門是倒車），切回 D 檔收起，重來後回到 D 檔', async ({ page }) => {
-  await page.goto('/?level=w1_l05&view=chase_near&lang=zh-TW');
+  await page.goto('/?level=w1_l07&weather=clear&view=chase_near&lang=zh-TW');
   const assist = page.locator('#reverse-assist');
   const gear = page.locator('#hud-gear');
   await expect(gear).toHaveAttribute('data-gear', 'forward');
@@ -89,7 +89,7 @@ test('R 檔顯示輔助層（油門是倒車），切回 D 檔收起，重來後
 
 for (const param of ['assist=off', 'fx=off']) {
   test(`?${param}：R 檔也不建立輔助層`, async ({ page }) => {
-    await page.goto(`/?level=w1_l05&view=chase_near&lang=zh-TW&${param}`);
+    await page.goto(`/?level=w1_l07&weather=clear&view=chase_near&lang=zh-TW&${param}`);
     const gear = page.locator('#hud-gear');
     await expect(gear).toHaveAttribute('data-gear', 'forward');
     await page.keyboard.press('KeyR');

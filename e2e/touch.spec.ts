@@ -306,7 +306,7 @@ test.describe('手機橫向', () => {
   });
 
   test('切到 R：輔助層出現、油門踏板是倒車（不是剎車）；切回 D 收起；重來回到 D 檔', async ({ page }) => {
-    await page.goto('/?level=w1_l05&view=chase_near&lang=zh-TW');
+    await page.goto('/?level=w1_l07&weather=clear&view=chase_near&lang=zh-TW');
     const gear = page.locator('#hud-gear');
     const assist = page.locator('#reverse-assist');
     const gearButton = page.locator('#touch-gear');
@@ -371,7 +371,7 @@ for (const [name, viewport] of [
     test.use({ viewport, hasTouch: true, isMobile: true });
 
     test('每個控制項都點得到、不與輔助小窗重疊；暫停後能點繼續、重來', async ({ page }) => {
-      await page.goto('/?level=w1_l05&view=chase_near&lang=zh-TW');
+      await page.goto('/?level=w1_l07&weather=clear&view=chase_near&lang=zh-TW');
       await expect(page.locator('#touch-controls')).toBeVisible();
       await shiftToReverse(page);
 

@@ -16,9 +16,9 @@ import {
 const SHOT_READY = 'body[data-shot-ready="true"]';
 /** 位置與角度比對的容許誤差（ft、度）。 */
 const TOLERANCE = 0.01;
-/** w1_l03 的起點（ft、度）：heading 180 = 朝 +Z，面向 z = +13 的車位。 */
-const W1_L03_START = { xFt: 0, zFt: -33, headingDeg: 180 };
-/** 按住 W 之後車至少要往前（+Z）走這麼遠才算數。 */
+/** w1_l05 的起點（ft、度）：在南邊的車道上，heading 90 = 朝 +X（面向郵局），前面 40 多 ft 都是空的。 */
+const W1_L05_START = { xFt: -20, zFt: 52, headingDeg: 90 };
+/** 按住 W 之後車至少要往前（+X）走這麼遠才算數。 */
 const MIN_ADVANCE_FT = 3;
 /** 等車開出去的真實時間上限；軟體算圖幀率低也綽綽有餘。 */
 const DRIVE_DEADLINE_MS = 30_000;
@@ -45,40 +45,40 @@ async function nextState(page: Page): Promise<GameState> {
   );
 }
 
-test('?level=w1_l03：車在起點、車頭朝 +Z（heading 180），按 W 往車位那一側前進', async ({ page }) => {
-  await page.goto('/?level=w1_l03&view=top&lang=zh-TW');
+test('?level=w1_l05：車在起點、車頭朝 +X（heading 90），按 W 沿車頭方向前進', async ({ page }) => {
+  await page.goto('/?level=w1_l05&view=top&lang=zh-TW');
 
-  await expect(page.locator('html')).toHaveAttribute('data-level', 'w1_l03');
+  await expect(page.locator('html')).toHaveAttribute('data-level', 'w1_l05');
   await expect(page.locator('#level-notice')).toHaveCount(0);
   await expect(page.locator('#hud-speed')).toHaveText('0.0');
 
   const atStart = await nextState(page);
-  expect(atStart.levelId).toBe('w1_l03');
+  expect(atStart.levelId).toBe('w1_l05');
   expect(atStart.snapshot.parked).toBe(false);
-  expect(Math.abs(atStart.snapshot.xFt - W1_L03_START.xFt)).toBeLessThan(TOLERANCE);
-  expect(Math.abs(atStart.snapshot.zFt - W1_L03_START.zFt)).toBeLessThan(TOLERANCE);
-  expect(Math.abs(atStart.snapshot.headingDeg - W1_L03_START.headingDeg)).toBeLessThan(TOLERANCE);
+  expect(Math.abs(atStart.snapshot.xFt - W1_L05_START.xFt)).toBeLessThan(TOLERANCE);
+  expect(Math.abs(atStart.snapshot.zFt - W1_L05_START.zFt)).toBeLessThan(TOLERANCE);
+  expect(Math.abs(atStart.snapshot.headingDeg - W1_L05_START.headingDeg)).toBeLessThan(TOLERANCE);
 
   const stats = await canvasStats(page);
   expect(stats.distinctColors).toBeGreaterThanOrEqual(MIN_DISTINCT_COLORS);
   expect(stats.dominantFraction).toBeLessThan(MAX_DOMINANT_FRACTION);
-  await page.screenshot({ path: `${OUTPUT_DIR}/level-w1_l03-top.png` });
+  await page.screenshot({ path: `${OUTPUT_DIR}/level-w1_l05-top.png` });
 
-  // 只踩油門、不轉向：車沿車頭方向走。heading 180 → z 變大（朝車位），x 不動。
+  // 只踩油門、不轉向：車沿車頭方向走。heading 90 → x 變大，z 不動。
   await page.keyboard.down('KeyW');
   const deadlineMs = Date.now() + DRIVE_DEADLINE_MS;
   let state = await nextState(page);
-  while (state.snapshot.zFt < W1_L03_START.zFt + MIN_ADVANCE_FT) {
+  while (state.snapshot.xFt < W1_L05_START.xFt + MIN_ADVANCE_FT) {
     if (Date.now() > deadlineMs) {
-      throw new Error(`車沒有往 +Z 前進，最後狀態：${JSON.stringify(state.snapshot)}`);
+      throw new Error(`車沒有往 +X 前進，最後狀態：${JSON.stringify(state.snapshot)}`);
     }
     state = await nextState(page);
   }
   await page.keyboard.up('KeyW');
 
   expect(state.snapshot.speedMph).toBeGreaterThan(0);
-  expect(Math.abs(state.snapshot.xFt - W1_L03_START.xFt)).toBeLessThan(TOLERANCE);
-  expect(Math.abs(state.snapshot.headingDeg - W1_L03_START.headingDeg)).toBeLessThan(TOLERANCE);
+  expect(Math.abs(state.snapshot.zFt - W1_L05_START.zFt)).toBeLessThan(TOLERANCE);
+  expect(Math.abs(state.snapshot.headingDeg - W1_L05_START.headingDeg)).toBeLessThan(TOLERANCE);
 });
 
 test('沒給 level：一般遊戲是關卡選擇；?cam、?bench 是原型關（heading 0）', async ({ page }) => {
