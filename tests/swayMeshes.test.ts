@@ -1,5 +1,5 @@
 // 被撞的車晃動的畫面：整台車（各個實例、車牌上的字、車身上的字樣、亮著的警報燈）一起傾斜、平移，
-// 停了一個位元不差地放回原位；別的車不動；正被淡成半透明的車動的是替身。不開 WebGL。
+// 停了一個位元不差地放回原位；別的車不動；正被淡成半透明的車動的是替身，晃的時候淡回實心。不開 WebGL。
 import { Group, InstancedMesh, Matrix4, Mesh, Vector3, type BufferAttribute } from 'three';
 import { describe, expect, test } from 'vitest';
 import { forward, right } from '../src/core/heading';
@@ -79,7 +79,7 @@ describe('被撞的車晃動的畫面', () => {
     sways.update([sway]);
 
     const pose = swayPose(sway);
-    expect(pose.leanAcrossRad).toBeGreaterThan(degToRad(3));
+    expect(pose.leanAcrossRad).toBeGreaterThan(degToRad(5));
     const south = right(degToRad(90));
     expect(south.z).toBeCloseTo(1, 6);
     // 兩個網格的那個實例用同一個變換。
@@ -118,8 +118,8 @@ describe('被撞的車晃動的畫面', () => {
     const pivot = new Vector3(ftToM(30), 0, 0);
     const roof = new Vector3(ftToM(30), ftToM(5), 0).applyMatrix4(moved);
     const pose = swayPose(sway);
-    expect(pose.leanAlongRad).toBeGreaterThan(degToRad(1.5));
-    expect(pose.leanAlongRad).toBeLessThan(degToRad(2.01));
+    expect(pose.leanAlongRad).toBeGreaterThan(degToRad(2.5));
+    expect(pose.leanAlongRad).toBeLessThan(degToRad(3.01));
     expect((roof.z - pivot.z) * north.z).toBeCloseTo(
       pose.shoveAlongM + ftToM(5) * Math.sin(pose.leanAlongRad),
       6,
@@ -234,7 +234,7 @@ describe('被撞的車晃動的畫面', () => {
     expect(matrixAt(lamps, 0).elements).not.toEqual(swayed.elements);
   });
 
-  test('正被淡成半透明的車：動的是替身，實例仍然藏著；不淡了、晃完了，實例回到原位', () => {
+  test('正被淡成半透明的車被撞：先動替身，晃的時候淡回實心；晃完還擋著就再淡掉，實例在原位', () => {
     const { fade, sways, instanced } = build();
     const paint = instanced('parkedCars:sedan:paint');
     const rest = matrixAt(paint, 0);
@@ -257,23 +257,43 @@ describe('被撞的車晃動的畫面', () => {
     });
     expect(matrixAt(paint, 0).elements[0]).toBe(0);
 
-    // 還在晃的時候不擋了：淡回來之後，實例接著晃。
+    // 還擋著視線，但正在晃：淡回實心（0.2 秒），實例接著晃。
+    for (let frame = 0; frame < 15; frame += 1) {
+      fade.update(CAMERA, POSE, true, FRAME_SECONDS);
+    }
+    expect(fade.fadedCount()).toBe(0);
+    expect(matrixAt(paint, 0).elements).toEqual(stored(swayed));
+
+    // 晃完放回原位；還擋著，所以又淡掉（實例藏起來，替身在原位）。
+    sways.update([]);
+    expect(matrixAt(paint, 0).elements).toEqual(rest.elements);
+    fade.update(CAMERA, POSE, true, FRAME_SECONDS);
+    expect(fade.fadedCount()).toBe(1);
+    expect(matrixAt(paint, 0).elements[0]).toBe(0);
+    expect(standIn.matrix.elements).toEqual(rest.elements);
+    // 不擋了：實例回到原位。
     for (let frame = 0; frame < 60; frame += 1) {
       fade.update(CAMERA, POSE, false, FRAME_SECONDS);
     }
     expect(fade.fadedCount()).toBe(0);
-    expect(matrixAt(paint, 0).elements).toEqual(stored(swayed));
-    sways.update([]);
     expect(matrixAt(paint, 0).elements).toEqual(rest.elements);
-    expect(standIn.matrix.elements).toEqual(rest.elements);
   });
 
-  test('晃到一半才開始淡：晃完、淡回來之後，實例在原位（不是停在晃到一半的姿勢）', () => {
+  test('正在晃的車擋住視線也不淡；鏡頭在它裡面（近平面會切開它）照樣淡，晃完、淡回來之後實例在原位', () => {
     const { fade, sways, instanced } = build();
     const paint = instanced('parkedCars:sedan:paint');
     const rest = matrixAt(paint, 0);
     sways.update([swayAfter(1, 1, 0, PEAK_S)]);
+    const swayed = matrixAt(paint, 0);
     fade.update(CAMERA, POSE, true, FRAME_SECONDS);
+    expect(fade.fadedCount()).toBe(0);
+    expect(matrixAt(paint, 0).elements).toEqual(swayed.elements);
+    // 旁邊沒在晃的車照常判定（這個鏡頭位置沒有擋到它）。
+    expect(matrixAt(paint, 1).elements[0]).not.toBe(0);
+
+    const inside = { x: 0, y: ftToM(3), z: ftToM(13) };
+    fade.update(inside, POSE, true, FRAME_SECONDS);
+    expect(fade.fadedCount()).toBe(1);
     expect(matrixAt(paint, 0).elements[0]).toBe(0);
     sways.update([]);
     expect(matrixAt(paint, 0).elements[0]).toBe(0);

@@ -185,8 +185,10 @@ export interface OcclusionFade {
   /**
    * 把某個實例擺到 matrix（被撞的車晃動用）。實例的矩陣一律經過這裡改：正淡著的實例是藏起來的，動的是它的替身；
    * 之後淡出、恢復、drawUnfaded 都以這個位置為準。
+   * @param moving 這樣東西正在晃：晃的這段時間不因為擋住視線而淡掉（淡著的會淡回來），被撞的車看得清楚；
+   *   放回原位時給 false，之後照常判定。鏡頭貼著它或在它裡面時照樣淡（近平面會把它切開）。
    */
-  place(part: OccluderPart, matrix: Matrix4): void;
+  place(part: OccluderPart, matrix: Matrix4, moving: boolean): void;
 }
 
 /** 一個實例的替身。 */
@@ -202,12 +204,14 @@ interface FadeGroup {
   readonly occluder: Occluder;
   readonly boxes: readonly SightBox[];
   opacity: number;
+  /** 正在晃（剛被撞）：擋住視線也不淡。 */
+  moving: boolean;
   /** 第一次被擋住時才建立。 */
   standIns: StandIn[] | undefined;
 }
 
 const HIDDEN_MATRIX = new Matrix4().makeScale(0, 0, 0);
-const NO_STAND_INS: readonly StandIn[] = [];
+const NO_TARGETS: readonly Point3[] = [];
 /** 替身排在其他半透明的東西（光錐、雨絲、車窗）之後畫：後面的東西都畫好了才疊上去。 */
 const STAND_IN_RENDER_ORDER = 10;
 
@@ -322,6 +326,7 @@ export function createOcclusionFade(root: Object3D): OcclusionFade {
           sightBox(new Matrix4().multiplyMatrices(object.matrixWorld, box)),
         ),
         opacity: 1,
+        moving: false,
         standIns: undefined,
       });
     }
@@ -330,12 +335,14 @@ export function createOcclusionFade(root: Object3D): OcclusionFade {
   return {
     count: groups.length,
     update(camera, pose, active, dtSeconds) {
-      const targets = active ? sightTargets(pose) : [];
+      const targets = active ? sightTargets(pose) : NO_TARGETS;
       for (const group of groups) {
+        // 正在晃的車不看視線，只看鏡頭是不是貼著它。
+        const sight = group.moving ? NO_TARGETS : targets;
         const blocked =
           active &&
           group.boxes.some(
-            (box) => nearSightLine(camera, pose, box) && blocksView(camera, targets, box),
+            (box) => nearSightLine(camera, pose, box) && blocksView(camera, sight, box),
           );
         // 沒被擋、也已經完全不透明：什麼都不必做（絕大多數的擺設每一幀都走這裡）。
         if (!blocked && group.opacity >= 1) {
@@ -348,17 +355,20 @@ export function createOcclusionFade(root: Object3D): OcclusionFade {
       }
     },
     fadedCount: () => groups.filter((group) => group.opacity < 1).length,
-    place(part, matrix) {
-      for (const group of groups) {
-        for (const standIn of group.standIns ?? NO_STAND_INS) {
-          if (standIn.part.mesh === part.mesh && standIn.part.index === part.index) {
-            standIn.original.copy(matrix);
-            standIn.mesh.matrix.copy(matrix);
-            standIn.mesh.matrixWorldNeedsUpdate = true;
-            if (group.opacity < 1) {
-              // 正淡著：實例藏著，畫的是替身。
-              return;
-            }
+    place(part, matrix, moving) {
+      const same = (other: OccluderPart): boolean =>
+        other.mesh === part.mesh && other.index === part.index;
+      const group = groups.find((candidate) => candidate.occluder.parts.some(same));
+      if (group !== undefined) {
+        group.moving = moving;
+        const standIn = group.standIns?.find((candidate) => same(candidate.part));
+        if (standIn !== undefined) {
+          standIn.original.copy(matrix);
+          standIn.mesh.matrix.copy(matrix);
+          standIn.mesh.matrixWorldNeedsUpdate = true;
+          if (group.opacity < 1) {
+            // 正淡著：實例藏著，畫的是替身。
+            return;
           }
         }
       }

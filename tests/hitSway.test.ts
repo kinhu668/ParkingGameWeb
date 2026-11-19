@@ -65,13 +65,13 @@ function extrema(samples: readonly (Sway | undefined)[], dtS = 1 / 600): [number
 }
 
 describe('撞擊車速 → 晃幾成', () => {
-  test('幾乎沒有速度是 0.15，6 mph 以上是滿格，中間線性；倒車（負的車速）一樣', () => {
-    expect(swayShare(0)).toBeCloseTo(0.15, 9);
-    expect(swayShare(mphToMps(1))).toBeCloseTo(0.15 + 0.85 / 6, 9);
-    expect(swayShare(mphToMps(3))).toBeCloseTo(0.575, 9);
-    expect(swayShare(mphToMps(6))).toBeCloseTo(1, 9);
+  test('幾乎沒有速度是 0.2，5 mph 以上是滿格，中間線性；倒車（負的車速）一樣', () => {
+    expect(swayShare(0)).toBeCloseTo(0.2, 9);
+    expect(swayShare(mphToMps(1))).toBeCloseTo(0.36, 9);
+    expect(swayShare(mphToMps(3))).toBeCloseTo(0.68, 9);
+    expect(swayShare(mphToMps(5))).toBeCloseTo(1, 9);
     expect(swayShare(mphToMps(20))).toBe(1);
-    expect(swayShare(mphToMps(-3))).toBeCloseTo(0.575, 9);
+    expect(swayShare(mphToMps(-3))).toBeCloseTo(0.68, 9);
   });
 });
 
@@ -173,15 +173,15 @@ describe('幅度與方向', () => {
     }
   });
 
-  test('姿勢：滿格往右推的高點是側傾 4°、往右推開 3 英寸；往前推是俯仰 2°', () => {
+  test('姿勢：滿格往右推的高點是側傾 6°、往右推開 0.4 ft；往前推是俯仰 3°', () => {
     const pose = swayPose({ index: 0, across: 1, along: 1, acrossRate: 0, alongRate: 0 });
-    expect(pose.leanAcrossRad).toBeCloseTo(degToRad(4), 9);
-    expect(pose.leanAlongRad).toBeCloseTo(degToRad(2), 9);
-    expect(pose.shoveAcrossM).toBeCloseTo(ftToM(0.25), 9);
-    expect(pose.shoveAlongM).toBeCloseTo(ftToM(0.25), 9);
+    expect(pose.leanAcrossRad).toBeCloseTo(degToRad(6), 9);
+    expect(pose.leanAlongRad).toBeCloseTo(degToRad(3), 9);
+    expect(pose.shoveAcrossM).toBeCloseTo(ftToM(0.4), 9);
+    expect(pose.shoveAlongM).toBeCloseTo(ftToM(0.4), 9);
     const other = swayPose({ index: 0, across: -0.5, along: 0, acrossRate: 0, alongRate: 0 });
-    expect(other.leanAcrossRad).toBeCloseTo(-degToRad(2), 9);
-    expect(other.shoveAcrossM).toBeCloseTo(-ftToM(0.125), 9);
+    expect(other.leanAcrossRad).toBeCloseTo(-degToRad(3), 9);
+    expect(other.shoveAcrossM).toBeCloseTo(-ftToM(0.2), 9);
     expect(other.leanAlongRad).toBeCloseTo(0, 9);
   });
 
@@ -233,9 +233,9 @@ describe('往哪個方向推', () => {
     expect(kick.index).toBe(4);
     expect(kick.across).toBeCloseTo(1, 6);
     expect(kick.along).toBeCloseTo(0, 6);
-    // 倒車撞上去（車尾朝東）方向一樣；速度 3 mph 是 0.575 成。
+    // 倒車撞上去（車尾朝東）方向一樣；速度 3 mph 是 0.68 成。
     const reversing = swayKick(4, vehicleAt(-10.6, 0, 270, -3), struck, 1);
-    expect(reversing.across).toBeCloseTo(0.575, 6);
+    expect(reversing.across).toBeCloseTo(0.68, 6);
     expect(reversing.along).toBeCloseTo(0, 6);
   });
 

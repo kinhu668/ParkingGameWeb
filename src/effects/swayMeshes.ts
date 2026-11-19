@@ -1,7 +1,7 @@
 // 被撞的車晃動的畫面（純視覺）：把 level/hitSway.ts 算出的姿勢套到那台車的模型上。
 // 整台車（車身、輪子、車牌上的字、車身上的字樣、亮著的警報燈）繞「車底正中央的地面」傾斜，再平移一小段；
 // 停了就放回原本的矩陣，一個位元都不差。碰撞盒與鏡頭的擋塊都不動。
-// 輪子與車身併在同一個網格裡，所以是整台一起傾（傾 4° 時一側的輪子離地約 2 英寸，另一側陷進地面一樣多）。
+// 輪子與車身併在同一個網格裡，所以是整台一起傾（傾 6° 時一側的輪子離地約 3 英寸，另一側陷進地面一樣多）。
 // 障礙物的群組與它底下的網格都沒有自己的位移或旋轉，所以實例的矩陣就是世界座標。
 import { InstancedMesh, Matrix4, Mesh, Vector3, type Group } from 'three';
 import { forward, right, type GroundVector } from '../core/heading';
@@ -37,13 +37,13 @@ interface SwayTarget {
 /**
  * @param obstacles createObstacleMeshes 的回傳值
  * @param source 同一份障礙物資料（位置、方向、種類）
- * @param place 改一個實例的矩陣（遮擋半透明的 place：正淡著的實例動的是替身）
+ * @param place 改一個實例的矩陣（遮擋半透明的 place：正淡著的實例動的是替身；moving = 正在晃，晃的時候不淡）
  * @param moveLamps 那台車亮著的警報燈跟著走（VehicleBeacons.move）
  */
 export function createSwayMeshes(
   obstacles: Group,
   source: ObstacleSource,
-  place: (part: OccluderPart, matrix: Matrix4) => void,
+  place: (part: OccluderPart, matrix: Matrix4, moving: boolean) => void,
   moveLamps: (index: number, matrix: Matrix4 | undefined) => void,
 ): SwayMeshes {
   const cars = obstacles.getObjectByName('parkedCars') as Group | undefined;
@@ -91,7 +91,7 @@ export function createSwayMeshes(
   const placed = new Matrix4();
   const show = (target: SwayTarget, matrix: Matrix4 | undefined): void => {
     for (const { part, rest } of target.parts) {
-      place(part, matrix === undefined ? rest : placed.multiplyMatrices(matrix, rest));
+      place(part, matrix === undefined ? rest : placed.multiplyMatrices(matrix, rest), matrix !== undefined);
     }
     for (const { mesh, rest } of target.labels) {
       if (matrix === undefined) {
