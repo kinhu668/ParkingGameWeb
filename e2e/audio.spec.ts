@@ -51,10 +51,11 @@ async function watchUntil(
   what: string,
   done: (state: GameState) => boolean,
 ): Promise<GameState> {
-  const deadlineMs = Date.now() + DEADLINE_MS;
+  // 單調時鐘：這台機器的牆上時鐘會往前跳。
+  const deadlineMs = performance.now() + DEADLINE_MS;
   let state = await nextState(page);
   while (!done(state)) {
-    if (Date.now() > deadlineMs) {
+    if (performance.now() > deadlineMs) {
       throw new Error(`等不到「${what}」，最後狀態：${JSON.stringify(state)}`);
     }
     state = await nextState(page);
