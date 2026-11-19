@@ -47,7 +47,7 @@ const BEACON = {
   /** 亮起來的鏡片的亮度倍數：走高動態範圍後製鏈的級別調高，泛光才帶得出光暈。 */
   lampBrightness: { hdr: 2.4, direct: 1 },
   /** 燈周圍的光暈：亮度、白天（路燈沒亮的天氣）的倍率。 */
-  glowBrightness: { hdr: 1.1, direct: 0.6 },
+  glowBrightness: { hdr: 2.6, direct: 0.6 },
   glowDayScale: 0.4,
   /** 光暈沿視線往鏡頭拉近多少：畫面上的位置不變，但不會被燈所在的車身切掉一半。 */
   glowPullM: ftToM(4),
