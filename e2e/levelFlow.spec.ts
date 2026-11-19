@@ -379,3 +379,98 @@ test('語言按鈕的選擇寫進存檔：重新整理、進關都沿用；?lang
   await expect(html).toHaveAttribute('lang', 'en');
   expect((await readSave(page))?.settings.locale).toBe('zh-TW');
 });
+
+test('關卡選擇標出目前的關卡：第一次來沒有；進關再回來那張卡有「目前」／Current 標籤；?level= 進的鎖著的關也標', async ({
+  page,
+}) => {
+  const html = page.locator('html');
+  const current = page.locator('.level-card[data-current="true"]');
+  const badges = page.locator('.level-card-badge');
+
+  // 第一次來：沒有任何一張標成目前。
+  await page.goto('/?lang=zh-TW');
+  await expect(page.locator('#level-select')).toBeVisible();
+  await expect(page.locator('.level-card')).toHaveCount(CARD_COUNT);
+  await expect(current).toHaveCount(0);
+  await expect(badges).toHaveCount(0);
+
+  // 從卡片進第 1 關，按 HUD 的關卡選擇回來：只有第 1 關那張標成目前，仍然可以點。
+  await madeCards(page).nth(0).click();
+  await expect(html).toHaveAttribute('data-level', FIRST_LEVEL_ID);
+  await page.locator('#hud-level-select').click();
+  await expect(page.locator('#level-select')).toBeVisible();
+  await expect(current).toHaveCount(1);
+  await expect(current).toHaveAttribute('data-level', FIRST_LEVEL_ID);
+  await expect(current).toHaveAttribute('aria-current', 'true');
+  await expect(current).toBeEnabled();
+  await expect(badges).toHaveCount(1);
+  await expect(current.locator('.level-card-badge')).toHaveText('目前');
+  await expect(current.locator('.level-card-badge')).toBeVisible();
+  await page.screenshot({ path: `${OUTPUT_DIR}/levelflow-select-current-zh.png` });
+
+  // 切語言：標籤跟著換。
+  await page.locator('#select-language').click();
+  await expect(html).toHaveAttribute('lang', 'en');
+  await expect(current.locator('.level-card-badge')).toHaveText('Current');
+
+  // 用 ?level= 直接進還鎖著的第 7 關再回來：那張卡仍然鎖著、不能點，但標成目前；第 1 關不再標。
+  await page.goto('/?level=w1_l07&lang=en');
+  await expect(html).toHaveAttribute('data-level', 'w1_l07');
+  await page.locator('#hud-level-select').click();
+  await expect(page.locator('#level-select')).toBeVisible();
+  await expect(current).toHaveCount(1);
+  await expect(current).toHaveAttribute('data-level', 'w1_l07');
+  await expect(current).toHaveAttribute('data-state', 'locked');
+  await expect(current).toBeDisabled();
+  await expect(badges).toHaveCount(1);
+  await expect(current.locator('.level-card-badge')).toHaveText('Current');
+  await page.screenshot({ path: `${OUTPUT_DIR}/levelflow-select-current-locked-en.png` });
+});
+
+test('手機直式（412×892，2 欄）：「目前」標籤在卡片裡面，沒有壓到關卡編號與名稱，也沒碰到語言按鈕', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 412, height: 892 });
+  // 第 2 關在右上角那一格，離語言按鈕最近。
+  await page.goto('/?level=w1_l02&lang=en');
+  await expect(page.locator('html')).toHaveAttribute('data-level', 'w1_l02');
+  await page.locator('#hud-level-select').click();
+  await expect(page.locator('#level-select')).toBeVisible();
+
+  const card = page.locator('.level-card[data-current="true"]');
+  await expect(card).toHaveCount(1);
+  await expect(card).toHaveAttribute('data-level', 'w1_l02');
+  for (const [locale, text] of [
+    ['en', 'Current'],
+    ['zh-TW', '目前'],
+  ] as const) {
+    await expect(page.locator('html')).toHaveAttribute('lang', locale);
+    const badge = card.locator('.level-card-badge');
+    await expect(badge).toHaveText(text);
+    await expect(badge).toBeVisible();
+    const boxes = await Promise.all(
+      [card, badge, card.locator('.level-card-number'), card.locator('.level-card-name'), page.locator('#select-language')].map(
+        (locator) => locator.boundingBox(),
+      ),
+    );
+    const [cardBox, badgeBox, numberBox, nameBox, languageBox] = boxes;
+    if (!cardBox || !badgeBox || !numberBox || !nameBox || !languageBox) {
+      throw new Error('量不到卡片、標籤、編號、名稱或語言按鈕的位置');
+    }
+    // 2 欄：卡片不到畫面的一半寬。
+    expect(cardBox.width).toBeLessThan(412 / 2);
+    // 標籤整個在卡片裡面。
+    expect(badgeBox.x).toBeGreaterThan(cardBox.x);
+    expect(badgeBox.x + badgeBox.width).toBeLessThan(cardBox.x + cardBox.width);
+    expect(badgeBox.y).toBeGreaterThan(cardBox.y);
+    // 在編號的右邊、名稱的上面（不重疊）。
+    expect(badgeBox.x).toBeGreaterThan(numberBox.x + numberBox.width);
+    expect(badgeBox.y + badgeBox.height).toBeLessThanOrEqual(nameBox.y);
+    // 沒碰到右上角的語言按鈕。
+    expect(badgeBox.y).toBeGreaterThanOrEqual(languageBox.y + languageBox.height);
+    await page.screenshot({ path: `${OUTPUT_DIR}/levelflow-select-current-phone-${locale}.png` });
+    if (locale === 'en') {
+      await page.locator('#select-language').click();
+    }
+  }
+});
