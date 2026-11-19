@@ -1,12 +1,19 @@
 // 車頂綁著衝浪板的四輪驅動休旅車：方正的兩廂車身、尾門上的備胎、車頂架上往後伸出 3 英尺的長板。
 // 本地 X = 橫向、−Z = 前方；外框的底面（X × Z）要剛好等於 obstacleTypes.ts 的預設碰撞盒（6.6 × 19 英尺）。
 import { CylinderGeometry, type BufferGeometry } from 'three';
-import { slopedPanel, wheelParts } from './deliveryVan';
+import { lampBoxes, LENS, slopedPanel, wheelParts, type LampPair } from './deliveryVan';
 import { tinted } from './lotProps';
 import { assemble, box } from './partShapes';
 
 const GLASS = 0x1c262e;
 const TRIM = 0x24272a;
+
+// 休旅車警報時會亮的燈：頭燈、前方向燈、尾燈。
+const LAMPS: readonly LampPair[] = [
+  { w: 1, h: 0.6, x: 2.3, y: 2.6, z: -9.22, lens: LENS.head },
+  { w: 0.5, h: 0.25, x: 2.55, y: 2.25, z: -9.22, lens: LENS.amber },
+  { w: 0.4, h: 1.2, x: 2.7, y: 2.3, z: 5.92, lens: LENS.red },
+];
 
 /** 軸沿 Z 的圓柱（尾門上的備胎），中心在 (0, y, z)。 */
 function disc(radius: number, depth: number, y: number, z: number, color: number): BufferGeometry {
@@ -78,11 +85,9 @@ export function createSurfSuvGeometry(): BufferGeometry {
       box(0.04, 0.5, 15.1, skin, 1.3, -1.65, shade),
       box(0.35, 0.14, 5.4, side * 3.05, 1.25, -1.6, TRIM),
       box(0.12, 0.14, 9.6, side * 2.6, 6.02, 0.6, TRIM),
-      // 後照鏡、頭燈、方向燈、尾燈。
+      // 後照鏡，再加頭燈、方向燈、尾燈的鏡片（LAMPS）。
       box(0.5, 0.45, 0.28, side * 3.05, 3.7, -4.5, TRIM),
-      box(1, 0.6, 0.08, side * 2.3, 2.6, -9.22, 0xf3efd9),
-      box(0.5, 0.25, 0.08, side * 2.55, 2.25, -9.22, 0xf2a23a),
-      box(0.4, 1.2, 0.08, side * 2.7, 2.3, 5.92, 0xc2201c),
+      ...lampBoxes(LAMPS, side, false),
       // 輪拱（深色的內襯與外擴的輪眉）與粗胎。
       box(0.04, 1.8, 3.4, skin, 1.3, -6.4, TRIM),
       box(0.04, 1.8, 3.4, skin, 1.3, 3.2, TRIM),
@@ -93,4 +98,9 @@ export function createSurfSuvGeometry(): BufferGeometry {
     );
   }
   return assemble(parts);
+}
+
+/** 警報時會亮的燈（頭燈、前方向燈、尾燈…）：與車身幾何同一個本地座標（公尺），頂點顏色是亮起來的顏色。 */
+export function createSurfSuvLampGeometry(): BufferGeometry {
+  return assemble([-1, 1].flatMap((side) => lampBoxes(LAMPS, side, true)));
 }

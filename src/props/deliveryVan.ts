@@ -9,6 +9,31 @@ const RIM = 0x8b9196;
 const GLASS = 0x1c262e;
 const TRIM = 0x24272a;
 
+/** 燈的鏡片顏色：off 是車身上沒亮的樣子，lit 是警報亮起來的顏色。 */
+export const LENS = {
+  head: { off: 0xf3efd9, lit: 0xfff4d6 },
+  amber: { off: 0xf2a23a, lit: 0xffb02e },
+  red: { off: 0xc2201c, lit: 0xff2a1f },
+};
+
+/** 警報時會亮的一對燈（左右對稱，英尺）：鏡片的寬、高、離中線的距離、底面高度、Z（負的在車頭、正的在車尾）。 */
+export interface LampPair {
+  w: number;
+  h: number;
+  x: number;
+  y: number;
+  z: number;
+  lens: { off: number; lit: number };
+}
+
+// 包裹貨車警報時會亮的燈：頭燈、前方向燈、尾燈（紅）、後警示燈（橘）。倒車燈與示廓燈不閃。
+const LAMPS: readonly LampPair[] = [
+  { w: 0.9, h: 0.9, x: 2.4, y: 2.9, z: -9.84, lens: LENS.head },
+  { w: 0.5, h: 0.4, x: 2.5, y: 2.3, z: -9.84, lens: LENS.amber },
+  { w: 0.45, h: 0.9, x: 2.95, y: 2.3, z: 9.62, lens: LENS.red },
+  { w: 0.45, h: 0.5, x: 2.95, y: 3.3, z: 9.62, lens: LENS.amber },
+];
+
 /** 斜板（擋風玻璃、引擎蓋）：寬沿 X，從 (fromY, fromZ) 斜到 (toY, toZ)。 */
 export function slopedPanel(
   width: number,
@@ -37,14 +62,24 @@ export function wheelParts(radius: number, width: number, x: number, z: number):
   ];
 }
 
+/**
+ * 一側（side = ±1）的鏡片盒。lit = false 是車身上沒亮的鏡片；lit = true 是警報的疊加層：
+ * 亮起來的顏色，並沿燈朝的方向（車頭 −Z、車尾 +Z）多凸出 0.02 英尺，剛好蓋在車身的鏡片外面。
+ */
+export function lampBoxes(lamps: readonly LampPair[], side: number, lit: boolean): BufferGeometry[] {
+  return lamps.map(({ w, h, x, y, z, lens }) =>
+    box(w, h, 0.08, side * x, y, lit ? z + Math.sign(z) * 0.02 : z, lit ? lens.lit : lens.off),
+  );
+}
+
 /** 包裹貨車的幾何（公尺，底面在 y = 0，帶頂點顏色）。 */
 export function createDeliveryVanGeometry(): BufferGeometry {
   const body = 0xefece3;
   const panel = 0xdedbd0;
   const band = 0x1f4e8c;
   const stripe = 0xe8862e;
-  const amber = 0xf2a23a;
-  const red = 0xc2201c;
+  const amber = LENS.amber.off;
+  const red = LENS.red.off;
   const half = 3.2;
   const parts: BufferGeometry[] = [
     // 底盤、貨廂、駕駛艙下半、鼻子。
@@ -104,11 +139,8 @@ export function createDeliveryVanGeometry(): BufferGeometry {
       box(0.3, 0.06, 0.06, side * 3.3, 6.9, -8.2, TRIM),
       box(0.3, 0.06, 0.06, side * 3.3, 5.6, -8.2, TRIM),
       box(0.1, 1.7, 0.6, side * 3.45, 5.4, -8.3, TRIM),
-      // 頭燈、方向燈、尾燈（紅）、警示燈（橘）、倒車燈。
-      box(0.9, 0.9, 0.08, side * 2.4, 2.9, -9.84, 0xf3efd9),
-      box(0.5, 0.4, 0.08, side * 2.5, 2.3, -9.84, amber),
-      box(0.45, 0.9, 0.08, side * 2.95, 2.3, 9.62, red),
-      box(0.45, 0.5, 0.08, side * 2.95, 3.3, 9.62, amber),
+      // 頭燈、方向燈、尾燈（紅）、警示燈（橘）的鏡片（LAMPS），再加倒車燈。
+      ...lampBoxes(LAMPS, side, false),
       box(0.45, 0.35, 0.08, side * 2.95, 3.9, 9.62, 0xeeeade),
       // 側面的示廓燈與輪拱。
       box(0.05, 0.14, 0.3, skin, 8.7, -3.2, amber),
@@ -124,4 +156,9 @@ export function createDeliveryVanGeometry(): BufferGeometry {
     }
   }
   return assemble(parts);
+}
+
+/** 警報時會亮的燈（頭燈、前方向燈、尾燈…）：與車身幾何同一個本地座標（公尺），頂點顏色是亮起來的顏色。 */
+export function createDeliveryVanLampGeometry(): BufferGeometry {
+  return assemble([-1, 1].flatMap((side) => lampBoxes(LAMPS, side, true)));
 }
