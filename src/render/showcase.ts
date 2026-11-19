@@ -17,6 +17,8 @@ import { forward } from '../core/heading';
 import { t } from '../core/i18n';
 import { degToRad } from '../core/units';
 import type { ShowAngles } from '../core/urlParams';
+import { createVehicleBeacons } from '../effects/vehicleBeacons';
+import { NO_ALARMS } from '../level/alarm';
 import { parkingSpotFromFt } from '../level/parkingJudge';
 import { PROTOTYPE_LAYOUT_FT } from '../level/prototypeLayout';
 import { OBSTACLE_TYPES } from '../level/obstacleTypes';
@@ -30,7 +32,7 @@ import { showChoicesNotice } from '../ui/notice';
 import { createCarMesh } from '../vehicle/carMesh';
 import { CAR_MODEL_IDS } from '../vehicle/carModels';
 import { createCamera } from './followCamera';
-import type { VehicleDetail } from './quality';
+import { usesHdrChain, type VehicleDetail } from './quality';
 import { SHOWCASE_CONFIG } from './renderConfig';
 import type { RenderContext } from './renderContext';
 import { addLights, addSkyEnvironment } from './scene';
@@ -173,6 +175,19 @@ export function runShowcase(
     showChoicesNotice('show-notice', t('show.unknown'), SHOWCASE_IDS);
   } else {
     scene.add(object);
+    if (object instanceof Group && id.startsWith('obstacle_')) {
+      // 救護車的燈條在展示台上也亮著（定格的相位：左組的鏡片與光暈；不打地上的光、不加光源）。
+      // 其他障礙物沒有平常就亮的燈，什麼都不會多畫。
+      const beacons = createVehicleBeacons(
+        object,
+        quality.vehicleDetail,
+        { groundPool: false, spotLights: 0 },
+        usesHdrChain(quality),
+        false,
+      );
+      beacons.update(NO_ALARMS, 'frozen');
+      scene.add(beacons.root);
+    }
   }
 
   // 鏡頭對準物件的包圍球；沒有物件（未知 id）時對準空的地台。
