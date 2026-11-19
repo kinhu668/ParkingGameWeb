@@ -83,6 +83,8 @@ export class FakeNode {
   /** 緩衝音源：start 的第二個參數（從緩衝區的第幾秒開始）、要不要循環。 */
   readonly offsets: number[] = [];
   loop = false;
+  loopStart = 0;
+  loopEnd = 0;
   /** 振盪器的波形或濾波器的種類。 */
   type = '';
   buffer: FakeBuffer | null = null;
@@ -163,6 +165,27 @@ export class FakeAudioContext {
 
   createBuffer(numberOfChannels: number, length: number, sampleRate: number): FakeBuffer {
     return new FakeBuffer(numberOfChannels, length, sampleRate);
+  }
+
+  /** decodeAudioData 解出來的緩衝區；null = 解不出來。 */
+  decoded: FakeBuffer | null = null;
+  decodes = 0;
+
+  /** 像新的瀏覽器一樣：回呼與回傳的 promise 都給結果（失敗時兩邊都要有人接）。 */
+  decodeAudioData(
+    _data: ArrayBuffer,
+    resolve?: (buffer: FakeBuffer) => void,
+    reject?: (error: Error) => void,
+  ): Promise<FakeBuffer> {
+    this.decodes += 1;
+    const { decoded } = this;
+    if (decoded === null) {
+      const error = new Error('cannot decode');
+      reject?.(error);
+      return Promise.reject(error);
+    }
+    resolve?.(decoded);
+    return Promise.resolve(decoded);
   }
 
   /** 像真的一樣：狀態在稍後（微任務）才變，並發出 statechange。 */

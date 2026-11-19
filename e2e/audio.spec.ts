@@ -94,6 +94,7 @@ test('解鎖：第一個手勢之前聲音引擎什麼都沒做；按鍵之後�
     thuds: 0,
     ambience: null,
     thunders: 0,
+    music: { track: 'day', state: 'idle', ducked: false },
     rearDistanceFt: null,
     beepIntervalS: null,
     continuousBeep: false,

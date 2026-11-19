@@ -1,8 +1,10 @@
-// 音效引擎：第一個手勢才建立並解鎖 AudioContext；聲音 → sfx 匯流排（天氣的環境聲走自己的匯流排）→ 主音量 → 限幅器 → 輸出；
+// 音效引擎：第一個手勢才建立並解鎖 AudioContext；聲音 → sfx 匯流排（天氣的環境聲、背景音樂各走自己的匯流排）→ 主音量 → 限幅器 → 輸出；
 // 音量與靜音、暫停與背景分頁時停住、執行 soundDirector 的指令、給 e2e 的唯讀快照。
 // 沒有 AudioContext 或建立失敗時整個引擎是空動作：不丟例外、不寫 console。
 import { MAX_VOLUME, type AudioSettings } from '../core/save';
 import { startAmbience, type Ambience, type AmbienceKind } from './ambience';
+import type { MusicTrack } from './music';
+import { createMusic, type Music, type MusicState } from './musicPlayer';
 import type { SoundCommand } from './soundDirector';
 import {
   createNoiseBuffer,
@@ -42,6 +44,8 @@ export interface AudioHost {
   readonly createContext: (() => AudioContext) | undefined;
   /** 掛手勢監聽的地方（window）。 */
   readonly gestureTarget: Pick<Window, 'addEventListener' | 'removeEventListener'>;
+  /** 下載一個音檔（背景音樂）；下載不到就拒絕。沒有這個功能就沒有音樂。 */
+  readonly fetchAudio?: (url: string) => Promise<ArrayBuffer>;
 }
 
 /** 瀏覽器的 AudioHost。舊版 Safari 只有 webkitAudioContext。 */
@@ -52,6 +56,13 @@ export function browserAudioHost(view: Window & typeof globalThis): AudioHost {
   return {
     createContext: Context === undefined ? undefined : () => new Context(),
     gestureTarget: view,
+    fetchAudio: async (url) => {
+      const response = await view.fetch(url);
+      if (!response.ok) {
+        throw new Error(`${url}: ${String(response.status)}`);
+      }
+      return response.arrayBuffer();
+    },
   };
 }
 
@@ -73,6 +84,15 @@ export interface AudioSnapshot {
   readonly ambience: AmbienceKind | null;
   /** 累計排了幾聲雷。 */
   readonly thunders: number;
+  /**
+   * 背景音樂：這個畫面播哪一首（沒有是 null）、狀態（idle = 還沒解鎖或載入失敗，off = 玩家關掉或靜音）、
+   * 是不是因為有警報在響而壓低。
+   */
+  readonly music: {
+    readonly track: MusicTrack | null;
+    readonly state: MusicState;
+    readonly ducked: boolean;
+  };
 }
 
 export interface AudioEngine {
@@ -81,7 +101,7 @@ export interface AudioEngine {
    * 會開始新聲音的指令（悶響、嗶聲、新的警報）也丟掉，都不排隊補播。開關與停止已有的聲音一定執行。
    */
   run(commands: readonly SoundCommand[]): void;
-  /** 改音量或靜音（靜音只把主音量降到 0，聲音照常進行，取消靜音就接上）。 */
+  /** 改音量、靜音或音樂的開關（靜音只把主音量降到 0，聲音照常進行，取消靜音就接上）。 */
   setAudio(settings: AudioSettings): void;
   /** 暫停、正在等玩家按新鍵：整個停住；解除就從停住的地方繼續。 */
   setHeld(held: boolean): void;
@@ -114,6 +134,11 @@ function cannotUnlock(event: Event): boolean {
   );
 }
 
+/** 音樂該不該響：開著而且沒有靜音（靜音時連下載都不必）。 */
+function musicOn(settings: AudioSettings): boolean {
+  return settings.music && !settings.muted;
+}
+
 /** 這個指令會開始一個新的聲音（其餘的只是開關或停掉已有的）。 */
 function startsSound(command: SoundCommand): boolean {
   return (
@@ -136,15 +161,19 @@ interface Graph {
   readonly noise: AudioBuffer;
   /** 天氣的環境聲（有自己的匯流排）；這一關沒有就是 null，也不建立空的匯流排。 */
   readonly ambience: Ambience | null;
+  /** 背景音樂（有自己的匯流排）；這個畫面沒有音樂、或瀏覽器不能下載就是 null。 */
+  readonly music: Music | null;
 }
 
 /**
  * @param ambienceKind 這一關的天氣環境聲（audio/ambience.ts 的 ambienceFor）；null = 沒有
+ * @param musicTrack 這個畫面的背景音樂（audio/music.ts 的 musicTrackFor／MENU_TRACK）；null = 沒有
  */
 export function createAudioEngine(
   host: AudioHost,
   initial: AudioSettings,
   ambienceKind: AmbienceKind | null = null,
+  musicTrack: MusicTrack | null = null,
 ): AudioEngine {
   let settings = initial;
   let graph: Graph | null = null;
@@ -228,6 +257,12 @@ export function createAudioEngine(
         }
         sync();
       });
+      const music =
+        musicTrack === null || host.fetchAudio === undefined
+          ? null
+          : createMusic(context, master, musicTrack, host.fetchAudio);
+      // 音樂也是解鎖之後才開始下載；重來不會動它。
+      music?.setOn(musicOn(settings));
       return {
         context,
         sfx,
@@ -235,6 +270,7 @@ export function createAudioEngine(
         noise: createNoiseBuffer(context),
         // 環境聲一解鎖就開始（從無聲淡入），之後一直響；暫停時跟著 context 停住。
         ambience: ambienceKind === null ? null : startAmbience(context, master, ambienceKind),
+        music,
       };
     } catch {
       quietly(context.close());
@@ -367,13 +403,16 @@ export function createAudioEngine(
       if (toneWanted && canStart && !voices.has(TONE_KEY)) {
         voices.set(TONE_KEY, startBeepTone(graph.context, graph.sfx));
       }
+      // 有車輛警報或警笛在響（閃燈還在、聲音已經讓位的不算）：音樂壓低。
+      graph.music?.setDucked(keys.size > 0);
     },
     setAudio: (next) => {
       settings = next;
       if (graph === null) {
         return;
       }
-      const { context, master } = graph;
+      const { context, master, music } = graph;
+      music?.setOn(musicOn(next));
       const gain = masterGain(next);
       if (context.state === 'running') {
         master.gain.setTargetAtTime(gain, context.currentTime, VOLUME_TAU_S);
@@ -407,6 +446,11 @@ export function createAudioEngine(
       thuds,
       ambience: graph?.ambience?.kind ?? null,
       thunders,
+      music: {
+        track: musicTrack,
+        state: !musicOn(settings) && musicTrack !== null ? 'off' : (graph?.music?.state() ?? 'idle'),
+        ducked: graph?.music?.ducked() ?? false,
+      },
     }),
   };
 }

@@ -9,6 +9,7 @@ import {
 } from './core/cameraView';
 import { ambienceFor } from './audio/ambience';
 import { browserAudioHost, createAudioEngine, type AudioSnapshot } from './audio/audioEngine';
+import { MENU_TRACK, musicTrackFor } from './audio/music';
 import {
   DIRECTOR_START,
   directSound,
@@ -133,7 +134,7 @@ declare global {
       readonly spotGlow: () => SpotGlowSnapshot;
       /** 鏡頭目前的模式、位置、視角，以及車在畫面上的位置。 */
       readonly camera: () => CameraSnapshot;
-      /** 音效：解鎖了沒、AudioContext 的狀態、音量、正在響的聲音、累計的嗶聲、悶響與雷聲、天氣的環境聲；倒車雷達量到的距離與節奏。 */
+      /** 音效：解鎖了沒、AudioContext 的狀態、音量、正在響的聲音、累計的嗶聲、悶響與雷聲、天氣的環境聲、背景音樂；倒車雷達量到的距離與節奏。 */
       readonly audio: () => AudioSnapshot & SensorSnapshot;
       /** 響著的車輛警報：障礙物索引、剩餘秒數、燈現在亮不亮。 */
       readonly alarms: () => AlarmSnapshot[];
@@ -253,11 +254,13 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
   // 音效（純表現層，不影響判定）：第一個手勢才出聲；分頁切到背景就停住。
   // 音量與靜音：HUD 的靜音鈕或暫停面板改了就立刻套用並存起來。
   let audioSettings = savedAudio(loadSave(storage));
-  // 天氣的環境聲（雨、雷雨、雨後的滴水）跟著這一場實際用的天氣（`?weather=` 蓋過關卡的）。
+  // 天氣的環境聲（雨、雷雨、雨後的滴水）與背景音樂（白天的、夜晚的）跟著這一場實際用的天氣（`?weather=` 蓋過關卡的）。
+  const weather = resolveWeather(window.location.search, level.weather);
   const audio = createAudioEngine(
     browserAudioHost(window),
     audioSettings,
-    ambienceFor(resolveWeather(window.location.search, level.weather)),
+    ambienceFor(weather),
+    musicTrackFor(weather),
   );
   document.addEventListener('visibilitychange', () => {
     audio.setHidden(document.hidden);
@@ -651,6 +654,18 @@ function runLevelSelect({ renderer, quality, pipeline }: RenderContext): void {
   draw();
   window.addEventListener('resize', draw);
   void pipeline.ready.then(draw);
+
+  // 這個畫面只有背景音樂（沒有音效、沒有環境聲）：一樣第一個手勢才建立、才開始下載；分頁切到背景就停住。
+  // 進關是換頁，音樂在那一頁的第一個手勢之後重新開始。
+  const audio = createAudioEngine(
+    browserAudioHost(window),
+    savedAudio(loadSave(browserStorage())),
+    null,
+    MENU_TRACK,
+  );
+  document.addEventListener('visibilitychange', () => {
+    audio.setHidden(document.hidden);
+  });
 
   createLevelSelect(
     document.body,

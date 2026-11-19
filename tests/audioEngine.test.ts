@@ -101,6 +101,7 @@ describe('第一個手勢之前', () => {
       thuds: 0,
       ambience: null,
       thunders: 0,
+      music: { track: null, state: 'idle', ducked: false },
     });
     // 解鎖之後也不會補播剛才那幾個。
     target.fire('pointerdown');
@@ -645,6 +646,7 @@ describe('不能出聲的環境', () => {
       thuds: 0,
       ambience: null,
       thunders: 0,
+      music: { track: null, state: 'idle', ducked: false },
     });
   });
 
