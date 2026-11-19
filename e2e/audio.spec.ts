@@ -233,9 +233,12 @@ test('救護車（w1_l09）：燈條平常左右交替；撞上車尾短鳴警�
   await watchUntil(page, '又換回左組', (state) => state.lightbars[0]?.left === true && state.lightbars[0].right === false);
 
   // 起點在救護車正後方約 30 ft：直直往前開就撞上車尾（車尾在 x = −60 ft）。
+  // 離車尾還有十幾英尺就放開油門，讓車滑行撞上去：撞到之後沒有按著油門，車彈開就停，
+  // 不會因為這台機器畫得慢、放開得晚而在冷卻結束後又撞第二次。
   await page.keyboard.down('KeyW');
-  const hit = await watchUntil(page, '撞上救護車', (state) => state.snapshot.collisions >= 1);
+  await watchUntil(page, '開到救護車後方', (state) => state.snapshot.xFt > -82 || state.snapshot.collisions >= 1);
   await page.keyboard.up('KeyW');
+  const hit = await watchUntil(page, '撞上救護車', (state) => state.snapshot.collisions >= 1);
   expect(hit.snapshot.collisions).toBe(1);
   expect(hit.snapshot.xFt).toBeLessThan(-60);
   expect(hit.lightbars[0]?.mode).toBe('alert');
