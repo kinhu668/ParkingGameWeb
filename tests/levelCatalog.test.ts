@@ -476,7 +476,7 @@ describe('第 1 世界的 10 關（重做計畫 §2）', () => {
     ['w1_l06', 'open_lot', 'dusk', false, ['parked_car', 'food_truck', 'cone', 'pineapple_standee', 'lamp_island']],
     ['w1_l07', 'warehouse_club', 'storm', true, ['parked_car', 'pillar', 'surf_suv', 'cone']],
     ['w1_l08', 'narrow_alley', 'rain', false, ['wall', 'dumpster', 'pallet', 'pallet_stack', 'trash_bin']],
-    ['w1_l09', 'city_street', 'night', false, ['parked_car', 'delivery_van', 'cone', 'planter', 'fire_hydrant']],
+    ['w1_l09', 'city_street', 'night', false, ['parked_car', 'ambulance', 'cone', 'planter', 'fire_hydrant']],
     [
       'w1_l10',
       'warehouse_club',
@@ -497,6 +497,21 @@ describe('第 1 世界的 10 關（重做計畫 §2）', () => {
       expect(types.has(type), `${id} 應該有 ${type}`).toBe(true);
     }
     expect(level.boundsFt, `${id} 必須有邊界`).toBeDefined();
+  });
+
+  test('w1_l09 並排停車的是救護車（第一個障礙物，碰撞盒與原本的貨車相同）；第 1 世界其他關沒有救護車', () => {
+    expect(mustFind('w1_l09').obstaclesFt[0]).toMatchObject({
+      type: 'ambulance',
+      centerXFt: -50,
+      centerZFt: 2.6,
+      headingDeg: 90,
+      widthFt: 7,
+      lengthFt: 20,
+    });
+    for (const level of worldLevels(1)) {
+      const ambulances = level.obstaclesFt.filter((obstacle) => obstacle.type === 'ambulance');
+      expect(ambulances.length, level.id).toBe(level.id === 'w1_l09' ? 1 : 0);
+    }
   });
 
   test('五種環境、六種天氣都用到', () => {

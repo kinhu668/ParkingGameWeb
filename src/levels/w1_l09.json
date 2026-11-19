@@ -14,7 +14,7 @@
   "start": { "pos": [-98, 0, 2], "heading": 90 },
   "target": { "pos": [0, 0, 9.5], "heading": 90, "size": [8, 21.5] },
   "obstacles": [
-    { "type": "delivery_van", "pos": [-50, 0, 2.6], "heading": 90 },
+    { "type": "ambulance", "pos": [-50, 0, 2.6], "heading": 90 },
     { "type": "parked_car", "pos": [-18.75, 0, 10], "heading": 90 },
     { "type": "parked_car", "pos": [18.75, 0, 10], "heading": 90 },
     { "type": "parked_car", "pos": [-37, 0, 10], "heading": 90 },
