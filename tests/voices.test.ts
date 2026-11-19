@@ -213,6 +213,25 @@ describe('車輛警報（喇叭型）', () => {
       expect(tone.stops).toEqual([14.8]);
     }
   });
+
+  test('出口增益的底值是 0：context 停住時在同一個時間點開始又停掉，排程被取消之後剩下的是無聲，不是增益節點預設的 1', () => {
+    for (const start of [
+      (context: BaseAudioContext, bus: AudioNode) => startHorn(context, bus, 0),
+      startYelp,
+      startSiren,
+    ]) {
+      const { context, bus } = stage();
+      const voice = start(asContext(context), asNode(bus));
+      const [out] = context.of('gain');
+      expect(out?.outputs).toEqual([bus]);
+      expect(out?.gain.value).toBe(0);
+      voice.stop(0.03);
+      expect(out?.gain.events.slice(-2)).toEqual([
+        ['cancelScheduledValues', context.currentTime],
+        ['setTargetAtTime', 0, context.currentTime, 0.03 / 5],
+      ]);
+    }
+  });
 });
 
 describe('車輛警報（警報器型）', () => {

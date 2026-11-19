@@ -171,6 +171,9 @@ function sustain(
   const edgeS = VOICE_SETTINGS.edgeS;
   const now = context.currentTime;
   const out = context.createGain();
+  // 底值也是 0：context 停住時開始又停掉，stop 會把同一個時間點的排程整個取消，剩下的就是這個底值
+  //（增益節點預設是 1，會變成很大的一聲）。
+  out.gain.value = 0;
   out.gain.setValueAtTime(0, now);
   out.gain.linearRampToValueAtTime(level, now + edgeS);
   out.connect(output);
