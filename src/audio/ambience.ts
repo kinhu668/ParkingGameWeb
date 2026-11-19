@@ -148,9 +148,13 @@ export function createPatterBuffer(context: BaseAudioContext, dropsPerS: number)
       // 多數很小聲，少數幾顆很近。
       const level = random() ** 3;
       const decaySamples = (tickS[0] + random() * (tickS[1] - tickS[0])) * rate;
+      // 指數衰減用乘的（每個取樣乘一次），不必每個取樣算一次 exp：這段是在第一個手勢裡算的，越快越好。
+      const fade = Math.exp(-1 / decaySamples);
+      let envelope = level;
       for (let offset = 0; offset < decaySamples * 5; offset += 1) {
         const at = (start + offset) % length;
-        samples[at] = (samples[at] ?? 0) + (random() * 2 - 1) * level * Math.exp(-offset / decaySamples);
+        samples[at] = (samples[at] ?? 0) + (random() * 2 - 1) * envelope;
+        envelope *= fade;
       }
     }
   }
