@@ -10,6 +10,7 @@ import { swayPose, swaysWhenHit, type Sway } from '../level/hitSway';
 import type { ObstacleSource } from '../props/obstacleMeshes';
 import type { OccluderPart } from '../props/occluders';
 import { moveParkedCarPlate } from '../props/parkedCars';
+import type { OcclusionFade } from '../render/occlusionFade';
 
 export interface SwayMeshes {
   /**
@@ -18,8 +19,8 @@ export interface SwayMeshes {
    */
   update(sways: readonly Sway[]): void;
   /**
-   * 這台車的模型現在比原位斜了幾度（唯讀；e2e 用）。讀的是模型實例現在真正的矩陣，不是晃動的狀態：
-   * 在原位是 0。不會晃的東西、或那個實例正被遮擋半透明換成替身（鏡頭鑽進車裡）也是 0。
+   * 這台車的模型現在比原位斜了幾度（唯讀；e2e 用）。讀的是畫出來的模型（實例的矩陣；正淡成半透明時是替身的），
+   * 不是晃動的狀態：在原位是 0。不會晃的東西也是 0。
    */
   tiltDeg(index: number): number;
 }
@@ -42,13 +43,14 @@ interface SwayTarget {
 /**
  * @param obstacles createObstacleMeshes 的回傳值
  * @param source 同一份障礙物資料（位置、方向、種類）
- * @param place 改一個實例的矩陣（遮擋半透明的 place：正淡著的實例動的是替身；moving = 正在晃，晃的時候不淡）
+ * @param fade 遮擋半透明：實例的矩陣經過它的 place 改（正淡著的實例動的是替身；moving = 正在晃，晃的時候不淡），
+ *   placed 讀回現在畫在哪裡
  * @param moveLamps 那台車亮著的警報燈跟著走（VehicleBeacons.move）
  */
 export function createSwayMeshes(
   obstacles: Group,
   source: ObstacleSource,
-  place: (part: OccluderPart, matrix: Matrix4, moving: boolean) => void,
+  fade: Pick<OcclusionFade, 'place' | 'placed'>,
   moveLamps: (index: number, matrix: Matrix4 | undefined) => void,
 ): SwayMeshes {
   const cars = obstacles.getObjectByName('parkedCars') as Group | undefined;
@@ -99,7 +101,7 @@ export function createSwayMeshes(
   const placed = new Matrix4();
   const show = (target: SwayTarget, matrix: Matrix4 | undefined): void => {
     for (const { part, rest } of target.parts) {
-      place(part, matrix === undefined ? rest : placed.multiplyMatrices(matrix, rest), matrix !== undefined);
+      fade.place(part, matrix === undefined ? rest : placed.multiplyMatrices(matrix, rest), matrix !== undefined);
     }
     for (const { mesh, rest } of target.labels) {
       if (matrix === undefined) {
@@ -129,9 +131,8 @@ export function createSwayMeshes(
       if (first === undefined) {
         return 0;
       }
-      first.part.mesh.getMatrixAt(first.part.index, drawn);
-      drawnUp.setFromMatrixColumn(drawn, 1);
-      return drawnUp.lengthSq() === 0 ? 0 : radToDeg(drawnUp.angleTo(restUp.setFromMatrixColumn(first.rest, 1)));
+      drawnUp.setFromMatrixColumn(fade.placed(first.part, drawn), 1);
+      return radToDeg(drawnUp.angleTo(restUp.setFromMatrixColumn(first.rest, 1)));
     },
     update(sways) {
       if (sways.length === 0 && shown.size === 0) {

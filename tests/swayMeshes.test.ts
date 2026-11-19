@@ -34,7 +34,7 @@ function build() {
   root.add(obstacles);
   const fade = createOcclusionFade(root);
   const beacons = createVehicleBeacons(obstacles, { groundPool: false, spotLights: 0 }, false, true);
-  const sways = createSwayMeshes(obstacles, SOURCE, fade.place, beacons.move);
+  const sways = createSwayMeshes(obstacles, SOURCE, fade, beacons.move);
   const instanced = (name: string): InstancedMesh => {
     const mesh = obstacles.getObjectByName(name) ?? beacons.root.getObjectByName(name);
     if (!(mesh instanceof InstancedMesh)) {
@@ -251,10 +251,11 @@ describe('被撞的車晃動的畫面', () => {
     }
     expect(matrixAt(paint, 0).elements[0]).toBe(0);
 
-    sways.update([swayAfter(1, 1, 0, PEAK_S)]);
-    // 實例還是藏著的；替身在晃（讀模型傾角的那個函式讀不到替身：0）。
+    const peak = swayAfter(1, 1, 0, PEAK_S);
+    sways.update([peak]);
+    // 實例還是藏著的；替身在晃。讀回來的傾角是畫出來的那個（替身）的。
     expect(matrixAt(paint, 0).elements[0]).toBe(0);
-    expect(sways.tiltDeg(1)).toBe(0);
+    expect(sways.tiltDeg(1)).toBeCloseTo(radToDeg(swayPose(peak).leanAcrossRad), 3);
     expect(standIn.matrix.elements).not.toEqual(rest.elements);
     const swayed = standIn.matrix.clone();
     // 倒車輔助層的小畫面（不淡）：畫的是晃著的實例，畫完再藏回去。
@@ -269,6 +270,8 @@ describe('被撞的車晃動的畫面', () => {
     }
     expect(fade.fadedCount()).toBe(0);
     expect(matrixAt(paint, 0).elements).toEqual(stored(swayed));
+    // 實心了：讀回來的是實例自己的傾角（同一個角度）。
+    expect(sways.tiltDeg(1)).toBeCloseTo(radToDeg(swayPose(peak).leanAcrossRad), 3);
 
     // 晃完放回原位；還擋著，所以又淡掉（實例藏起來，替身在原位）。
     sways.update([]);
@@ -277,6 +280,11 @@ describe('被撞的車晃動的畫面', () => {
     expect(fade.fadedCount()).toBe(1);
     expect(matrixAt(paint, 0).elements[0]).toBe(0);
     expect(standIn.matrix.elements).toEqual(rest.elements);
+    expect(sways.tiltDeg(1)).toBe(0);
+    // 替身要是沒放回去（還斜著），讀回來的就不是 0：讀的是畫出來的那一個。
+    standIn.matrix.copy(swayed);
+    expect(sways.tiltDeg(1)).toBeGreaterThan(5);
+    standIn.matrix.copy(rest);
     // 不擋了：實例回到原位。
     for (let frame = 0; frame < 60; frame += 1) {
       fade.update(CAMERA, POSE, false, FRAME_SECONDS);

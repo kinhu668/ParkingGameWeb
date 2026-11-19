@@ -189,6 +189,11 @@ export interface OcclusionFade {
    *   放回原位時給 false，之後照常判定。鏡頭貼著它或在它裡面時照樣淡（近平面會把它切開）。
    */
   place(part: OccluderPart, matrix: Matrix4, moving: boolean): void;
+  /**
+   * 某個實例現在畫在哪裡（寫進 target 並回傳；唯讀，e2e 讀被撞的車畫出來的姿勢用）：
+   * 正淡著的實例是藏起來的，畫的是替身，回傳替身的矩陣；否則是實例自己的矩陣。
+   */
+  placed(part: OccluderPart, target: Matrix4): Matrix4;
 }
 
 /** 一個實例的替身。 */
@@ -214,6 +219,10 @@ const HIDDEN_MATRIX = new Matrix4().makeScale(0, 0, 0);
 const NO_TARGETS: readonly Point3[] = [];
 /** 替身排在其他半透明的東西（光錐、雨絲、車窗）之後畫：後面的東西都畫好了才疊上去。 */
 const STAND_IN_RENDER_ORDER = 10;
+
+function samePart(a: OccluderPart, b: OccluderPart): boolean {
+  return a.mesh === b.mesh && a.index === b.index;
+}
 
 function singleMaterial(material: Material | Material[]): Material | undefined {
   return Array.isArray(material) ? material[0] : material;
@@ -332,6 +341,11 @@ export function createOcclusionFade(root: Object3D): OcclusionFade {
     }
   });
 
+  const groupOf = (part: OccluderPart): FadeGroup | undefined =>
+    groups.find((group) => group.occluder.parts.some((other) => samePart(other, part)));
+  const standInOf = (group: FadeGroup, part: OccluderPart): StandIn | undefined =>
+    group.standIns?.find((standIn) => samePart(standIn.part, part));
+
   return {
     count: groups.length,
     update(camera, pose, active, dtSeconds) {
@@ -356,12 +370,10 @@ export function createOcclusionFade(root: Object3D): OcclusionFade {
     },
     fadedCount: () => groups.filter((group) => group.opacity < 1).length,
     place(part, matrix, moving) {
-      const same = (other: OccluderPart): boolean =>
-        other.mesh === part.mesh && other.index === part.index;
-      const group = groups.find((candidate) => candidate.occluder.parts.some(same));
+      const group = groupOf(part);
       if (group !== undefined) {
         group.moving = moving;
-        const standIn = group.standIns?.find((candidate) => same(candidate.part));
+        const standIn = standInOf(group, part);
         if (standIn !== undefined) {
           standIn.original.copy(matrix);
           standIn.mesh.matrix.copy(matrix);
@@ -373,6 +385,15 @@ export function createOcclusionFade(root: Object3D): OcclusionFade {
         }
       }
       setInstanceMatrix(part, matrix);
+    },
+    placed(part, target) {
+      const group = groupOf(part);
+      const standIn = group === undefined || group.opacity >= 1 ? undefined : standInOf(group, part);
+      if (standIn !== undefined) {
+        return target.copy(standIn.mesh.matrix);
+      }
+      part.mesh.getMatrixAt(part.index, target);
+      return target;
     },
     drawUnfaded(draw) {
       const faded = groups.filter((group) => group.opacity < 1);

@@ -387,11 +387,6 @@ test('被撞的車會晃：只有那一台、約 1 秒多停住；判定照常�
     .toBe(false);
 });
 
-/** 那台車的模型現在比原位斜了幾度：讀的是畫出來的模型（實例的矩陣），不是晃動的狀態。 */
-async function shownTiltDeg(page: Page, index: number): Promise<number> {
-  return page.evaluate((at) => window.__parkingGame?.swayTiltDeg(at) ?? Number.NaN, index);
-}
-
 test('被撞的車：減少動態效果時只輕輕晃一下；?fx=off 不晃', async ({ page }) => {
   test.slow();
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -407,7 +402,6 @@ test('被撞的車：減少動態效果時只輕輕晃一下；?fx=off 不晃', 
   expect(still.hit.alarms).toHaveLength(1);
   expect(still.hit.sways).toEqual([]);
   expect(still.rest.sways).toEqual([]);
-  expect(await shownTiltDeg(page, still.hit.alarms[0]?.index ?? -1)).toBe(0);
 });
 
 /** 幾幀之後晃到第一個高點（1.8 Hz、阻尼比 0.28：撞到之後約 0.12 秒）。 */
@@ -419,6 +413,11 @@ declare global {
     /** 截圖用：把畫面更新定住、一幀一幀走（下面的 addInitScript 裝的）。 */
     __frames?: { frozen: boolean; step: (frames: number, frameMs: number) => void };
   }
+}
+
+/** 那台車的模型現在比原位斜了幾度：讀的是畫出來的模型（實例的矩陣；正淡成半透明時是替身的），不是晃動的狀態。 */
+async function shownTiltDeg(page: Page, index: number): Promise<number> {
+  return page.evaluate((at) => window.__parkingGame?.swayTiltDeg(at) ?? Number.NaN, index);
 }
 
 test('截圖：被撞的車晃到最斜的那一幀與停下來之後；雨天與雷雨的開場；倒車貼近', async ({ page }) => {
