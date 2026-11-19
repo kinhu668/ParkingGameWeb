@@ -313,7 +313,7 @@ export function ambulanceLampGlowsFt(): Record<LampGroup, AmbulanceGlowFt[]> {
     }
     for (const lamp of lamps) {
       if (lamp.facing !== 'all') {
-        glows[group].push({ x: lamp.x, y: lamp.y + lamp.h / 2, z: lamp.z, sizeFt: 3.2 * Math.max(lamp.w, lamp.d), color: lamp.lens.lit });
+        glows[group].push({ x: lamp.x, y: lamp.y + lamp.h / 2, z: lamp.z, sizeFt: 3.2 * Math.max(lamp.w, lamp.h, lamp.d), color: lamp.lens.lit });
       }
     }
   }
