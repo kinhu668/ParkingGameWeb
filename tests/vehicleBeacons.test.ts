@@ -37,6 +37,7 @@ import {
 import { createSurfSuvGeometry, createSurfSuvLampGeometry } from '../src/props/surfSuv';
 import { SKIP_AMBIENT_OCCLUSION } from '../src/render/ambientOcclusionFlag';
 import { SKIP_GROUND_REFLECTION } from '../src/render/groundReflectionFlag';
+import { createCarModelParts } from '../src/vehicle/carModelParts';
 import { CAR_MODEL_IDS, carModelDimsM } from '../src/vehicle/carModels';
 
 const CAR = { widthFt: 6, lengthFt: 15.5 };
@@ -60,7 +61,7 @@ function build(
   night = true,
 ): { obstacles: Group; root: Group; update: (alarms: AlarmState, motion?: 'flash' | 'steady' | 'frozen') => void } {
   const obstacles = createObstacleMeshes(SOURCE, 'low');
-  const beacons = createVehicleBeacons(obstacles, 'low', lights, hdr, night);
+  const beacons = createVehicleBeacons(obstacles, lights, hdr, night);
   return {
     obstacles,
     root: beacons.root,
@@ -99,7 +100,7 @@ describe('警報燈的疊加層', () => {
       { obstaclesFt: [{ type: 'cone', centerXFt: 0, centerZFt: 0, headingDeg: 0, widthFt: 1.5, lengthFt: 1.5 }] },
       'low',
     );
-    expect(createVehicleBeacons(obstacles, 'low', { groundPool: true, spotLights: 2 }, true, true).root.children).toEqual([]);
+    expect(createVehicleBeacons(obstacles, { groundPool: true, spotLights: 2 }, true, true).root.children).toEqual([]);
   });
 
   test('沒有警報時車的燈一個實例都不畫', () => {
@@ -318,7 +319,7 @@ describe('燈周圍的光暈', () => {
   test('被撞的車四個角落各多一圈，暗的半個週期收回去；沒有任何燈亮就整個不畫', () => {
     const source: ObstacleSource = { obstaclesFt: SOURCE.obstaclesFt.slice(0, 4) };
     const obstacles = createObstacleMeshes(source, 'low');
-    const beacons = createVehicleBeacons(obstacles, 'low', NO_GLOW, false, true);
+    const beacons = createVehicleBeacons(obstacles, NO_GLOW, false, true);
     const kinds = alarmKinds(source.obstaclesFt);
     beacons.update(NO_ALARMS, 'flash');
     expect(glowMesh(beacons.root).visible).toBe(false);
@@ -362,7 +363,7 @@ describe('燈周圍的光暈', () => {
   });
 
   test.each(CAR_MODEL_IDS)('%s：鏡片分成四個角落，車頭的光偏白、車尾的偏紅', (model) => {
-    const points = lampGlowPoints(createParkedCarLampGeometry(model, 'low'));
+    const points = lampGlowPoints(createParkedCarLampGeometry(createCarModelParts(model, 'low').body));
     expect(points).toHaveLength(4);
     const dims = carModelDimsM(model);
     for (const point of points) {
@@ -382,7 +383,7 @@ describe('燈周圍的光暈', () => {
 
 describe('亮起來的鏡片的幾何', () => {
   test.each(CAR_MODEL_IDS)('%s：有頂點顏色，落在這款車的外框裡', (model) => {
-    const geometry = createParkedCarLampGeometry(model, 'low');
+    const geometry = createParkedCarLampGeometry(createCarModelParts(model, 'low').body);
     expect(geometry.getAttribute('position').count).toBeGreaterThan(0);
     expect(geometry.getAttribute('color').count).toBe(geometry.getAttribute('position').count);
     geometry.computeBoundingBox();

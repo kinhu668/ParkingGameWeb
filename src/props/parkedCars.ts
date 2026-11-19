@@ -273,7 +273,8 @@ export function createParkedCars(
         mesh.setColorAt(instance, parkedCarPaint(model, cars[car]?.variant ?? 0)[part]);
       });
     }
-    add('rest', createRestGeometry(parts), restMaterial);
+    // 車身各分區的幾何也留在 rest 網格上：警報燈的疊加層（effects/vehicleBeacons.ts）用裡面的燈組，不必把整款車再建一次。
+    add('rest', createRestGeometry(parts), restMaterial).userData.body = parts.body;
     members.forEach((car) => {
       plateGeometries[car] = parts
         .plateText(plates[car] ?? '')

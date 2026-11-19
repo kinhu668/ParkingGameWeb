@@ -39,9 +39,9 @@ import { obstacleInstances, type ObstacleInstance } from '../props/obstacleMeshe
 import { createSurfSuvLampGeometry } from '../props/surfSuv';
 import { SKIP_AMBIENT_OCCLUSION } from '../render/ambientOcclusionFlag';
 import { SKIP_GROUND_REFLECTION } from '../render/groundReflectionFlag';
-import type { HeadlightQualitySettings, VehicleDetail } from '../render/quality';
-import { createCarModelParts, type CarModelPart } from '../vehicle/carModelParts';
-import { CAR_MODEL_IDS, type CarModelId } from '../vehicle/carModels';
+import type { HeadlightQualitySettings } from '../render/quality';
+import type { CarModelPart } from '../vehicle/carModelParts';
+import { CAR_MODEL_IDS } from '../vehicle/carModels';
 
 const BEACON = {
   /** 亮起來的鏡片的亮度倍數：走高動態範圍後製鏈的級別調高，泛光才帶得出光暈。 */
@@ -148,9 +148,11 @@ function litPiece(source: BufferGeometry, color: number): BufferGeometry {
   return piece;
 }
 
-/** 一款停放的車警報時亮的鏡片（頭燈、尾燈、方向燈），與車身同一個本地座標。 */
-export function createParkedCarLampGeometry(model: CarModelId, detail: VehicleDetail): BufferGeometry {
-  const { body } = createCarModelParts(model, detail);
+/**
+ * 一款停放的車警報時亮的鏡片（頭燈、尾燈、方向燈），與車身同一個本地座標。
+ * @param body 這款車車身各分區的幾何（createCarModelParts 的 body；不會被改動）
+ */
+export function createParkedCarLampGeometry(body: ReadonlyMap<CarModelPart, BufferGeometry>): BufferGeometry {
   return mergeGeometries(
     CAR_LAMPS.flatMap(([part, color]) => {
       const geometry = body.get(part);
@@ -298,14 +300,12 @@ function createPool(color: number, brightness: number): Mesh<BufferGeometry, Mes
 
 /**
  * @param obstacles createObstacleMeshes 的回傳值（從它讀每台車的實例矩陣）
- * @param detail 停放車輛的細分（與 createObstacleMeshes 相同）
  * @param lights 這個畫質級別的照地做法：groundPool 決定救護車有沒有地上的光，spotLights > 0 才有點光源
  * @param hdr 這個級別是不是走高動態範圍的後製鏈（決定鏡片、光暈與光斑的亮度）
  * @param night 天黑、路燈亮著的天氣：光暈全開；白天只留淡淡的一圈
  */
 export function createVehicleBeacons(
   obstacles: Group,
-  detail: VehicleDetail,
   lights: HeadlightQualitySettings,
   hdr: boolean,
   night: boolean,
@@ -355,10 +355,15 @@ export function createVehicleBeacons(
   };
 
   for (const model of CAR_MODEL_IDS) {
+    const meshName = `parkedCars:${model}:rest`;
     addLamps(
       `parked_car:${model}`,
-      `parkedCars:${model}:rest`,
-      () => createParkedCarLampGeometry(model, detail),
+      meshName,
+      // 車身各分區的幾何是 createParkedCars 建這款車時留在 rest 網格上的。
+      () =>
+        createParkedCarLampGeometry(
+          obstacles.getObjectByName(meshName)?.userData.body as ReadonlyMap<CarModelPart, BufferGeometry>,
+        ),
       lampGlowPoints,
       carLampLevel,
     );

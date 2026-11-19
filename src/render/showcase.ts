@@ -180,7 +180,6 @@ export function runShowcase(
       // 其他障礙物沒有平常就亮的燈，什麼都不會多畫。
       const beacons = createVehicleBeacons(
         object,
-        quality.vehicleDetail,
         { groundPool: false, spotLights: 0 },
         usesHdrChain(quality),
         false,

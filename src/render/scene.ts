@@ -683,7 +683,6 @@ export function createGameScene(
       ? undefined
       : createVehicleBeacons(
           obstacles,
-          quality.props.meshDetail,
           quality.headlights,
           usesHdrChain(quality),
           preset.lampsOn,
