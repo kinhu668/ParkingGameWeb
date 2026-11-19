@@ -772,3 +772,42 @@
 5. 第 0 節「關卡障礙物在前」的精準說法見上：包含 `rows` 展開的停放車。
 
 其餘設計（靜止救護車、警報不加代價、Web Audio 合成、手機手勢解鎖、世界分頁、2D 高度由地形推導、室內剖切屋頂、輪子打向路緣與第一個坡道關一起上）都可行，也對得上現有架構。
+
+## B1 實作紀錄（2026-11-19，基準 `5785270`）
+
+批次 B1（第 2 節）已實作；批次 C 與 B2 沒有動。每一步的觀察、截圖路徑與 e2e 紀錄在 `~/parking-dev/logs/web-b1-progress.md`。
+
+### 做了什麼
+
+| 項目 | 檔案 | 說明 |
+|---|---|---|
+| 碰撞事件 | `src/level/hitEvents.ts` | `countedHits(previous, next)` 比較兩步之間的 `hitCooldownUntil`，回傳這一步被計次的障礙物索引與撞擊速度。`session.ts`、`collision.ts`、`bicycleModel.ts`、`levelSchema.ts`、`core/controls.ts` 都沒有改。 |
+| 警報與燈條的規則 | `src/level/alarm.ts`、`core/gameConfig.ts` 的 `ALARM_RULES` | 類型對照表 `ALARM_KINDS`（停放的車、衝浪休旅車、包裹貨車是車輛警報；救護車是警笛；其他沒有）、`stepAlarms`（重撞只把剩餘時間補回 6 秒，不重啟相位）、`alarmLampOn`、`lightbarState(timeS, mode)`、`LampMotion`（`flash`／`steady`／`frozen`）。全部是純函式。 |
+| 聲音 | `src/audio/audioEngine.ts`、`voices.ts`、`soundDirector.ts` | Web Audio 合成，沒有音檔。`soundDirector` 把每一幀的遊戲狀態換成指令（悶響、嗶聲、警報開始／開關／停止、全部停止）；`voices` 是各個聲音的節點圖，參數集中在檔案開頭的 `VOICE_SETTINGS`；`audioEngine` 管解鎖、暫停與分頁隱藏時的 `suspend`、主音量與限幅器。訊號路徑：聲音 → `sfx` → 主音量 → `DynamicsCompressorNode` → 輸出；沒有預留其他匯流排。 |
+| 燈 | `src/effects/vehicleBeacons.ts` | 被撞的車亮起來的鏡片（每個車款一個平常隱藏的 `InstancedMesh`，與車身同一個矩陣）、救護車燈條的左／右／後三組鏡片、每顆亮燈周圍的光暈（一個加色的 `InstancedMesh`，所有畫質級別都有）、地面光斑（畫質有 `groundPool` 才有）、一盞不投影的 `PointLight`（畫質有真的車頭燈才有）。 |
+| 救護車 | `src/props/ambulance.ts`、`signs.ts`、`obstacleTypes.ts`、`obstacleMeshes.ts`、`environmentSigns.ts` | 新的障礙物類型 `ambulance`（7 × 20 ft）：程序化的箱型救護車，車頂分段燈條、車尾角柱上的尾燈組、車尾下半的斜紋警示板；字樣 `MAPLE HOLLOW AMBULANCE`／`AMBULANCE`／`MEDIC 7` 放在 `PROP_SIGNS`，直接漆在車身上（只有字的貼圖）。 |
+| 設定與介面 | `src/core/save.ts`、`src/ui/pausePanel.ts`、`src/ui/hud.ts`、`style.css`、兩個語系檔 | `settings.audio`（音量 0–100、靜音；`SAVE_VERSION` 還是 1，壞掉的值只忽略這一欄）、暫停面板的「音效」列（靜音、−、百分比、＋，每格 10）、HUD 右上角的靜音鈕、七個 `audio.*` 字串。 |
+| 關卡 | `src/levels/w1_l09.json` | 第 0 個障礙物從 `delivery_van` 換成 `ambulance`（同一個位置與碰撞盒）；官方路線、目標時間、碰撞上限都沒有改。 |
+| 偵錯介面 | `src/main.ts` | `window.__parkingGame` 多了 `audio()`、`alarms()`、`lightbars()` 三份唯讀快照。 |
+
+### 與計畫本文不同的地方
+
+- 救護車的警笛不是另一個一次性的指令，而是與車輛警報同一種「持續的聲音」（`alarmStart` 的 `siren` 型），所以警戒期間再撞一次只會延長，不會重疊第二個警笛。
+- 多了 `ALARM_RULES.expireFadeS`（警報自己響完時 0.06 秒淡出）與 `maxVoices = 3`（同時最多三個警報聲，最舊的讓位，它的燈照常閃完）。
+- 每顆亮燈都有光暈（計畫只寫鏡片、光斑與點光源）：低畫質沒有光斑與點光源，只靠鏡片在 40 ft 外看不出來。
+- 救護車的車尾角柱下方多了會跟著左右組一起閃的紅色尾燈：`w1_l09` 開場時車頂燈條剛好在 HUD 的資訊列後面，要有一顆在 HUD 下方的燈。
+- 悶響多了一層很短的中頻「喀」（1100 Hz 帶通、40 ms）：其他幾層都在 300 Hz 以下，手機喇叭放不出來。
+- `?show=obstacle_ambulance` 的燈條固定亮左組（鏡片與光暈；沒有光斑與光源），截圖才看得到亮起來的樣子。
+
+### 已知限制
+
+- 這個環境聽不到聲音。聲音是用假的 `AudioContext` 記錄節點圖（接線、頻率、增益、開始與停止時間）加上 e2e 讀 `__parkingGame.audio()` 的旗標與計數驗證的；實際聽感要在真的裝置上確認，參數都在 `VOICE_SETTINGS`。
+- 跟隨鏡頭把擋住視線的車身淡出時，亮著的鏡片與光暈不會跟著淡出。
+- `w1_l09` 開場的鏡頭位置，救護車的車頂燈條在 HUD 資訊列後面；看得到的是車尾的尾燈、光暈與（高畫質的）地面光斑。往前開幾英尺燈條就會露出來。
+- 高畫質的色調映射會把很亮的紅色鏡片洗成偏粉的顏色；紅色主要靠光暈與地面光斑。
+- `MEDIC 7` 是很多真實單位都在用的通用呼號（像 `ENGINE 7`），不是機構名稱；想完全避開的話改 `PROP_SIGNS.ambulanceUnit` 一個字串就好。`MAPLE HOLLOW AMBULANCE` 查過沒有同名的真實單位。
+- iPhone 的靜音開關會讓遊戲沒有聲音（刻意不繞過）；暫停面板在觸控裝置上有一行提示。
+
+### 規格修改提案
+
+第 5.2 節的第 16–22 項照舊，沒有新增；規格檔沒有改。
