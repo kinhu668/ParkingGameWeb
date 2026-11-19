@@ -216,9 +216,9 @@ describe('車輛警報（喇叭型）', () => {
 });
 
 describe('車輛警報（警報器型）', () => {
-  test('鋸齒波在 650–1500 Hz 之間每秒上掃 4 次（鋸齒波的低頻振盪器推頻率），過低通；不受 gate 影響', () => {
+  test('鋸齒波在 650–1500 Hz 之間每秒上掃 4 次（鋸齒波的低頻振盪器推頻率），過低通', () => {
     const { context, bus } = stage();
-    const voice = startYelp(asContext(context), asNode(bus));
+    startYelp(asContext(context), asNode(bus));
     const [carrier, lfo] = context.of('oscillator');
     expect([carrier?.type, carrier?.frequency.value]).toEqual(['sawtooth', 1075]);
     expect([lfo?.type, lfo?.frequency.value]).toEqual(['sawtooth', 4]);
@@ -231,9 +231,6 @@ describe('車輛警報（警報器型）', () => {
     const out = lowpass?.outputs[0] as FakeNode;
     expect(out.outputs).toEqual([bus]);
     expect([carrier?.starts, lfo?.starts]).toEqual([[12.5], [12.5]]);
-    const before = out.gain.events.length;
-    voice.gate(false);
-    expect(out.gain.events).toHaveLength(before);
   });
 });
 

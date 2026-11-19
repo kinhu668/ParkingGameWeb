@@ -43,7 +43,7 @@ const SILENT = 0.001;
 
 /** 一個持續的聲音（警報、警笛）。 */
 export interface SustainedVoice {
-  /** 喇叭型警報的開關（跟著燈號）；其他型一直響，沒有作用。 */
+  /** 開關（喇叭型警報跟著燈號一響一停；其他型一直響，soundDirector 不會對它們下這個指令）。 */
   gate(on: boolean): void;
   /** 在 fadeS 秒內淡出並停掉。 */
   stop(fadeS: number): void;
@@ -162,7 +162,6 @@ function sustain(
   context: BaseAudioContext,
   output: AudioNode,
   level: number,
-  gated: boolean,
   build: (out: GainNode) => readonly OscillatorNode[],
 ): SustainedVoice {
   const edgeS = VOICE_SETTINGS.edgeS;
@@ -177,9 +176,7 @@ function sustain(
   }
   return {
     gate: (on) => {
-      if (gated) {
-        out.gain.setTargetAtTime(on ? level : 0, context.currentTime, edgeS / 3);
-      }
+      out.gain.setTargetAtTime(on ? level : 0, context.currentTime, edgeS / 3);
     },
     stop: (fadeS) => {
       const at = context.currentTime;
@@ -220,7 +217,7 @@ export function startHorn(
   detuneCents: number,
 ): SustainedVoice {
   const horn = VOICE_SETTINGS.horn;
-  return sustain(context, output, horn.gain, true, (out) => {
+  return sustain(context, output, horn.gain, (out) => {
     const lowpass = context.createBiquadFilter();
     lowpass.type = 'lowpass';
     lowpass.frequency.value = horn.lowpassHz;
@@ -239,7 +236,7 @@ export function startHorn(
 /** 車輛警報（警報器型）：一直快速上掃，不跟燈號開關。 */
 export function startYelp(context: BaseAudioContext, output: AudioNode): SustainedVoice {
   const yelp = VOICE_SETTINGS.yelp;
-  return sustain(context, output, yelp.gain, false, (out) => {
+  return sustain(context, output, yelp.gain, (out) => {
     const { carrier, lfo } = sweptSaw(context, yelp.lowHz, yelp.highHz, yelp.sweepsPerSecond, 'sawtooth');
     const lowpass = context.createBiquadFilter();
     lowpass.type = 'lowpass';
@@ -253,7 +250,7 @@ export function startYelp(context: BaseAudioContext, output: AudioNode): Sustain
 /** 救護車警笛的短鳴：來回掃頻，響到 soundDirector 叫它停（警戒結束）。 */
 export function startSiren(context: BaseAudioContext, output: AudioNode): SustainedVoice {
   const siren = VOICE_SETTINGS.siren;
-  return sustain(context, output, siren.gain, false, (out) => {
+  return sustain(context, output, siren.gain, (out) => {
     const { carrier, lfo } = sweptSaw(context, siren.lowHz, siren.highHz, siren.sweepsPerSecond, 'triangle');
     const bandpass = context.createBiquadFilter();
     bandpass.type = 'bandpass';
