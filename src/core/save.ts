@@ -1,7 +1,7 @@
-// 存檔：每關的最佳星數、最佳時間與曾經拿過的挑戰，加上設定（目前只有語言）。
+// 存檔：每關的最佳星數、最佳時間與曾經拿過的挑戰，加上設定（語言、音效）。
 // 不碰 DOM：Storage 由呼叫端注入（瀏覽器是 localStorage，測試給同樣形狀的物件）。
 // 關卡重做過的話（levelsRevision 比現在舊），讀檔時把那幾關的舊紀錄清掉一次，其他的照留。
-// 壞資料（不是 JSON、形狀不對、版本不符）一律當作沒存檔（只有紀錄裡的 challenges 壞了是當作空的）；storage 不能用時遊戲照常，只是不保存。
+// 壞資料（不是 JSON、形狀不對、版本不符）一律當作沒存檔（只有紀錄裡的 challenges 壞了是當作空的、設定裡的 audio 壞了是當作沒有）；storage 不能用時遊戲照常，只是不保存。
 // 「已解鎖」不存在這裡：它由各關星數推導（level/progress.ts），存檔只有一個事實來源。
 import { isLocale, type Locale } from './i18n';
 
@@ -47,10 +47,25 @@ export interface LevelRecord {
   readonly challenges: readonly string[];
 }
 
+/** 音效設定：主音量與是否靜音。 */
+export interface AudioSettings {
+  /** 主音量：0–100 的整數。 */
+  readonly volume: number;
+  readonly muted: boolean;
+}
+
+/** 音量的上限。 */
+export const MAX_VOLUME = 100;
+
+/** 沒調過音效時的預設：七成音量、不靜音（本來就要玩家第一次操作之後才會出聲）。 */
+export const DEFAULT_AUDIO: AudioSettings = { volume: 70, muted: false };
+
 /** 設定。之後的畫質、鏡頭也併進來。 */
 export interface SaveSettings {
   /** 玩家用語言按鈕選的語言；沒選過就沒有這個欄位。 */
   readonly locale?: Locale;
+  /** 玩家調過的音量與靜音；沒調過就沒有這個欄位（用 DEFAULT_AUDIO）。加這個欄位之前的存檔沒有它。 */
+  readonly audio?: AudioSettings;
 }
 
 export interface SaveData {
@@ -111,6 +126,27 @@ function parseLevelsRevision(raw: unknown): number {
   return typeof raw === 'number' && Number.isInteger(raw) && raw >= 1 ? raw : 1;
 }
 
+/**
+ * 設定裡的 `audio`：不是物件、音量不是 0–100 的數字、muted 不是布林 = 當作沒有這個欄位（用預設值）。
+ * 這個欄位壞了不會讓整份存檔作廢：重調一次音量，比丟掉全部進度好。音量取整。
+ */
+function parseAudio(raw: unknown): AudioSettings | undefined {
+  if (!isPlainObject(raw)) {
+    return undefined;
+  }
+  const { volume, muted } = raw;
+  if (
+    typeof volume !== 'number' ||
+    !Number.isFinite(volume) ||
+    volume < 0 ||
+    volume > MAX_VOLUME ||
+    typeof muted !== 'boolean'
+  ) {
+    return undefined;
+  }
+  return { volume: Math.round(volume), muted };
+}
+
 /** 這個 id 的紀錄是不是在 savedRevision 之後重做過（舊場地的紀錄，要清掉）。 */
 function isStaleRecord(levelId: string, savedRevision: number): boolean {
   return REDESIGNED_LEVELS.some(
@@ -144,14 +180,19 @@ export function parseSave(raw: unknown): SaveData | undefined {
     }
   }
 
+  let settings: SaveSettings = {};
   const { locale } = raw.settings;
-  if (locale === undefined) {
-    return { version: SAVE_VERSION, levelsRevision, levels, settings: {} };
+  if (locale !== undefined) {
+    if (typeof locale !== 'string' || !isLocale(locale)) {
+      return undefined;
+    }
+    settings = { locale };
   }
-  if (typeof locale !== 'string' || !isLocale(locale)) {
-    return undefined;
+  const audio = parseAudio(raw.settings.audio);
+  if (audio !== undefined) {
+    settings = { ...settings, audio };
   }
-  return { version: SAVE_VERSION, levelsRevision, levels, settings: { locale } };
+  return { version: SAVE_VERSION, levelsRevision, levels, settings };
 }
 
 /** 讀存檔；沒存過、壞資料、沒有 storage 或讀取丟例外 → 空的存檔。 */
@@ -203,4 +244,14 @@ export function levelRecord(save: SaveData, levelId: string): LevelRecord | unde
 /** 記住玩家選的語言。 */
 export function withLocale(save: SaveData, locale: Locale): SaveData {
   return { ...save, settings: { ...save.settings, locale } };
+}
+
+/** 存檔裡的音效設定；沒調過就是預設值。 */
+export function savedAudio(save: SaveData): AudioSettings {
+  return save.settings.audio ?? DEFAULT_AUDIO;
+}
+
+/** 記住音量與靜音。 */
+export function withAudio(save: SaveData, audio: AudioSettings): SaveData {
+  return { ...save, settings: { ...save.settings, audio } };
 }

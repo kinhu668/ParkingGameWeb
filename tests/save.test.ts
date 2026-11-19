@@ -1,6 +1,7 @@
-// 存檔：讀寫、壞資料（不是 JSON、形狀不對、版本不符）、storage 丟例外、語言設定、關卡重做後清掉舊紀錄。
+// 存檔：讀寫、壞資料（不是 JSON、形狀不對、版本不符）、storage 丟例外、語言設定、音效設定、關卡重做後清掉舊紀錄。
 import { describe, expect, test } from 'vitest';
 import {
+  DEFAULT_AUDIO,
   EMPTY_SAVE,
   LEVELS_REVISION,
   SAVE_STORAGE_KEY,
@@ -8,8 +9,10 @@ import {
   levelRecord,
   loadSave,
   parseSave,
+  savedAudio,
   storeSave,
   updateSave,
+  withAudio,
   withLocale,
   type SaveData,
   type SaveStorage,
@@ -299,5 +302,90 @@ describe('關卡重做：舊場地的紀錄讀檔時清掉一次', () => {
 
   test('舊檔裡第 1 世界的紀錄壞了：照舊整份不要（不會因為要清掉就放過壞資料）', () => {
     expect(parseSave({ ...oldSave, levels: { w1_l01: { stars: 9, bestTimeS: 1 } } })).toBeUndefined();
+  });
+});
+
+describe('音效設定（settings.audio）', () => {
+  /** 一份有進度與語言的存檔，settings.audio 換成 audio。 */
+  const withRawAudio = (audio: unknown): unknown => ({
+    ...SAMPLE,
+    settings: { ...SAMPLE.settings, locale: 'en', audio },
+  });
+
+  test('預設：音量 70、不靜音；沒存過的存檔與舊存檔都用預設', () => {
+    expect(DEFAULT_AUDIO).toEqual({ volume: 70, muted: false });
+    expect(savedAudio(EMPTY_SAVE)).toEqual(DEFAULT_AUDIO);
+    // 舊存檔沒有這個欄位：照樣讀得進來，設定裡也不會多出 audio。
+    const old = parseSave({ ...SAMPLE, settings: { locale: 'en' } });
+    expect(old?.settings).toEqual({ locale: 'en' });
+    expect(old === undefined ? undefined : savedAudio(old)).toEqual(DEFAULT_AUDIO);
+  });
+
+  test('withAudio 寫進去、讀得回來，不動進度與語言，也不改原本那一份', () => {
+    const storage = memoryStorage();
+    storeSave(storage, withLocale(SAMPLE, 'en'));
+    const next = updateSave(storage, (save) => withAudio(save, { volume: 50, muted: true }));
+    expect(next.settings).toEqual({ locale: 'en', audio: { volume: 50, muted: true } });
+    expect(next.levels).toEqual(SAMPLE.levels);
+    const loaded = loadSave(storage);
+    expect(savedAudio(loaded)).toEqual({ volume: 50, muted: true });
+    expect(loaded.levels).toEqual(SAMPLE.levels);
+    expect(SAMPLE.settings.audio).toBeUndefined();
+    // 之後改語言不會弄丟音效設定。
+    expect(updateSave(storage, (save) => withLocale(save, 'zh-TW')).settings.audio).toEqual({
+      volume: 50,
+      muted: true,
+    });
+  });
+
+  test('版本仍是 1：加了 audio 的存檔，舊的讀法（只看 version、levels、settings）照樣認得', () => {
+    expect(SAVE_VERSION).toBe(1);
+    const saved = withAudio(SAMPLE, { volume: 0, muted: false });
+    expect(saved.version).toBe(1);
+    expect(parseSave(JSON.parse(JSON.stringify(saved)))).toEqual(saved);
+  });
+
+  test('音量 0 與 100 都合法；小數取整', () => {
+    expect(parseSave(withRawAudio({ volume: 0, muted: true }))?.settings.audio).toEqual({ volume: 0, muted: true });
+    expect(parseSave(withRawAudio({ volume: 100, muted: false }))?.settings.audio).toEqual({
+      volume: 100,
+      muted: false,
+    });
+    expect(parseSave(withRawAudio({ volume: 49.6, muted: false }))?.settings.audio).toEqual({
+      volume: 50,
+      muted: false,
+    });
+  });
+
+  test('audio 壞了只當作沒有這個欄位：進度與語言照留，不會整份作廢', () => {
+    const bad: readonly unknown[] = [
+      null,
+      'loud',
+      7,
+      [],
+      {},
+      { volume: 70 },
+      { muted: false },
+      { volume: '70', muted: false },
+      { volume: 70, muted: 'no' },
+      { volume: -1, muted: false },
+      { volume: 101, muted: false },
+      { volume: Number.NaN, muted: false },
+      { volume: Number.POSITIVE_INFINITY, muted: true },
+    ];
+    for (const audio of bad) {
+      const parsed = parseSave(withRawAudio(audio));
+      expect(parsed, JSON.stringify(audio)).toBeDefined();
+      expect(parsed?.settings).toEqual({ locale: 'en' });
+      expect(parsed?.levels).toEqual(SAMPLE.levels);
+      expect(parsed === undefined ? undefined : savedAudio(parsed)).toEqual(DEFAULT_AUDIO);
+    }
+  });
+
+  test('audio 裡多出來的欄位會被丟掉', () => {
+    expect(parseSave(withRawAudio({ volume: 30, muted: true, music: 5 }))?.settings.audio).toEqual({
+      volume: 30,
+      muted: true,
+    });
   });
 });
