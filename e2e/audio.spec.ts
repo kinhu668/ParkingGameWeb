@@ -18,7 +18,7 @@ const SIREN_S = 2.5;
 
 interface GameState {
   readonly snapshot: SessionSnapshot;
-  readonly audio: AudioSnapshot & SensorSnapshot;
+  readonly audio: AudioSnapshot & SensorSnapshot & { readonly lightningStrikes: number };
   readonly alarms: readonly AlarmSnapshot[];
   readonly lightbars: readonly LightbarSnapshot[];
 }
@@ -98,6 +98,7 @@ test('解鎖：第一個手勢之前聲音引擎什麼都沒做；按鍵之後�
     rearDistanceFt: null,
     beepIntervalS: null,
     continuousBeep: false,
+    lightningStrikes: 0,
   });
 
   // 切換鏡頭鍵：不會動到車，但也是玩家的手勢。

@@ -135,7 +135,7 @@ declare global {
       /** 鏡頭目前的模式、位置、視角，以及車在畫面上的位置。 */
       readonly camera: () => CameraSnapshot;
       /** 音效：解鎖了沒、AudioContext 的狀態、音量、正在響的聲音、累計的嗶聲、悶響與雷聲、天氣的環境聲、背景音樂；倒車雷達量到的距離與節奏。 */
-      readonly audio: () => AudioSnapshot & SensorSnapshot;
+      readonly audio: () => AudioSnapshot & SensorSnapshot & { readonly lightningStrikes: number };
       /** 響著的車輛警報：障礙物索引、剩餘秒數、燈現在亮不亮。 */
       readonly alarms: () => AlarmSnapshot[];
       /** 每台救護車的燈條：障礙物索引、模式、三組燈現在亮不亮。 */
@@ -386,7 +386,12 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
     snapshot: () => sessionSnapshot(session),
     spotGlow: () => gameScene.spotGlow(),
     camera: () => cameraSnapshot(gameCamera, shownPose),
-    audio: () => ({ ...audio.snapshot(), ...sensorSnapshot(director) }),
+    audio: () => ({
+      ...audio.snapshot(),
+      ...sensorSnapshot(director),
+      // 場景到上一幀為止打過幾道閃電（雷聲跟著它排；`thunders` 只算解鎖之後的）。
+      lightningStrikes: director.lightningStrikes,
+    }),
     alarms: () => alarmSnapshots(alarms, lampMotion),
     lightbars: () => lightbarSnapshots(alarms, reactions, lampMotion),
     sways: () => swaySnapshots(sways),
@@ -470,11 +475,11 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
         }
       }
     }
-    // 被撞的車晃動吃的是這一幀的模擬時間（暫停時是 0，停在當下）；重來就全部回到原位。
-    sways = stepSways(restarted ? NO_SWAYS : sways, simSeconds, kicks ?? NO_KICKS);
-
-    // 警報與聲音吃的是模擬時間（跑了幾步），所以暫停時停在當下，分頁切回來也不會一次跳很多。
+    // 警報、聲音與被撞的車的晃動吃的是模擬時間（跑了幾步），所以暫停時停在當下，分頁切回來也不會一次跳很多。
     const steppedSeconds = loop.steps * FIXED_STEP_SECONDS;
+    // 晃動與車走同一個時鐘：撞到的那一幀之後畫面卡一下（第一次撞要編譯警報燈的著色器），晃動也不會被跳過。
+    // 重來就全部回到原位。
+    sways = stepSways(restarted ? NO_SWAYS : sways, steppedSeconds, kicks ?? NO_KICKS);
     const stillRunning = session.status === 'ready' || session.status === 'driving';
     alarms = stepAlarms(
       restarted ? NO_ALARMS : alarms,
