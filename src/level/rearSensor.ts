@@ -5,7 +5,7 @@ import { forward, right } from '../core/heading';
 import { ftToM, mToFt } from '../core/units';
 import type { VehicleState } from '../vehicle/bicycleModel';
 import { VEHICLE_CONFIG_SI } from '../vehicle/vehicleConfig';
-import { obbCorners, type Obb } from './collision';
+import { obbCorners, obbRadius, type Obb } from './collision';
 
 /**
  * 掃的那一條帶子比車身每邊多寬這麼多（ft）：車尾的角差一點點就擦到的東西也算在後面。
@@ -15,6 +15,8 @@ export const REAR_SENSOR_SIDE_MARGIN_FT = 0.25;
 
 const HALF_BAND_M = VEHICLE_CONFIG_SI.widthM / 2 + ftToM(REAR_SENSOR_SIDE_MARGIN_FT);
 const HALF_LENGTH_M = VEHICLE_CONFIG_SI.lengthM / 2;
+/** 帶子的左緣與右緣（u 座標）。 */
+const BAND_EDGES_M = [-HALF_BAND_M, HALF_BAND_M] as const;
 
 /**
  * 車尾保險桿往正後方到最近的碰撞盒的淨距離（ft）；正後方沒有東西是 Infinity，已經貼著是 0。
@@ -31,6 +33,13 @@ export function rearClearanceFt(
   const rearZ = vehicle.z - ahead.z * HALF_LENGTH_M;
   let nearestM = Number.POSITIVE_INFINITY;
   for (const obstacle of obstacles) {
+    // 粗篩（每幀都跑，絕大多數的盒子在這裡就跳過）：整個外接圓都在帶子外面，或都在車尾那條線之前。
+    const radiusM = obbRadius(obstacle);
+    const centerU = (obstacle.x - rearX) * across.x + (obstacle.z - rearZ) * across.z;
+    const centerW = -((obstacle.x - rearX) * ahead.x + (obstacle.z - rearZ) * ahead.z);
+    if (Math.abs(centerU) - radiusM > HALF_BAND_M || centerW + radiusM <= 0) {
+      continue;
+    }
     let minW = Number.POSITIVE_INFINITY;
     let maxW = Number.NEGATIVE_INFINITY;
     const corners = obbCorners(obstacle);
@@ -45,7 +54,7 @@ export function rearClearanceFt(
         maxW = Math.max(maxW, w);
       }
       // 這條邊穿過帶子的左緣或右緣：交點也是切出來那一塊的頂點。
-      for (const edgeU of [-HALF_BAND_M, HALF_BAND_M]) {
+      for (const edgeU of BAND_EDGES_M) {
         if ((previousU - edgeU) * (u - edgeU) < 0) {
           const crossW = previousW + ((edgeU - previousU) / (u - previousU)) * (w - previousW);
           minW = Math.min(minW, crossW);

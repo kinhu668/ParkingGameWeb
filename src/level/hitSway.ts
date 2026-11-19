@@ -74,7 +74,8 @@ export interface SwayKick {
   readonly along: number;
 }
 
-const NO_SWAYS: readonly Sway[] = [];
+/** 沒有車在晃（共用同一個空陣列）。 */
+export const NO_SWAYS: readonly Sway[] = [];
 
 /** 撞擊車速（m/s）→ 晃幾成：從 minShare 線性到 1。 */
 export function swayShare(impactSpeedMps: number): number {

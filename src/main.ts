@@ -51,12 +51,12 @@ import {
 import { challengeTimeS, sessionChallenges } from './level/challenges';
 import { countedHits, type CountedHit } from './level/hitEvents';
 import {
+  NO_SWAYS,
   stepSways,
   swayKick,
   swayScaleFor,
   swaySnapshots,
   swaysWhenHit,
-  type Sway,
   type SwayKick,
   type SwaySnapshot,
 } from './level/hitSway';
@@ -147,7 +147,6 @@ declare global {
 }
 
 /** 沒有車在晃、這一幀也沒有車被撞（絕大多數的幀）：共用的空清單，不必每幀配置。 */
-const NO_SWAYS: readonly Sway[] = [];
 const NO_KICKS: readonly SwayKick[] = [];
 
 /** 關卡選擇畫面列的世界（本階段只有第 1 世界）。 */
