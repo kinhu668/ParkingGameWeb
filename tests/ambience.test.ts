@@ -136,9 +136,10 @@ describe('雷聲的長相', () => {
       expect(peakS).toBeLessThan(plan.durationS * 0.4);
       // 第一個點（20 毫秒）還很小聲：不是「砰」一下出來。
       expect(curve[1] ?? 1).toBeLessThan(peak * 0.1);
-      // 最後十分之一的尾巴已經很小聲。
+      // 最後十分之一的尾巴已經小聲（−16 dB 以下），但還沒有完全沒聲音：雷聲拖得夠長。
       const tail = curve.slice(Math.floor(curve.length * 0.9));
-      expect(Math.max(...tail)).toBeLessThan(peak * 0.08);
+      expect(Math.max(...tail)).toBeLessThan(peak * 0.15);
+      expect(Math.max(...tail)).toBeGreaterThan(peak * 0.02);
     }
   });
 
@@ -194,7 +195,8 @@ describe('環境聲的接線', () => {
     const { loops } = start('storm');
     expect(loops).toHaveLength(3);
     const roar = loops[2]!;
-    expect(filterAfter(roar, 'lowpass')?.frequency.value).toBe(AMBIENCE_SETTINGS.roarLowpassHz);
+    expect(filterAfter(roar, 'highpass')?.frequency.value).toBe(AMBIENCE_SETTINGS.roarBandHz[0]);
+    expect(filterAfter(roar, 'lowpass')?.frequency.value).toBe(AMBIENCE_SETTINGS.roarBandHz[1]);
     expect(roar.buffer).toBe(loops[0]!.buffer);
     expect(AMBIENCE_SETTINGS.storm.bedGain).toBeGreaterThan(AMBIENCE_SETTINGS.rain.bedGain);
     expect(AMBIENCE_SETTINGS.storm.patterGain).toBeGreaterThan(AMBIENCE_SETTINGS.rain.patterGain);

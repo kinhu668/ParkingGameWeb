@@ -16,7 +16,7 @@ export function ambienceFor(weather: WeatherId): AmbienceKind | null {
 export const AMBIENCE_SETTINGS = {
   /** 解鎖後淡入多久（秒）。 */
   fadeInS: 1,
-  /** 重來：整個環境聲先在 downS 秒內壓下去，holdS 秒後再用 upS 秒回來（雷聲的尾巴不會拖進新的一局）。 */
+  /** 重來：整個環境聲先在 downS 秒內壓下去，holdS 秒後再用 upS 秒回來（聽得出換了一局；還沒響完的雷聲會跟著回來）。 */
   dip: { downS: 0.12, holdS: 0.3, upS: 0.8 },
   /**
    * 雨的底層：一段循環的粉紅雜訊（左右聲道各自一段，聽起來是四面八方）→ 高通 → 低通。
@@ -28,11 +28,11 @@ export const AMBIENCE_SETTINGS = {
    * tickS 是一顆雨滴衰減的時間常數的範圍（秒）。
    */
   patter: { seed: 0xd409, loopS: 5.3, tickS: [0.0012, 0.006], bandpassHz: 3800, bandpassQ: 0.6 },
-  /** 大雨的低頻轟轟聲：同一段雜訊過低通。 */
-  roarLowpassHz: 380,
+  /** 大雨的低頻轟轟聲：同一段雜訊只留這一段（Hz）。再低的喇叭放不出來，只會白白吃掉限幅器的餘裕。 */
+  roarBandHz: [90, 380],
   /** 各種雨的音量與密度：底層、啪搭、低頻；每秒幾顆雨滴；緩慢起伏的頻率（Hz）與深度（佔底層音量的比例）。 */
-  rain: { bedGain: 0.16, patterGain: 0.3, roarGain: 0, dropsPerS: 70, gustHz: 0.11, gustDepth: 0.12 },
-  storm: { bedGain: 0.26, patterGain: 0.4, roarGain: 0.22, dropsPerS: 130, gustHz: 0.17, gustDepth: 0.22 },
+  rain: { bedGain: 0.23, patterGain: 0.42, roarGain: 0, dropsPerS: 70, gustHz: 0.11, gustDepth: 0.12 },
+  storm: { bedGain: 0.34, patterGain: 0.5, roarGain: 0.22, dropsPerS: 130, gustHz: 0.17, gustDepth: 0.22 },
   /**
    * 雨後的滴水：兩段長度不同的循環（7 秒與 11 秒，合起來 77 秒才重複），每段裡零星幾滴。
    * 一滴是一個音高很快往上滑的正弦（水滴的「咚」），衰減很快。沒有底噪：雨已經停了。
@@ -60,16 +60,21 @@ export const AMBIENCE_SETTINGS = {
     /** 音量起來要多久（秒）：近的、遠的。 */
     attackS: [0.1, 0.6],
     /** 最遠的雷的音量（最近的是 1）。 */
-    farGain: 0.5,
-    rumbleGain: 1.5,
-    /** 轟隆聲低通的截止頻率（Hz）：開頭（遠的、近的）一路滑到結尾。 */
-    lowpassHz: { far: 260, near: 1100, end: 90 },
+    farGain: 0.75,
+    rumbleGain: 1.8,
+    /** 轟隆聲的雜訊先切掉這個頻率以下（Hz）：粉紅雜訊最低的那一段喇叭放不出來，只會讓限幅器把雨聲壓下去。 */
+    rumbleHighpassHz: 70,
+    /**
+     * 轟隆聲低通的截止頻率（Hz）：開頭（遠的、近的）一路滑到結尾。開頭要有幾百 Hz 以上的成分：
+     * 手機的喇叭放不出 300 Hz 以下，只有低頻的雷在手機上等於沒有聲音。
+     */
+    lowpassHz: { far: 1600, near: 4000, end: 320 },
     subHz: [43, 58],
-    subGain: 0.3,
+    subGain: 0.1,
     /** 近的雷開頭那一聲脆的：比這個近（0–1）才有；高通之後很快衰減。 */
     crackFrom: 0.45,
     crackHighpassHz: 900,
-    crackGain: 0.9,
+    crackGain: 1.1,
     crackDecayS: 0.32,
     /** 音量曲線每秒幾個點。 */
     curveHz: 50,
@@ -200,8 +205,8 @@ export function thunderPlan(strike: number): ThunderPlan {
   const delayS = thunder.delayS[1] - near * (thunder.delayS[1] - thunder.delayS[0]);
   const durationS = thunder.durationS[0] + random() * (thunder.durationS[1] - thunder.durationS[0]);
   const attackS = thunder.attackS[1] - near * (thunder.attackS[1] - thunder.attackS[0]);
-  // 尾巴：結束時剩 1% 左右；中間疊兩個慢的起伏（雷聲在雲裡滾）。
-  const tauS = (durationS - attackS) / 4.6;
+  // 尾巴：結束時還剩 5% 左右（拖得夠長，蓋得過雨聲的那一段才有一兩秒）；中間疊兩個慢的起伏（雷聲在雲裡滾）。
+  const tauS = (durationS - attackS) / 3;
   const rollHz = [0.5 + random() * 0.6, 1.1 + random() * 0.9];
   const rollPhase = [random() * 2 * Math.PI, random() * 2 * Math.PI];
   const points = Math.round(durationS * thunder.curveHz);
@@ -258,7 +263,11 @@ function playThunder(context: BaseAudioContext, output: AudioNode, noise: AudioB
   const { far, near, end } = thunder.lowpassHz;
   lowpass.frequency.setValueAtTime(far + (near - far) * plan.near, startS);
   lowpass.frequency.exponentialRampToValueAtTime(end, endS);
-  rumble.connect(lowpass);
+  const highpass = context.createBiquadFilter();
+  highpass.type = 'highpass';
+  highpass.frequency.value = thunder.rumbleHighpassHz;
+  rumble.connect(highpass);
+  highpass.connect(lowpass);
   lowpass.connect(shaped(thunder.rumbleGain));
   // 每一道從雜訊的不同位置開始。
   rumble.start(startS, plan.near * noise.duration);
@@ -277,16 +286,16 @@ function playThunder(context: BaseAudioContext, output: AudioNode, noise: AudioB
     const crack = context.createBufferSource();
     crack.buffer = noise;
     crack.loop = true;
-    const highpass = context.createBiquadFilter();
-    highpass.type = 'highpass';
-    highpass.frequency.value = thunder.crackHighpassHz;
+    const sharp = context.createBiquadFilter();
+    sharp.type = 'highpass';
+    sharp.frequency.value = thunder.crackHighpassHz;
     const envelope = context.createGain();
     envelope.gain.value = 0;
     envelope.gain.setValueAtTime(0, startS);
     envelope.gain.linearRampToValueAtTime(thunder.crackGain * plan.crack, startS + 0.004);
     envelope.gain.exponentialRampToValueAtTime(SILENT, startS + thunder.crackDecayS);
-    crack.connect(highpass);
-    highpass.connect(envelope);
+    crack.connect(sharp);
+    sharp.connect(envelope);
     envelope.connect(out);
     crack.start(startS);
     crack.stop(startS + thunder.crackDecayS);
@@ -365,7 +374,8 @@ export function startAmbience(context: BaseAudioContext, master: AudioNode, kind
       rain.patterGain,
     );
     if (rain.roarGain > 0) {
-      loopLayer(context, bus, noise, [['lowpass', settings.roarLowpassHz]], rain.roarGain);
+      const [roarFromHz, roarToHz] = settings.roarBandHz;
+      loopLayer(context, bus, noise, [['highpass', roarFromHz], ['lowpass', roarToHz]], rain.roarGain);
     }
     // 緩慢的起伏：一個很慢的正弦加在底層的音量上，雨勢不是死板的一條線。
     const gust = context.createOscillator();
