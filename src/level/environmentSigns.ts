@@ -38,10 +38,16 @@ export const ENVIRONMENT_SIGNS: Readonly<Record<LevelEnvironment, EnvironmentSig
   },
 };
 
-/** 貼在哪個環境都會出現的道具上的字：餐車車頂招牌的店名、併排貨車車身的字樣。同樣是虛構名稱。 */
+/**
+ * 貼在哪個環境都會出現的道具上的字：餐車車頂招牌的店名、併排貨車車身的字樣、救護車的單位名稱／車尾／編號。
+ * 同樣是虛構名稱（MAPLE HOLLOW 是遊戲裡的鎮名；MEDIC 7 是很多單位都有的通用編號，不是哪一個單位的名稱）。
+ */
 export const PROP_SIGNS = {
   foodTruck: 'LUAU LUNCHBOX',
   deliveryVan: 'PELICAN PARCEL',
+  ambulance: 'MAPLE HOLLOW AMBULANCE',
+  ambulanceRear: 'AMBULANCE',
+  ambulanceUnit: 'MEDIC 7',
 } as const;
 
 /** 一個環境的全部招牌文字（主招牌在最前面）。 */

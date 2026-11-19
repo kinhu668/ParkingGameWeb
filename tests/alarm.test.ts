@@ -47,8 +47,9 @@ function maxFlashesPerSecond(lit: (timeS: number) => boolean, seconds: number): 
 }
 
 describe('哪些障礙物會叫', () => {
-  test('停放車、衝浪休旅車、快遞貨車是車的警報；其餘沒有反應', () => {
-    expect(ALARM_KINDS).toEqual({ parked_car: 'car', surf_suv: 'car', delivery_van: 'car' });
+  test('停放車、衝浪休旅車、快遞貨車是車的警報，救護車是警笛；其餘沒有反應', () => {
+    expect(ALARM_KINDS).toEqual({ parked_car: 'car', surf_suv: 'car', delivery_van: 'car', ambulance: 'ambulance' });
+    expect(alarmKinds([{ type: 'ambulance' }, { type: 'delivery_van' }])).toEqual(['ambulance', 'car']);
     for (const type of ['food_truck', 'wall', 'pillar', 'cone', 'shopping_cart', 'bollard'] as const) {
       expect(alarmKinds([{ type }])).toEqual([null]);
     }

@@ -11,6 +11,7 @@ export const ALARM_KINDS: Readonly<Partial<Record<ObstacleType, AlarmKind>>> = {
   parked_car: 'car',
   surf_suv: 'car',
   delivery_van: 'car',
+  ambulance: 'ambulance',
 };
 
 /** 每個障礙物（與關卡的 `obstaclesFt` 同索引）的反應；null = 沒有。 */

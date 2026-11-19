@@ -43,6 +43,8 @@ export const SIGN_STYLES = {
   foodTruck: { background: '#fff3d6', color: '#12807a' },
   /** 貨車車身的字樣：深藍底、米白字、橘框（配車身的色帶）。 */
   parcel: { background: '#1f4e8c', color: '#f4f1e6', border: '#e8862e' },
+  /** 救護車車身的字樣：底色與車身的白一樣（牌子的邊看不出來）、青綠字。 */
+  ambulance: { background: '#f2f1ea', color: '#0f6f6a' },
   /** 巷子牆上的噴漆牌：黃底黑字。 */
   alley: { background: '#e2c33b', color: '#1b1b1a', border: '#1b1b1a' },
   /** 禁止停車：白底、暗紅字。 */

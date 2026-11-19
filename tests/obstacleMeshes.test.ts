@@ -53,8 +53,14 @@ function expectFootprintMatches(corners: readonly Vector3[], box: Obb): void {
 
 const MODEL_TYPES = OBSTACLE_TYPES.filter((type): type is ModelObstacleType => type !== 'parked_car');
 
-/** 比人高的大型障礙物（柱子、餐車、貨車、鳳梨立牌）；其餘的都不到 8 ft。 */
-const TALL_TYPES: readonly ModelObstacleType[] = ['pillar', 'food_truck', 'delivery_van', 'pineapple_standee'];
+/** 比人高的大型障礙物（柱子、餐車、貨車、救護車、鳳梨立牌）；其餘的都不到 8 ft。 */
+const TALL_TYPES: readonly ModelObstacleType[] = [
+  'pillar',
+  'food_truck',
+  'delivery_van',
+  'ambulance',
+  'pineapple_standee',
+];
 
 describe('各種障礙物的模型', () => {
   test.each(MODEL_TYPES.filter((type) => type !== 'wall'))('%s：不是一個方塊，底面在地上，有顏色', (type) => {
@@ -271,6 +277,49 @@ describe('貼在模型上的字', () => {
       expect(label.yFt).toBeGreaterThan(5);
       expect(Math.abs(label.xFt)).toBeLessThan(OBSTACLE_DEFAULT_SIZE_FT.delivery_van.widthFt / 2);
     }
+  });
+
+  test('救護車：車廂兩側各有虛構的單位名稱與編號、車尾有 AMBULANCE，都貼在車皮外、字朝車外', () => {
+    // heading 0：車頭朝 −Z，右側朝 +X，車尾朝 +Z。
+    const labels = labelsOf('ambulance', 0);
+    expect(labels.map((label) => label.text)).toEqual([
+      PROP_SIGNS.ambulance,
+      PROP_SIGNS.ambulance,
+      PROP_SIGNS.ambulanceUnit,
+      PROP_SIGNS.ambulanceUnit,
+      PROP_SIGNS.ambulanceRear,
+    ]);
+    expect(labels.map((label) => label.text)).toEqual([
+      'MAPLE HOLLOW AMBULANCE',
+      'MAPLE HOLLOW AMBULANCE',
+      'MEDIC 7',
+      'MEDIC 7',
+      'AMBULANCE',
+    ]);
+    const size = OBSTACLE_DEFAULT_SIZE_FT.ambulance;
+    const geometry = createObstacleGeometry('ambulance');
+    geometry.computeBoundingBox();
+    const roofFt = mToFt(geometry.boundingBox?.max.y ?? 0);
+    const sides = labels.slice(0, 4);
+    sides.forEach((label, index) => {
+      // 偶數是右側（+X）、奇數是左側（−X）；貼在醫療艙的車皮外一點點，沒有超出 7 ft 寬的碰撞盒。
+      const sign = index % 2 === 0 ? 1 : -1;
+      expect(label.xFt * sign).toBeGreaterThan(3.2);
+      expect(Math.abs(label.xFt)).toBeLessThan(size.widthFt / 2);
+      expect(label.facing.x).toBeCloseTo(sign, 5);
+      // 在醫療艙上（車身中心的後方）、色帶上方、車頂以下。
+      expect(label.zFt).toBeGreaterThan(0);
+      expect(label.yFt).toBeGreaterThan(4.5);
+      expect(label.yFt).toBeLessThan(roofFt - 1);
+    });
+    // 兩側的牌子左右對稱。
+    expect(sides[0]?.zFt).toBeCloseTo(sides[1]?.zFt ?? NaN, 5);
+    expect(sides[2]?.zFt).toBeCloseTo(sides[3]?.zFt ?? NaN, 5);
+    const rear = labels[4];
+    expect(rear?.xFt).toBeCloseTo(0, 5);
+    expect(rear?.facing.z).toBeCloseTo(1, 5);
+    expect(rear?.zFt).toBeGreaterThan(9.5);
+    expect(rear?.zFt).toBeLessThan(size.lengthFt / 2);
   });
 
   test('交通錐、柱子、鳳梨立牌身上沒有字', () => {

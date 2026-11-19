@@ -34,6 +34,8 @@ export const OBSTACLE_DEFAULT_SIZE_FT = {
   food_truck: { widthFt: 10, lengthFt: 22 },
   /** 郵務／快遞的廂型貨車。 */
   delivery_van: { widthFt: 7, lengthFt: 20 },
+  /** 停著的廂型救護車（車頂有燈條）：碰撞盒與廂型貨車相同。 */
+  ambulance: { widthFt: 7, lengthFt: 20 },
   /** 車頂綁著衝浪板的休旅車：車身 16 ft，衝浪板往車尾（+Z）多伸出 3 ft。 */
   surf_suv: { widthFt: 6.6, lengthFt: 19 },
   /** 巨型鳳梨吉祥物立牌（含底座）。 */

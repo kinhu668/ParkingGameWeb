@@ -38,6 +38,7 @@ import {
 } from './occluders';
 import { createParkedCars } from './parkedCars';
 import { assemble, bar, blob, box, cylinder, lerp, roller, type Point } from './partShapes';
+import { AMBULANCE_LABELS_FT, createAmbulanceGeometry } from './ambulance';
 import { createDeliveryVanGeometry } from './deliveryVan';
 import { createFireHydrantGeometry } from './fireHydrant';
 import { createFoodTruckGeometry } from './foodTruck';
@@ -350,6 +351,8 @@ export function createObstacleGeometry(type: ModelObstacleType): BufferGeometry 
       return createFoodTruckGeometry();
     case 'delivery_van':
       return createDeliveryVanGeometry();
+    case 'ambulance':
+      return createAmbulanceGeometry();
     case 'surf_suv':
       return createSurfSuvGeometry();
     case 'pineapple_standee':
@@ -379,9 +382,10 @@ export const OBSTACLE_SURFACES: Readonly<Record<Exclude<ObstacleType, 'parked_ca
   planter: 'concrete',
   lamp_island: 'concrete',
   pillar: 'concrete',
-  // 三台車用車漆（沒有髒污與水痕的疊層）：塗裝鋼的鏽斑會點在深色的玻璃與輪胎上。
+  // 這幾台車用車漆（沒有髒污與水痕的疊層）：塗裝鋼的鏽斑會點在深色的玻璃與輪胎上。
   food_truck: 'carPaint',
   delivery_van: 'carPaint',
+  ambulance: 'carPaint',
   surf_suv: 'carPaint',
   pineapple_standee: 'plastic',
   fire_hydrant: 'paintedMetal',
@@ -480,6 +484,36 @@ function obstacleLabels(type: ModelObstacleType, obstacle: ObbFt): Mesh[] {
   if (type === 'delivery_van') {
     // 貨廂兩側、色帶上方的字樣（deliveryVan.ts：車身側面在本地 X = ±3.22）。
     return sidePlates(PROP_SIGNS.deliveryVan, 'parcel', [3.27, -3.27], -3.2, 6.7, 7.5, 1.5, 0);
+  }
+  if (type === 'ambulance') {
+    // 車廂兩側的單位名稱與編號、車尾門上方的 AMBULANCE（位置在 ambulance.ts 的 AMBULANCE_LABELS_FT）。
+    const { side: name, unit, rear } = AMBULANCE_LABELS_FT;
+    const plates = (text: string, plate: typeof name): Mesh[] =>
+      sidePlates(
+        text,
+        'ambulance',
+        [plate.rightFt, -plate.rightFt],
+        plate.aheadFt,
+        plate.yFt,
+        plate.widthFt,
+        plate.heightFt,
+        0,
+      );
+    return [
+      ...plates(PROP_SIGNS.ambulance, name),
+      ...plates(PROP_SIGNS.ambulanceUnit, unit),
+      createSignMesh({
+        text: PROP_SIGNS.ambulanceRear,
+        style: 'ambulance',
+        x: x + ftToM(ahead.x * rear.aheadFt),
+        y: ftToM(rear.yFt),
+        z: z + ftToM(ahead.z * rear.aheadFt),
+        facingRad: headingRad + Math.PI,
+        widthM: ftToM(rear.widthFt),
+        heightM: ftToM(rear.heightFt),
+        glow: 0,
+      }),
+    ];
   }
   if (type === 'mailbox') {
     const outM = ftToM(obstacle.lengthFt / 2 + 0.03);
