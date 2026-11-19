@@ -184,6 +184,8 @@ export function createAudioEngine(
   let everRan = false;
   /** context 沒在出聲已經連續幾幀（上限 STALLED_RUNS）；開始出聲、暫停或前景背景一變就歸零。 */
   let stalledRuns = 0;
+  /** context 這一次停住之後已經收過一聲嗶；恢復出聲才歸零。 */
+  let stalledBeep = false;
   let held = false;
   let hidden = false;
   let listening = false;
@@ -387,18 +389,28 @@ export function createAudioEngine(
       if (graph === null) {
         return;
       }
+      const stalled = graph.context.state !== 'running';
       let canStart = true;
-      if (graph.context.state === 'running') {
+      if (!stalled) {
         stalledRuns = 0;
+        stalledBeep = false;
       } else if (stalledRuns === STALLED_RUNS) {
         canStart = false;
       } else {
         stalledRuns += 1;
       }
       for (const command of commands) {
-        if (canStart || !startsSound(command)) {
-          execute(graph, command);
+        if (!canStart && startsSound(command)) {
+          continue;
         }
+        if (stalled && command.type === 'beep') {
+          // 停住時收下的嗶聲都排在同一個（不會走的）時刻：倒車雷達嗶得快，全收的話恢復時會疊成很大的一聲，所以只收一聲。
+          if (stalledBeep) {
+            continue;
+          }
+          stalledBeep = true;
+        }
+        execute(graph, command);
       }
       if (toneWanted && canStart && !voices.has(TONE_KEY)) {
         voices.set(TONE_KEY, startBeepTone(graph.context, graph.sfx));

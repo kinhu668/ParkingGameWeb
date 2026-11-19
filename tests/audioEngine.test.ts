@@ -360,6 +360,22 @@ describe('倒車雷達', () => {
     expect(engine.snapshot().voices).toEqual(['beepTone']);
   });
 
+  test('context 停住的那幾幀裡倒車雷達連嗶好幾聲：只收一聲（不會在恢復時疊成很大的一聲）；恢復後照常', async () => {
+    const { context, engine } = await unlocked();
+    context.setState('suspended');
+    const before = context.of('oscillator').length;
+    for (let frame = 0; frame < 30; frame += 1) {
+      engine.run([{ type: 'beep', durationS: 0.07 }]);
+    }
+    // 一聲嗶是兩個振盪器（基音加泛音）。
+    expect(context.of('oscillator')).toHaveLength(before + 2);
+    expect(engine.snapshot().beeps).toBe(1);
+    context.setState('running');
+    engine.run([{ type: 'beep', durationS: 0.07 }]);
+    engine.run([{ type: 'beep', durationS: 0.07 }]);
+    expect(engine.snapshot().beeps).toBe(3);
+  });
+
   test('context 停住太久時該響的長音：先不開始，恢復出聲後的下一幀補上；期間關掉就不補', async () => {
     const { context, engine } = await unlocked();
     context.setState('suspended');
