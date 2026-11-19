@@ -374,6 +374,12 @@ describe('倒車雷達', () => {
     engine.run([{ type: 'beep', durationS: 0.07 }]);
     engine.run([{ type: 'beep', durationS: 0.07 }]);
     expect(engine.snapshot().beeps).toBe(3);
+    // 再停住一次：又是只收一聲（不是從此一聲都不收）。
+    context.setState('suspended');
+    for (let frame = 0; frame < 3; frame += 1) {
+      engine.run([{ type: 'beep', durationS: 0.07 }]);
+    }
+    expect(engine.snapshot().beeps).toBe(4);
   });
 
   test('context 停住太久時該響的長音：先不開始，恢復出聲後的下一幀補上；期間關掉就不補', async () => {

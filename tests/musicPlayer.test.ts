@@ -160,35 +160,48 @@ describe('接線與循環', () => {
     expect([night?.loop, night?.loopStart, night?.loopEnd]).toEqual([true, 0, 61.6]);
   });
 
-  test('循環的接點：最後 20 毫秒加一條斜坡，最後一個取樣接上循環的第一個取樣（不會「喀」一聲）；更前面的不動', async () => {
-    const stage = setup('day');
-    const buffer = stage.context.decoded;
-    if (buffer === null) {
-      throw new Error('沒有緩衝區');
-    }
-    const channels = [
-      { flat: -0.05, first: -0.19 },
-      { flat: 0.1, first: 0.3 },
-    ];
-    channels.forEach(({ flat, first }, channel) => {
-      buffer.getChannelData(channel).fill(flat);
-      buffer.getChannelData(channel)[0] = first;
-    });
-    stage.target.fire('keydown');
-    await settled();
-    await settled();
-    expect(sourceOf(stage.context)?.buffer).toBe(buffer);
-    const ramp = Math.round(MUSIC_SETTINGS.seamRampS * 48000);
-    expect(ramp).toBe(960);
-    channels.forEach(({ flat, first }, channel) => {
-      const samples = buffer.getChannelData(channel);
-      expect(samples[DAY_SAMPLES - 1]).toBeCloseTo(first, 6);
-      expect(samples[DAY_SAMPLES - 1 - ramp / 2]).toBeCloseTo((flat + first) / 2, 6);
-      expect(samples[DAY_SAMPLES - 1 - ramp]).toBeCloseTo(flat, 6);
-      expect(samples[1000]).toBeCloseTo(flat, 6);
-      expect(samples[0]).toBeCloseTo(first, 6);
-    });
-  });
+  test.each([
+    ['解碼出來剛好是原始長度', DAY_SAMPLES, 0],
+    // 2685 格 × 1152 個取樣（整個檔，沒有裁）：循環從第 1105 個取樣開始。
+    ['解碼器沒有裁掉編碼器墊的取樣', 2685 * 1152, 1105],
+  ])(
+    '循環的接點（%s）：最後 20 毫秒加一條斜坡，最後一個取樣接上循環的第一個取樣（不會「喀」一聲）；其他的不動',
+    async (_case, decodedSamples, lead) => {
+      const stage = setup('day', DEFAULT_AUDIO, decodedSamples);
+      const buffer = stage.context.decoded;
+      if (buffer === null) {
+        throw new Error('沒有緩衝區');
+      }
+      const channels = [
+        { flat: -0.05, first: -0.19 },
+        { flat: 0.1, first: 0.3 },
+      ];
+      channels.forEach(({ flat, first }, channel) => {
+        buffer.getChannelData(channel).fill(flat);
+        buffer.getChannelData(channel)[lead] = first;
+      });
+      stage.target.fire('keydown');
+      await settled();
+      await settled();
+      expect(sourceOf(stage.context)?.buffer).toBe(buffer);
+      const ramp = Math.round(MUSIC_SETTINGS.seamRampS * 48000);
+      expect(ramp).toBe(960);
+      const last = lead + DAY_SAMPLES - 1;
+      channels.forEach(({ flat, first }, channel) => {
+        const samples = buffer.getChannelData(channel);
+        expect(samples[last]).toBeCloseTo(first, 6);
+        expect(samples[last - ramp / 2]).toBeCloseTo((flat + first) / 2, 6);
+        expect(samples[last - ramp]).toBeCloseTo(flat, 6);
+        expect(samples[lead + 1000]).toBeCloseTo(flat, 6);
+        expect(samples[lead]).toBeCloseTo(first, 6);
+        // 循環以外（開頭墊的、結尾多的）不動。
+        if (lead > 0) {
+          expect(samples[0]).toBeCloseTo(flat, 6);
+          expect(samples[last + 1]).toBeCloseTo(flat, 6);
+        }
+      });
+    },
+  );
 
   test('解碼器沒有裁掉編碼器墊的取樣：跳過開頭的 1105 個，循環的長度還是原始長度', async () => {
     // 2685 格 × 1152 個取樣（整個檔，沒有裁）。
