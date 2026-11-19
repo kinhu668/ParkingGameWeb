@@ -169,7 +169,7 @@ test('靜音與音量：暫停面板的設定立刻生效、存起來，重新�
   await expect(hudMute).toHaveText('取消靜音');
   await expect(hudMute).toHaveAttribute('aria-label', '取消靜音');
 
-  // HUD 的靜音鈕：取消靜音，面板跟著變，音量不動；到頂、到底都夾住。
+  // HUD 的靜音鈕：取消靜音，面板跟著變，音量不動；到頂就夾住（「＋」變成不能按）。
   await hudMute.click();
   expect((await nextState(page)).audio).toMatchObject({ volume: 50, muted: false });
   await expect(hudMute).toHaveText('靜音');
@@ -177,10 +177,14 @@ test('靜音與音量：暫停面板的設定立刻生效、存起來，重新�
   await expect(page.locator('#hud-pause')).toBeVisible();
   await expect(panelMute).toHaveText('靜音');
   await expect(readout).toHaveText('50%');
-  for (let press = 0; press < 7; press += 1) {
-    await page.locator('#pause-volume-up').click();
+  const volumeUp = page.locator('#pause-volume-up');
+  for (let press = 0; press < 5; press += 1) {
+    await expect(volumeUp).toBeEnabled();
+    await volumeUp.click();
   }
   await expect(readout).toHaveText('100%');
+  await expect(volumeUp).toBeDisabled();
+  await expect(page.locator('#pause-volume-down')).toBeEnabled();
   expect((await nextState(page)).audio.volume).toBe(100);
   const stored = await page.evaluate(
     (key) => JSON.parse(localStorage.getItem(key) ?? '{}') as { settings?: { audio?: unknown } },
