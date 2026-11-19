@@ -61,14 +61,23 @@ async function watchUntil(
   return state;
 }
 
-/** w1_l03：切到 R 檔、按住油門直線倒車，撞到走道對面那台車（collision.spec.ts 的同一條路）。 */
+/**
+ * w1_l03：切到 R 檔、按住油門直線倒車，撞到走道對面那台車（collision.spec.ts 的同一條路；撞到時車身中心約在 z = −4 ft）。
+ * 離那台車約 6 ft、倒車速度夠（6 mph 以上，鬆油門每秒只掉 3 mph）就先放開油門滑過去：
+ * 機器很慢時放開鍵的事件晚到，也不會在碰撞冷卻之後又頂上去多算一次。速度不夠就照舊按到撞上為止。
+ */
 async function reverseIntoCar(page: Page, collisions: number): Promise<GameState> {
   await page.keyboard.press('KeyR');
   await expect(page.locator('#hud-gear')).toHaveAttribute('data-gear', 'reverse');
   await page.keyboard.down('KeyW');
-  const hit = await watchUntil(page, `碰撞數到 ${collisions}`, (state) => state.snapshot.collisions >= collisions);
+  await watchUntil(
+    page,
+    '倒車到那台車前面',
+    (state) =>
+      state.snapshot.collisions >= collisions || (state.snapshot.zFt < 2 && state.snapshot.speedMph <= -6),
+  );
   await page.keyboard.up('KeyW');
-  return hit;
+  return watchUntil(page, `碰撞數到 ${collisions}`, (state) => state.snapshot.collisions >= collisions);
 }
 
 test('解鎖：第一個手勢之前聲音引擎什麼都沒做；按鍵之後才建立並啟動', async ({ page }) => {
