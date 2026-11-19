@@ -108,11 +108,13 @@ test('倒車雷達：越靠近後面的車嗶得越快，不到 1 ft 變成長�
   expect(first.audio.continuousBeep).toBe(false);
   await expect.poll(async () => (await nextState(page)).audio.beeps, { timeout: DEADLINE_MS }).toBeGreaterThan(0);
 
-  // 一小段一小段往後退，每次停下來讀一次：距離與節奏。遠的時候退快一點，近了就慢慢來。
-  const readings: { distanceFt: number; intervalS: number }[] = [];
+  // 一小段一小段往後退，每次停下來讀一次：距離與節奏。遠的時候退快一點，近了就慢慢來，最後幾英尺用爬的
+  // （幀率很低的時候也來得及剎車，不會撞上去）。
+  const readings: { distanceFt: number; intervalS: number; touched: boolean }[] = [];
   let state = first;
-  for (let move = 0; move < 60 && !state.audio.continuousBeep; move += 1) {
-    const targetMph = (state.audio.rearDistanceFt ?? 0) > 12 ? -5 : -1.5;
+  for (let move = 0; move < 90 && !state.audio.continuousBeep; move += 1) {
+    const aheadFt = state.audio.rearDistanceFt ?? 0;
+    const targetMph = aheadFt > 12 ? -5 : aheadFt > 3.5 ? -1.5 : -0.7;
     await page.keyboard.down('KeyW');
     await watchUntil(
       page,
@@ -123,7 +125,11 @@ test('倒車雷達：越靠近後面的車嗶得越快，不到 1 ft 變成長�
     state = await brakeToStop(page);
     const { rearDistanceFt, beepIntervalS } = state.audio;
     if (rearDistanceFt !== null && beepIntervalS !== null && !state.audio.continuousBeep) {
-      readings.push({ distanceFt: rearDistanceFt, intervalS: beepIntervalS });
+      readings.push({
+        distanceFt: rearDistanceFt,
+        intervalS: beepIntervalS,
+        touched: state.snapshot.collisions > 0,
+      });
     }
   }
   // 每一次讀到的節奏都照距離算：farFt 以外 0.8 秒，往 nearFt 線性縮短到 0.13 秒。
@@ -131,12 +137,13 @@ test('倒車雷達：越靠近後面的車嗶得越快，不到 1 ft 變成長�
     const share = Math.min((distanceFt - SENSOR.nearFt) / (SENSOR.farFt - SENSOR.nearFt), 1);
     expect(intervalS).toBeCloseTo(SENSOR.nearPeriodS + (SENSOR.periodS - SENSOR.nearPeriodS) * share, 6);
   }
-  // 真的有在變快：至少讀到一次比慢節奏快的，而且越近越快。
+  // 真的有在變快：至少讀到一次比慢節奏快的，而且越近越快。萬一碰到了（會彈開一兩英尺再退）：碰到之後的不比先後。
   const quicker = readings.filter((reading) => reading.intervalS < SENSOR.periodS);
   expect(quicker.length).toBeGreaterThan(0);
-  for (let at = 1; at < readings.length; at += 1) {
-    expect(readings[at]?.distanceFt).toBeLessThan(readings[at - 1]?.distanceFt ?? 0);
-    expect(readings[at]?.intervalS).toBeLessThanOrEqual(readings[at - 1]?.intervalS ?? 0);
+  const approach = readings.filter((reading) => !reading.touched);
+  for (let at = 1; at < approach.length; at += 1) {
+    expect(approach[at]?.distanceFt).toBeLessThan(approach[at - 1]?.distanceFt ?? 0);
+    expect(approach[at]?.intervalS).toBeLessThanOrEqual(approach[at - 1]?.intervalS ?? 0);
   }
 
   // 快碰到了（或已經輕輕碰上、被擋在原地）：長音。
@@ -205,11 +212,11 @@ test('雷聲：雷雨關每打一道閃電排一聲雷（解鎖之後的才算�
   expect(again.audio.thunders).toBeGreaterThan(struck.audio.thunders);
   expect(again.audio.ambience).toBe('storm');
 
-  // 暫停：閃電與雷聲的計數都停住。
+  // 暫停：閃電與雷聲的計數都停住。等得比兩道閃電之間最長的間隔（11 秒）還久：沒停住的話一定會多一道。
   await page.keyboard.press('Escape');
   await expect(page.locator('#hud-pause')).toBeVisible();
   const paused = await nextState(page);
-  await page.waitForTimeout(1500);
+  await page.waitForTimeout(12_000);
   const later = await nextState(page);
   expect(later.audio.lightningStrikes).toBe(paused.audio.lightningStrikes);
   expect(later.audio.thunders).toBe(paused.audio.thunders);
@@ -331,7 +338,7 @@ async function hitNeighbour(page: Page): Promise<{ hit: GameState; rest: GameSta
   return { hit, rest };
 }
 
-test('被撞的車會晃：只有那一台、約 1 秒多停住；碰撞盒與判定不變；音樂在警報響時壓低', async ({ page }) => {
+test('被撞的車會晃：只有那一台、約 1 秒多停住；判定照常、那台車照樣擋路；音樂在警報響時壓低', async ({ page }) => {
   test.slow();
   await page.goto('/?level=w1_l07&weather=clear&lang=zh-TW&quality=low');
   await unlock(page);
@@ -362,7 +369,8 @@ test('被撞的車會晃：只有那一台、約 1 秒多停住；碰撞盒與�
   expect(settled.snapshot.xFt).toBe(rest.snapshot.xFt);
   expect(settled.snapshot.zFt).toBe(rest.snapshot.zFt);
 
-  // 碰撞盒沒有動：車還在原地，再踩油門，同一台車在同一個地方又擋住它、又晃一次。
+  // 那台車照樣擋路：再踩油門，同一台車在差不多的地方又擋住它、又晃一次。
+  // （晃動只讀碰撞盒、不改它，這是程式結構保證的；這裡的一英尺容許量比晃動推開的 0.4 ft 大，量不出那麼細。）
   const again = await hitNeighbour(page);
   expect(again.hit.snapshot.collisions).toBe(rest.snapshot.collisions + 1);
   expect(again.hit.alarms.map((alarm) => alarm.index)).toEqual([hit.sways[0]?.index]);
@@ -379,6 +387,11 @@ test('被撞的車會晃：只有那一台、約 1 秒多停住；碰撞盒與�
     .toBe(false);
 });
 
+/** 那台車的模型現在比原位斜了幾度：讀的是畫出來的模型（實例的矩陣），不是晃動的狀態。 */
+async function shownTiltDeg(page: Page, index: number): Promise<number> {
+  return page.evaluate((at) => window.__parkingGame?.swayTiltDeg(at) ?? Number.NaN, index);
+}
+
 test('被撞的車：減少動態效果時只輕輕晃一下；?fx=off 不晃', async ({ page }) => {
   test.slow();
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -394,6 +407,7 @@ test('被撞的車：減少動態效果時只輕輕晃一下；?fx=off 不晃', 
   expect(still.hit.alarms).toHaveLength(1);
   expect(still.hit.sways).toEqual([]);
   expect(still.rest.sways).toEqual([]);
+  expect(await shownTiltDeg(page, still.hit.alarms[0]?.index ?? -1)).toBe(0);
 });
 
 /** 幾幀之後晃到第一個高點（1.8 Hz、阻尼比 0.28：撞到之後約 0.12 秒）。 */
@@ -463,12 +477,17 @@ test('截圖：被撞的車晃到最斜的那一幀與停下來之後；雨天�
   await page.evaluate(([count, frameMs]) => window.__frames?.step(count, frameMs), [PEAK_FRAMES, FRAME_MS] as const);
   const peak = await readState(page);
   expect(peak.sways).toHaveLength(1);
-  const tilted = await page.screenshot({ path: `${OUTPUT_DIR}/feedback-sway-peak.png` });
-  // 走完 2 秒：停住、回到原位。兩張圖不一樣（那台車真的動了）。
+  // 畫出來的那台車真的斜了：約 6 mph 的一撞，第一個高點斜好幾度（滿格是 6°）。
+  const struckIndex = struck.sways[0]?.index ?? -1;
+  const peakTiltDeg = await shownTiltDeg(page, struckIndex);
+  expect(peakTiltDeg).toBeGreaterThan(2);
+  expect(peakTiltDeg).toBeLessThan(7);
+  await page.screenshot({ path: `${OUTPUT_DIR}/feedback-sway-peak.png` });
+  // 走完 2 秒：停住，模型回到原位。
   await page.evaluate(([count, frameMs]) => window.__frames?.step(count, frameMs), [120, FRAME_MS] as const);
   expect((await readState(page)).sways).toEqual([]);
-  const rested = await page.screenshot({ path: `${OUTPUT_DIR}/feedback-sway-rest.png` });
-  expect(tilted.equals(rested)).toBe(false);
+  expect(await shownTiltDeg(page, struckIndex)).toBe(0);
+  await page.screenshot({ path: `${OUTPUT_DIR}/feedback-sway-rest.png` });
 
   // 雨天（w1_l08）與雷雨（w1_l07）的開場畫面；雨絲在動，畫得慢，截圖的時限放寬。
   for (const [name, level] of [

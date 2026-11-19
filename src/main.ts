@@ -142,6 +142,8 @@ declare global {
       readonly lightbars: () => LightbarSnapshot[];
       /** 被撞到、正在晃的車：障礙物索引與現在的幅度（1 = 滿格的一撞）。 */
       readonly sways: () => SwaySnapshot[];
+      /** 那台車的模型現在比原位斜了幾度（讀的是畫出來的模型，不是晃動的狀態；在原位是 0）。 */
+      readonly swayTiltDeg: (index: number) => number;
     };
   }
 }
@@ -394,6 +396,7 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
     alarms: () => alarmSnapshots(alarms, lampMotion),
     lightbars: () => lightbarSnapshots(alarms, reactions, lampMotion),
     sways: () => swaySnapshots(sways),
+    swayTiltDeg: (index: number) => gameScene.swayTiltDeg(index),
   });
 
   function frame(nowMs: number): void {

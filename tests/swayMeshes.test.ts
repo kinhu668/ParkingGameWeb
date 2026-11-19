@@ -3,7 +3,7 @@
 import { Group, InstancedMesh, Matrix4, Mesh, Vector3, type BufferAttribute } from 'three';
 import { describe, expect, test } from 'vitest';
 import { forward, right } from '../src/core/heading';
-import { degToRad, ftToM } from '../src/core/units';
+import { degToRad, ftToM, radToDeg } from '../src/core/units';
 import { createSwayMeshes } from '../src/effects/swayMeshes';
 import { createVehicleBeacons } from '../src/effects/vehicleBeacons';
 import { NO_ALARMS, alarmKinds, stepAlarms } from '../src/level/alarm';
@@ -104,6 +104,9 @@ describe('被撞的車晃動的畫面', () => {
     // 旁邊那一台一個位元都沒變。
     expect(matrixAt(paint, 1).elements).toEqual(before[1]!.elements);
     expect(matrixAt(rest, 1).elements).toEqual(before[3]!.elements);
+    // 從模型讀回來的傾角（e2e 用）就是這個姿勢的角度；沒被撞的車、不會晃的錐與牆是 0。
+    expect(sways.tiltDeg(1)).toBeCloseTo(radToDeg(pose.leanAcrossRad), 3);
+    expect([0, 2, 3, 4, 99].map((index) => sways.tiltDeg(index))).toEqual([0, 0, 0, 0, 0]);
   });
 
   test('往車頭方向推：車頂往車頭倒（俯仰），幅度是側傾的一半', () => {
@@ -139,10 +142,12 @@ describe('被撞的車晃動的畫面', () => {
     expect(Array.from(meshes[0]!.instanceMatrix.array)).not.toEqual(before[0]);
     expect(Array.from(platePositions.array)).not.toEqual(platesBefore);
     sways.update([swayAfter(1, 0.7, -0.4, 0.4)]);
+    expect(sways.tiltDeg(1)).toBeGreaterThan(0);
     sways.update([]);
     meshes.forEach((mesh, at) => {
       expect(Array.from(mesh.instanceMatrix.array)).toEqual(before[at]);
     });
+    expect(sways.tiltDeg(1)).toBe(0);
     expect(Array.from(platePositions.array)).toEqual(platesBefore);
 
     // 沒有車在晃：不寫任何緩衝區。
@@ -247,8 +252,9 @@ describe('被撞的車晃動的畫面', () => {
     expect(matrixAt(paint, 0).elements[0]).toBe(0);
 
     sways.update([swayAfter(1, 1, 0, PEAK_S)]);
-    // 實例還是藏著的；替身在晃。
+    // 實例還是藏著的；替身在晃（讀模型傾角的那個函式讀不到替身：0）。
     expect(matrixAt(paint, 0).elements[0]).toBe(0);
+    expect(sways.tiltDeg(1)).toBe(0);
     expect(standIn.matrix.elements).not.toEqual(rest.elements);
     const swayed = standIn.matrix.clone();
     // 倒車輔助層的小畫面（不淡）：畫的是晃著的實例，畫完再藏回去。

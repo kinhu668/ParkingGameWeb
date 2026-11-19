@@ -196,6 +196,8 @@ export interface GameScene {
    * （亮著的警報燈跟著車身走）。`?fx=off` 不晃，什麼都不做。
    */
   updateSways(sways: readonly Sway[]): void;
+  /** 那台車的模型現在比原位斜了幾度（唯讀；e2e 用。讀的是模型實例的矩陣；在原位、`?fx=off` 都是 0）。 */
+  swayTiltDeg(index: number): number;
   /** 發光標記目前的位置、大小、顏色與不透明度（唯讀；e2e 與除錯用）。 */
   spotGlow(): SpotGlowSnapshot;
   /**
@@ -850,6 +852,7 @@ export function createGameScene(
     updateSways(sways) {
       swayMeshes?.update(sways);
     },
+    swayTiltDeg: (index) => swayMeshes?.tiltDeg(index) ?? 0,
     groundMirror,
     update(pose, frameSeconds = 0) {
       updateCarMesh(car, pose);

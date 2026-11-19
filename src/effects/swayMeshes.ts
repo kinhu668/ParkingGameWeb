@@ -5,7 +5,7 @@
 // 障礙物的群組與它底下的網格都沒有自己的位移或旋轉，所以實例的矩陣就是世界座標。
 import { InstancedMesh, Matrix4, Mesh, Vector3, type Group } from 'three';
 import { forward, right, type GroundVector } from '../core/heading';
-import { degToRad, ftToM } from '../core/units';
+import { degToRad, ftToM, radToDeg } from '../core/units';
 import { swayPose, swaysWhenHit, type Sway } from '../level/hitSway';
 import type { ObstacleSource } from '../props/obstacleMeshes';
 import type { OccluderPart } from '../props/occluders';
@@ -17,6 +17,11 @@ export interface SwayMeshes {
    * 沒有車在晃、也沒有車離開原位時什麼都不做。
    */
   update(sways: readonly Sway[]): void;
+  /**
+   * 這台車的模型現在比原位斜了幾度（唯讀；e2e 用）。讀的是模型實例現在真正的矩陣，不是晃動的狀態：
+   * 在原位是 0。不會晃的東西、或那個實例正被遮擋半透明換成替身（鏡頭鑽進車裡）也是 0。
+   */
+  tiltDeg(index: number): number;
 }
 
 /** 一台會晃的車：模型的哪些部分要跟著動，以及它們原本的矩陣。 */
@@ -115,7 +120,19 @@ export function createSwayMeshes(
   const tilt = new Matrix4();
   const axis = new Vector3();
   const turned = new Vector3();
+  const drawn = new Matrix4();
+  const drawnUp = new Vector3();
+  const restUp = new Vector3();
   return {
+    tiltDeg(index) {
+      const first = targets.get(index)?.parts[0];
+      if (first === undefined) {
+        return 0;
+      }
+      first.part.mesh.getMatrixAt(first.part.index, drawn);
+      drawnUp.setFromMatrixColumn(drawn, 1);
+      return drawnUp.lengthSq() === 0 ? 0 : radToDeg(drawnUp.angleTo(restUp.setFromMatrixColumn(first.rest, 1)));
+    },
     update(sways) {
       if (sways.length === 0 && shown.size === 0) {
         return;
