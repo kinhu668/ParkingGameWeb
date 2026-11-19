@@ -206,6 +206,8 @@ body {
   color: inherit;
   font: inherit;
   font-weight: 500;
+  /* 右上角排了三顆：窄螢幕上字不折行，否則按鈕變高、壓到下面的行車資訊。 */
+  white-space: nowrap;
   cursor: pointer;
   pointer-events: auto;
   transition: background-color 0.15s ease;
@@ -1003,10 +1005,17 @@ body {
   .hud-corner {
     grid-auto-flow: column;
     align-items: start;
+    gap: 6px;
   }
 
   .hud-button {
     padding: 9px 10px;
+  }
+
+  /* 右上角三顆排成一列：字與左右留白縮一點，最寬的組合（英文的 Unmute）在 412 px 寬也排得進版面。 */
+  .hud-corner .hud-button {
+    padding: 10px 7px;
+    font-size: 14px;
   }
 
   .hud-stats {
