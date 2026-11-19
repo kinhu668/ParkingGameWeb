@@ -2,7 +2,7 @@
 // 以及這一輪釘住的兩個方向：w1_l03 的起點 heading 是 180（面向目標）、原型關是 0。
 import { describe, expect, test } from 'vitest';
 import { forward } from '../src/core/heading';
-import { degToRad, ftToM, radToDeg } from '../src/core/units';
+import { degToRad, ftToM, mToFt, radToDeg } from '../src/core/units';
 import { obbCorners, obbFromFt, obbsOverlap, vehicleHits, vehicleObb, type ObbFt } from '../src/level/collision';
 import {
   LEVELS,
@@ -223,23 +223,83 @@ describe('w1_l03（先出來）', () => {
 
 describe('起點停在車位裡的關卡（安全出車）', () => {
   const parked = LEVELS.filter((level) => level.layout.startStall !== undefined);
+  const cases = parked.map((level) => [level.id, level] as const);
+
+  /**
+   * 油門踩到底、不打方向盤，第一次碰撞之前車走了多遠（ft），以及撞到的是什麼
+   * （障礙物的類型；場地邊緣是 'bounds'；8 秒內什麼都沒撞到是 'nothing'）。
+   */
+  function firstBump(level: LevelDefinition): { freeFt: number; what: string } {
+    const start = level.layout.startState;
+    let session = startSession(level.layout);
+    while (session.collisions === 0 && session.stepCount < 8 * 60) {
+      session = stepSession(session, { throttle: 1, steer: 0 });
+    }
+    const index = session.hitCooldownUntil.findIndex((until) => until > 0);
+    return {
+      freeFt: mToFt(Math.hypot(session.vehicle.x - start.x, session.vehicle.z - start.z)),
+      what: index < 0 ? 'nothing' : (level.obstaclesFt[index]?.type ?? 'bounds'),
+    };
+  }
 
   test('是 w1_l03、w1_l07、w1_l10', () => {
     expect(parked.map((level) => level.id)).toEqual(['w1_l03', 'w1_l07', 'w1_l10']);
   });
 
-  test.each(parked.map((level) => [level.id, level] as const))(
-    '%s：車頭前面擋著，直直往前開不出去（只能倒車出庫，不能從前面那一格穿過去抄捷徑）',
-    (_id, level) => {
+  test.each([-1, -0.5, 0, 0.5, 1].flatMap((steer) => cases.map(([id, level]) => [id, steer, level] as const)))(
+    '%s（方向盤 %s）：車頭前面擋著，往前開不出去（只能倒車出庫，不能從前面那一格穿過去抄捷徑）',
+    (_id, steer, level) => {
       let session = startSession(level.layout);
       // 油門踩到底 8 秒：前面沒有東西擋的話，早就穿過前面那一格、開進下一條走道了。
       for (let step = 0; step < 8 * 60; step += 1) {
-        session = stepSession(session, { throttle: 1, steer: 0 });
+        session = stepSession(session, { throttle: 1, steer });
       }
       expect(session.exitCollisions).toBeGreaterThan(0);
       expect(session.inStartStall).toBe(true);
     },
   );
+
+  // 玩家回報（2026-11-18）：w1_l07 的兩個交通錐貼在車頭前 3 ft，開場鏡頭被車頭擋住看不到，一踩油門就白撞一次。
+  test.each(cases)(
+    '%s：沒有貼著車頭擺的障礙物：直直往前，先碰到的不是自己那一格底的路緣（場地邊緣），就是 12 ft 以外的東西',
+    (_id, level) => {
+      const { freeFt, what } = firstBump(level);
+      expect(what).not.toBe('nothing');
+      if (what !== 'bounds') {
+        expect(freeFt).toBeGreaterThan(12);
+      }
+    },
+  );
+
+  test.each(['w1_l07', 'w1_l10'])(
+    '%s：擋路的是對面那一格深處的兩個交通錐，一左一右、中線留空（引擎蓋鏡頭的正前方看得穿）',
+    (id) => {
+      const level = mustFind(id);
+      expect(firstBump(level).what).toBe('cone');
+      // 正前方那一格（背對背的那一排）裡的交通錐：離車頭 12 ft 以上，還在那一格裡（兩旁有停放車夾著，繞不過去）。
+      const ahead = level.obstaclesFt.filter(
+        (obstacle) =>
+          obstacle.type === 'cone' &&
+          Math.abs(obstacle.centerXFt - level.startFt.xFt) < 4.5 &&
+          obstacle.centerZFt > 3 &&
+          obstacle.centerZFt < 21,
+      );
+      expect(ahead.map((cone) => cone.centerXFt - level.startFt.xFt).sort((a, b) => a - b)).toEqual([
+        expect.closeTo(-1.6, 6),
+        expect.closeTo(1.6, 6),
+      ]);
+      for (const cone of ahead) {
+        expect(level.startFt.zFt - 7.5 - (cone.centerZFt + cone.lengthFt / 2)).toBeGreaterThan(12);
+      }
+    },
+  );
+
+  test('w1_l03：車頭對著場地邊緣，往前 1.5 ft 就是自己那一格底的路緣（不是另外擺的障礙物）', () => {
+    const { freeFt, what } = firstBump(mustFind('w1_l03'));
+    expect(what).toBe('bounds');
+    expect(freeFt).toBeGreaterThan(1.3);
+    expect(freeFt).toBeLessThanOrEqual(1.5);
+  });
 });
 
 describe('w1_l01（第一格）', () => {
