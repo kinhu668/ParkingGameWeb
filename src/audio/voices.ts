@@ -8,6 +8,11 @@ export const VOICE_SETTINGS = {
     durationS: 0.12,
     noiseLowpassHz: 300,
     noiseGain: 0.9,
+    /** 一開始很短的中頻「喀」（同一段雜訊過帶通）：手機喇叭放不出低頻，聽到的主要是這一層；也讓悶響有個清楚的起點。 */
+    crackHz: 1100,
+    crackQ: 0.8,
+    crackGain: 0.4,
+    crackDurationS: 0.04,
     /** 下滑的正弦（Hz，從…到…）。 */
     subHz: [70, 40],
     subGain: 0.9,
@@ -110,6 +115,12 @@ export function playThud(
   lowpass.frequency.value = thud.noiseLowpassHz;
   burst.connect(lowpass);
   lowpass.connect(decay(context, out, thud.noiseGain, now, thud.durationS));
+  const bandpass = context.createBiquadFilter();
+  bandpass.type = 'bandpass';
+  bandpass.frequency.value = thud.crackHz;
+  bandpass.Q.value = thud.crackQ;
+  burst.connect(bandpass);
+  bandpass.connect(decay(context, out, thud.crackGain, now, thud.crackDurationS));
   burst.start(now);
   burst.stop(now + thud.durationS);
 
