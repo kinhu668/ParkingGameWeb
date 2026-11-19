@@ -72,9 +72,12 @@ export function createSwayMeshes(
     if (object instanceof InstancedMesh) {
       const indices = object.userData.obstacleIndices as readonly number[] | undefined;
       indices?.forEach((index, instance) => {
-        const rest = new Matrix4();
-        object.getMatrixAt(instance, rest);
-        targetOf(index)?.parts.push({ part: { mesh: object, index: instance }, rest });
+        const target = targetOf(index);
+        if (target !== undefined) {
+          const rest = new Matrix4();
+          object.getMatrixAt(instance, rest);
+          target.parts.push({ part: { mesh: object, index: instance }, rest });
+        }
       });
     } else if (object instanceof Mesh && typeof object.userData.obstacleIndex === 'number') {
       const target = targetOf(object.userData.obstacleIndex);
