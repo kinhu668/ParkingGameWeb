@@ -47,18 +47,20 @@ export interface LevelRecord {
   readonly challenges: readonly string[];
 }
 
-/** 音效設定：主音量與是否靜音。 */
+/** 音效設定：主音量、是否靜音、要不要背景音樂。 */
 export interface AudioSettings {
   /** 主音量：0–100 的整數。 */
   readonly volume: number;
   readonly muted: boolean;
+  /** 背景音樂開著（靜音時一樣沒有音樂）。 */
+  readonly music: boolean;
 }
 
 /** 音量的上限。 */
 export const MAX_VOLUME = 100;
 
-/** 沒調過音效時的預設：七成音量、不靜音（本來就要玩家第一次操作之後才會出聲）。 */
-export const DEFAULT_AUDIO: AudioSettings = { volume: 70, muted: false };
+/** 沒調過音效時的預設：七成音量、不靜音、有背景音樂（本來就要玩家第一次操作之後才會出聲）。 */
+export const DEFAULT_AUDIO: AudioSettings = { volume: 70, muted: false, music: true };
 
 /** 設定。之後的畫質、鏡頭也併進來。 */
 export interface SaveSettings {
@@ -129,12 +131,13 @@ function parseLevelsRevision(raw: unknown): number {
 /**
  * 設定裡的 `audio`：不是物件、音量不是 0–100 的數字、muted 不是布林 = 當作沒有這個欄位（用預設值）。
  * 這個欄位壞了不會讓整份存檔作廢：重調一次音量，比丟掉全部進度好。音量取整。
+ * `music` 是後來加的：沒有這一項（舊存檔）或不是布林就當作開著，其餘的設定照留。
  */
 function parseAudio(raw: unknown): AudioSettings | undefined {
   if (!isPlainObject(raw)) {
     return undefined;
   }
-  const { volume, muted } = raw;
+  const { volume, muted, music } = raw;
   if (
     typeof volume !== 'number' ||
     !Number.isFinite(volume) ||
@@ -144,7 +147,7 @@ function parseAudio(raw: unknown): AudioSettings | undefined {
   ) {
     return undefined;
   }
-  return { volume: Math.round(volume), muted };
+  return { volume: Math.round(volume), muted, music: music !== false };
 }
 
 /** 這個 id 的紀錄是不是在 savedRevision 之後重做過（舊場地的紀錄，要清掉）。 */

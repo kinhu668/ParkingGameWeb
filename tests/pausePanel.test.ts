@@ -8,8 +8,8 @@ import { VOLUME_STEP, formatVolume, muteLabelKey, volumeStepped } from '../src/u
 describe('音量的「−」「＋」', () => {
   test('一次 10，從預設的 70 往上是 80、往下是 60', () => {
     expect(VOLUME_STEP).toBe(10);
-    expect(volumeStepped(DEFAULT_AUDIO, 1)).toEqual({ volume: 80, muted: false });
-    expect(volumeStepped(DEFAULT_AUDIO, -1)).toEqual({ volume: 60, muted: false });
+    expect(volumeStepped(DEFAULT_AUDIO, 1)).toEqual({ volume: 80, muted: false, music: true });
+    expect(volumeStepped(DEFAULT_AUDIO, -1)).toEqual({ volume: 60, muted: false, music: true });
   });
 
   test('夾在 0–100：一直按也不會超出去', () => {
@@ -27,27 +27,27 @@ describe('音量的「−」「＋」', () => {
   });
 
   test('不是 10 的倍數（手改的存檔）也只是加減 10，到頭就停在 0 或 100', () => {
-    expect(volumeStepped({ volume: 75, muted: false }, 1).volume).toBe(85);
-    expect(volumeStepped({ volume: 95, muted: false }, 1).volume).toBe(100);
-    expect(volumeStepped({ volume: 5, muted: false }, -1).volume).toBe(0);
+    expect(volumeStepped({ volume: 75, muted: false, music: true }, 1).volume).toBe(85);
+    expect(volumeStepped({ volume: 95, muted: false, music: true }, 1).volume).toBe(100);
+    expect(volumeStepped({ volume: 5, muted: false, music: true }, -1).volume).toBe(0);
   });
 
   test('靜音中調高音量會取消靜音；調低音量維持靜音', () => {
-    expect(volumeStepped({ volume: 40, muted: true }, 1)).toEqual({ volume: 50, muted: false });
-    expect(volumeStepped({ volume: 40, muted: true }, -1)).toEqual({ volume: 30, muted: true });
+    expect(volumeStepped({ volume: 40, muted: true, music: true }, 1)).toEqual({ volume: 50, muted: false, music: true });
+    expect(volumeStepped({ volume: 40, muted: true, music: true }, -1)).toEqual({ volume: 30, muted: true, music: true });
   });
 
   test('不改到傳進來的設定', () => {
-    const before = { volume: 70, muted: true };
+    const before = { volume: 70, muted: true, music: true };
     volumeStepped(before, 1);
-    expect(before).toEqual({ volume: 70, muted: true });
+    expect(before).toEqual({ volume: 70, muted: true, music: true });
   });
 });
 
 describe('靜音鈕與讀數', () => {
   test('靜音鈕寫的是按下去會做的事：沒靜音時是「靜音」，靜音中是「取消靜音」', () => {
-    expect(muteLabelKey({ volume: 70, muted: false })).toBe('audio.mute');
-    expect(muteLabelKey({ volume: 70, muted: true })).toBe('audio.unmute');
+    expect(muteLabelKey({ volume: 70, muted: false, music: true })).toBe('audio.mute');
+    expect(muteLabelKey({ volume: 70, muted: true, music: true })).toBe('audio.unmute');
     expect(zhTW['audio.mute']).toBe('靜音');
     expect(zhTW['audio.unmute']).toBe('取消靜音');
     expect(en['audio.mute']).toBe('Mute');
@@ -56,8 +56,8 @@ describe('靜音鈕與讀數', () => {
 
   test('讀數是百分比', () => {
     expect(formatVolume(DEFAULT_AUDIO)).toBe('70%');
-    expect(formatVolume({ volume: 0, muted: false })).toBe('0%');
-    expect(formatVolume({ volume: 100, muted: true })).toBe('100%');
+    expect(formatVolume({ volume: 0, muted: false, music: true })).toBe('0%');
+    expect(formatVolume({ volume: 100, muted: true, music: true })).toBe('100%');
   });
 });
 

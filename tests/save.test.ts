@@ -313,7 +313,7 @@ describe('音效設定（settings.audio）', () => {
   });
 
   test('預設：音量 70、不靜音；沒存過的存檔與舊存檔都用預設', () => {
-    expect(DEFAULT_AUDIO).toEqual({ volume: 70, muted: false });
+    expect(DEFAULT_AUDIO).toEqual({ volume: 70, muted: false, music: true });
     expect(savedAudio(EMPTY_SAVE)).toEqual(DEFAULT_AUDIO);
     // 舊存檔沒有這個欄位：照樣讀得進來，設定裡也不會多出 audio。
     const old = parseSave({ ...SAMPLE, settings: { locale: 'en' } });
@@ -324,36 +324,39 @@ describe('音效設定（settings.audio）', () => {
   test('withAudio 寫進去、讀得回來，不動進度與語言，也不改原本那一份', () => {
     const storage = memoryStorage();
     storeSave(storage, withLocale(SAMPLE, 'en'));
-    const next = updateSave(storage, (save) => withAudio(save, { volume: 50, muted: true }));
-    expect(next.settings).toEqual({ locale: 'en', audio: { volume: 50, muted: true } });
+    const next = updateSave(storage, (save) => withAudio(save, { volume: 50, muted: true, music: true }));
+    expect(next.settings).toEqual({ locale: 'en', audio: { volume: 50, muted: true, music: true } });
     expect(next.levels).toEqual(SAMPLE.levels);
     const loaded = loadSave(storage);
-    expect(savedAudio(loaded)).toEqual({ volume: 50, muted: true });
+    expect(savedAudio(loaded)).toEqual({ volume: 50, muted: true, music: true });
     expect(loaded.levels).toEqual(SAMPLE.levels);
     expect(SAMPLE.settings.audio).toBeUndefined();
     // 之後改語言不會弄丟音效設定。
     expect(updateSave(storage, (save) => withLocale(save, 'zh-TW')).settings.audio).toEqual({
       volume: 50,
       muted: true,
+      music: true,
     });
   });
 
   test('版本仍是 1：加了 audio 的存檔，舊的讀法（只看 version、levels、settings）照樣認得', () => {
     expect(SAVE_VERSION).toBe(1);
-    const saved = withAudio(SAMPLE, { volume: 0, muted: false });
+    const saved = withAudio(SAMPLE, { volume: 0, muted: false, music: true });
     expect(saved.version).toBe(1);
     expect(parseSave(JSON.parse(JSON.stringify(saved)))).toEqual(saved);
   });
 
   test('音量 0 與 100 都合法；小數取整', () => {
-    expect(parseSave(withRawAudio({ volume: 0, muted: true }))?.settings.audio).toEqual({ volume: 0, muted: true });
-    expect(parseSave(withRawAudio({ volume: 100, muted: false }))?.settings.audio).toEqual({
+    expect(parseSave(withRawAudio({ volume: 0, muted: true, music: true }))?.settings.audio).toEqual({ volume: 0, muted: true, music: true });
+    expect(parseSave(withRawAudio({ volume: 100, muted: false, music: true }))?.settings.audio).toEqual({
       volume: 100,
       muted: false,
+      music: true,
     });
-    expect(parseSave(withRawAudio({ volume: 49.6, muted: false }))?.settings.audio).toEqual({
+    expect(parseSave(withRawAudio({ volume: 49.6, muted: false, music: true }))?.settings.audio).toEqual({
       volume: 50,
       muted: false,
+      music: true,
     });
   });
 
@@ -365,13 +368,13 @@ describe('音效設定（settings.audio）', () => {
       [],
       {},
       { volume: 70 },
-      { muted: false },
-      { volume: '70', muted: false },
+      { muted: false, music: true },
+      { volume: '70', muted: false, music: true },
       { volume: 70, muted: 'no' },
-      { volume: -1, muted: false },
-      { volume: 101, muted: false },
-      { volume: Number.NaN, muted: false },
-      { volume: Number.POSITIVE_INFINITY, muted: true },
+      { volume: -1, muted: false, music: true },
+      { volume: 101, muted: false, music: true },
+      { volume: Number.NaN, muted: false, music: true },
+      { volume: Number.POSITIVE_INFINITY, muted: true, music: true },
     ];
     for (const audio of bad) {
       const parsed = parseSave(withRawAudio(audio));
@@ -383,9 +386,27 @@ describe('音效設定（settings.audio）', () => {
   });
 
   test('audio 裡多出來的欄位會被丟掉', () => {
-    expect(parseSave(withRawAudio({ volume: 30, muted: true, music: 5 }))?.settings.audio).toEqual({
+    expect(parseSave(withRawAudio({ volume: 30, muted: true, music: true, bass: 5 }))?.settings.audio).toEqual({
       volume: 30,
       muted: true,
+      music: true,
     });
+  });
+
+  test('music：關掉會存下來；舊存檔沒有這一項、或不是布林，就當作開著，音量與靜音照留', () => {
+    expect(parseSave(withRawAudio({ volume: 30, muted: false, music: false }))?.settings.audio).toEqual({
+      volume: 30,
+      muted: false,
+      music: false,
+    });
+    for (const music of [undefined, null, 0, 'off', 5]) {
+      expect(parseSave(withRawAudio({ volume: 30, muted: true, music }))?.settings.audio, String(music)).toEqual({
+        volume: 30,
+        muted: true,
+        music: true,
+      });
+    }
+    expect(parseSave(withRawAudio({ volume: 30, muted: true }))?.settings.audio?.music).toBe(true);
+    expect(DEFAULT_AUDIO.music).toBe(true);
   });
 });

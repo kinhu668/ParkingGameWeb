@@ -18,7 +18,7 @@ export interface AudioAccess {
 /** 按一下「−」（direction −1）或「＋」（+1）之後的設定：音量夾在 0–100；調高音量會順便取消靜音。 */
 export function volumeStepped(audio: AudioSettings, direction: -1 | 1): AudioSettings {
   const volume = Math.min(Math.max(audio.volume + direction * VOLUME_STEP, 0), MAX_VOLUME);
-  return { volume, muted: direction > 0 ? false : audio.muted };
+  return { ...audio, volume, muted: direction > 0 ? false : audio.muted };
 }
 
 /** 靜音鈕上的字：寫的是「按下去會做的事」（還沒靜音時是「靜音」）。 */

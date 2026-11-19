@@ -396,11 +396,11 @@ describe('倒車雷達', () => {
 describe('音量與靜音', () => {
   test('主音量 = 靜音 ? 0 :（音量 ÷ 100）² × 0.8', () => {
     expect(MASTER_HEADROOM).toBe(0.8);
-    expect(masterGain({ volume: 100, muted: false })).toBeCloseTo(0.8, 9);
-    expect(masterGain({ volume: 70, muted: false })).toBeCloseTo(0.392, 9);
-    expect(masterGain({ volume: 50, muted: false })).toBeCloseTo(0.2, 9);
-    expect(masterGain({ volume: 0, muted: false })).toBe(0);
-    expect(masterGain({ volume: 100, muted: true })).toBe(0);
+    expect(masterGain({ volume: 100, muted: false, music: true })).toBeCloseTo(0.8, 9);
+    expect(masterGain({ volume: 70, muted: false, music: true })).toBeCloseTo(0.392, 9);
+    expect(masterGain({ volume: 50, muted: false, music: true })).toBeCloseTo(0.2, 9);
+    expect(masterGain({ volume: 0, muted: false, music: true })).toBe(0);
+    expect(masterGain({ volume: 100, muted: true, music: true })).toBe(0);
   });
 
   test('建立時就是存檔裡的音量；出聲中改音量用 setTargetAtTime（時間常數 0.02 秒）', async () => {
@@ -408,8 +408,8 @@ describe('音量與靜音', () => {
     const master = masterOf(context);
     expect(master.gain.value).toBeCloseTo(0.392, 9);
     context.currentTime = 2;
-    engine.setAudio({ volume: 40, muted: false });
-    expect(master.gain.events).toEqual([['setTargetAtTime', masterGain({ volume: 40, muted: false }), 2, 0.02]]);
+    engine.setAudio({ volume: 40, muted: false, music: true });
+    expect(master.gain.events).toEqual([['setTargetAtTime', masterGain({ volume: 40, muted: false, music: true }), 2, 0.02]]);
     expect(engine.snapshot()).toMatchObject({ volume: 40, muted: false });
   });
 
@@ -417,7 +417,7 @@ describe('音量與靜音', () => {
     const { context, engine } = await unlocked();
     engine.run([HORN]);
     const nodes = context.nodes.length;
-    engine.setAudio({ volume: 70, muted: true });
+    engine.setAudio({ volume: 70, muted: true, music: true });
     expect(masterOf(context).gain.events.at(-1)?.slice(0, 2)).toEqual(['setTargetAtTime', 0]);
     expect(engine.snapshot()).toMatchObject({ muted: true, voices: ['alarm:12'] });
     expect(context.of('oscillator').every((node) => node.stops.length === 0)).toBe(true);
@@ -425,7 +425,7 @@ describe('音量與靜音', () => {
     engine.run([{ type: 'thud', gain: 1 }, SIREN]);
     expect(engine.snapshot()).toMatchObject({ thuds: 1, voices: ['alarm:12', 'siren:0'] });
     expect(context.nodes.length).toBeGreaterThan(nodes);
-    engine.setAudio({ volume: 70, muted: false });
+    engine.setAudio({ volume: 70, muted: false, music: true });
     expect(masterOf(context).gain.events.at(-1)?.slice(0, 2)).toEqual(['setTargetAtTime', masterGain(DEFAULT_AUDIO)]);
   });
 
@@ -434,7 +434,7 @@ describe('音量與靜音', () => {
     engine.setHeld(true);
     await settled();
     expect(context.state).toBe('suspended');
-    engine.setAudio({ volume: 100, muted: false });
+    engine.setAudio({ volume: 100, muted: false, music: true });
     const master = masterOf(context);
     expect(master.gain.value).toBeCloseTo(0.8, 9);
     expect(master.gain.events.some(([method]) => method === 'setTargetAtTime')).toBe(false);
@@ -442,11 +442,11 @@ describe('音量與靜音', () => {
 
   test('解鎖之前改的音量，建立時就用上', async () => {
     const { context, target, engine } = setup();
-    engine.setAudio({ volume: 20, muted: false });
+    engine.setAudio({ volume: 20, muted: false, music: true });
     expect(engine.snapshot()).toMatchObject({ volume: 20, contextState: 'none' });
     target.fire('keydown');
     await settled();
-    expect(masterOf(context).gain.value).toBeCloseTo(masterGain({ volume: 20, muted: false }), 9);
+    expect(masterOf(context).gain.value).toBeCloseTo(masterGain({ volume: 20, muted: false, music: true }), 9);
   });
 });
 
@@ -632,7 +632,7 @@ describe('不能出聲的環境', () => {
     );
     expect(target.listening()).toEqual([]);
     engine.run([{ type: 'thud', gain: 1 }, HORN, { type: 'stopAll', fadeS: 0.03 }]);
-    engine.setAudio({ volume: 30, muted: true });
+    engine.setAudio({ volume: 30, muted: true, music: true });
     engine.setHeld(true);
     engine.setHidden(true);
     expect(engine.snapshot()).toEqual({

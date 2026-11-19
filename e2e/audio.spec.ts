@@ -176,7 +176,7 @@ test('靜音與音量：暫停面板的設定立刻生效、存起來，重新�
     (key) => JSON.parse(localStorage.getItem(key) ?? '{}') as { settings?: { audio?: unknown } },
     SAVE_KEY,
   );
-  expect(saved.settings?.audio).toEqual({ volume: 50, muted: true });
+  expect(saved.settings?.audio).toEqual({ volume: 50, muted: true, music: true });
 
   // 重新整理：還沒有任何手勢，設定已經是存的那一組。
   await page.reload();
@@ -206,7 +206,7 @@ test('靜音與音量：暫停面板的設定立刻生效、存起來，重新�
     (key) => JSON.parse(localStorage.getItem(key) ?? '{}') as { settings?: { audio?: unknown } },
     SAVE_KEY,
   );
-  expect(stored.settings?.audio).toEqual({ volume: 100, muted: false });
+  expect(stored.settings?.audio).toEqual({ volume: 100, muted: false, music: true });
 });
 
 test('倒車嗶聲：只有 R 檔會嗶，一切到 R 就先嗶一聲；暫停時不嗶，切回 D 檔就停', async ({ page }) => {
