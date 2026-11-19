@@ -440,9 +440,16 @@ export function createVehicleBeacons(
   }
 
   const tint = new Color();
+  /** 上一次更新時沒有警報、這一關也沒有救護車：所有的燈都已經關掉，之後不必再算。 */
+  let allOff = false;
   return {
     root,
     update(alarms, motion) {
+      const quiet = alarms.active.length === 0 && ambulances.length === 0;
+      if (quiet && allOff) {
+        return;
+      }
+      allOff = quiet;
       for (const overlay of overlays) {
         const levels = overlay.instances.map(({ index }) => overlay.level(index, alarms, motion));
         const key = levels.join();
