@@ -108,6 +108,11 @@ test('解鎖：第一個手勢之前聲音引擎什麼都沒做；按鍵之後�
     .toBe('running');
 });
 
+/** 響著的警報與警笛（倒車雷達的長音不算：車尾貼著東西、還掛著 R 檔時它一直響）。 */
+function alarmVoices(state: GameState): string[] {
+  return state.audio.voices.filter((voice) => voice !== 'beepTone');
+}
+
 test('撞車警報：被撞的車閃燈加喇叭約 6 秒，碰撞只算一次；重來立刻全停', async ({ page }) => {
   await page.goto('/?level=w1_l03&lang=zh-TW&view=top');
   const hit = await reverseIntoCar(page, 1);
@@ -116,7 +121,7 @@ test('撞車警報：被撞的車閃燈加喇叭約 6 秒，碰撞只算一次�
   const [alarm] = hit.alarms;
   expect(alarm?.remainingS).toBeGreaterThan(ALARM_S - 1);
   expect(alarm?.remainingS).toBeLessThanOrEqual(ALARM_S);
-  expect(hit.audio.voices).toEqual([`alarm:${alarm?.index}`]);
+  expect(alarmVoices(hit)).toEqual([`alarm:${alarm?.index}`]);
   expect(hit.audio.thuds).toBe(1);
   expect(hit.lightbars).toEqual([]);
 
@@ -133,8 +138,13 @@ test('撞車警報：被撞的車閃燈加喇叭約 6 秒，碰撞只算一次�
   expect(cleared.snapshot.collisions).toBe(1);
   expect(cleared.snapshot.status).toBe('driving');
   await expect
-    .poll(async () => (await nextState(page)).audio.voices, { timeout: 5_000 })
+    .poll(async () => alarmVoices(await nextState(page)), { timeout: 5_000 })
     .toEqual([]);
+  // 車還掛著 R 檔、車尾貼著那台車：倒車雷達是長音。
+  const resting = await nextState(page);
+  expect(resting.audio.continuousBeep).toBe(true);
+  expect(resting.audio.rearDistanceFt).toBeLessThan(1);
+  expect(resting.audio.voices).toEqual(['beepTone']);
 
   // 往前開離那台車再倒回去撞第二次，警報又響；按 T 重來，同一幀就全部清掉。
   await page.keyboard.press('KeyR');
@@ -144,7 +154,7 @@ test('撞車警報：被撞的車閃燈加喇叭約 6 秒，碰撞只算一次�
   await page.keyboard.up('KeyW');
   const again = await reverseIntoCar(page, 2);
   expect(again.alarms).toHaveLength(1);
-  expect(again.audio.voices).toHaveLength(1);
+  expect(alarmVoices(again)).toHaveLength(1);
   await page.keyboard.press('KeyT');
   const restarted = await watchUntil(page, '重來', (state) => state.snapshot.collisions === 0);
   expect(restarted.alarms).toEqual([]);
