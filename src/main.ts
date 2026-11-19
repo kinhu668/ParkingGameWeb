@@ -488,6 +488,8 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
     );
     // 目標車位的發光標記：停妥後變綠再淡出，重來後回來（暫停時也照真實時間走）。
     gameScene.updateSpotGlow(session.parked, frameSeconds);
+    // 警報燈與救護車的燈條：與聲音讀同一份狀態，所以聲光同相、暫停時一起停。
+    gameScene.updateBeacons(alarms, lampMotion);
     // 景深對焦在玩家車上（俯視不做），鏡頭移動時有很輕的動態模糊；沒開這兩項的畫質級別不算這些。
     const eye = gameCamera.camera.position;
     pipeline.render(

@@ -207,8 +207,8 @@ function createRestMaterial(): MeshStandardMaterial {
 
 /**
  * 建立全部停放的車。回傳的群組用車位本地座標，要加進車位的座標框裡。
- * 每一款有車的車款各自最多三個 InstancedMesh（`parkedCars:<車款>:paint`、`:accent`、`:rest`），
- * 加上一個裝全部車牌號碼的網格；只有烤漆投影。
+ * 每一款有車的車款各自最多三個 InstancedMesh（`parkedCars:<車款>:paint`、`:accent`、`:rest`；
+ * userData.cars 是各實例在 cars 裡的索引），加上一個裝全部車牌號碼的網格；只有烤漆投影。
  * @param detail low：輪圈只是一片輪蓋、輪胎 12 段；high：有輪輻的輪圈、輪胎 20 段。
  */
 export function createParkedCars(
@@ -255,6 +255,8 @@ export function createParkedCars(
     const add = (name: string, geometry: BufferGeometry, material: Material): InstancedMesh => {
       const mesh = instanced(geometry, material, matrices);
       mesh.name = `parkedCars:${model}:${name}`;
+      // 各實例是 cars 裡的第幾台（警報燈的疊加層要對回是哪一台車）。
+      mesh.userData.cars = members;
       group.add(mesh);
       members.forEach((car, instance) => fadeParts[car]?.push({ mesh, index: instance }));
       return mesh;

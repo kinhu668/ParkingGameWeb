@@ -17,6 +17,8 @@ import { createLightning } from '../effects/lightning';
 import { createLightningArcs } from '../effects/lightningArc';
 import type { StrikeArea } from '../effects/lightningBolt';
 import { createSceneEffects } from '../effects/sceneEffects';
+import { createVehicleBeacons } from '../effects/vehicleBeacons';
+import { NO_ALARMS, type AlarmState, type LampMotion } from '../level/alarm';
 import type { ParkingSpot } from '../level/parkingJudge';
 import {
   configureSurfaceLibrary,
@@ -180,6 +182,11 @@ export interface GameScene {
    * @param frameSeconds 距離上一幀多久
    */
   updateSpotGlow(parked: boolean, frameSeconds: number): void;
+  /**
+   * 車輛的警報燈與救護車的燈條照警報狀態亮或暗。每個畫面幀呼叫。
+   * 沒呼叫過（定格截圖）就是相位 0：沒有警報，救護車的燈條只有左組亮。
+   */
+  updateBeacons(alarms: AlarmState, motion: LampMotion): void;
   /** 發光標記目前的位置、大小、顏色與不透明度（唯讀；e2e 與除錯用）。 */
   spotGlow(): SpotGlowSnapshot;
   /**
@@ -668,8 +675,21 @@ export function createGameScene(
   }
 
   // 關卡的障礙物與邊界：這些才有碰撞。模型的佔地就是碰撞盒。
-  if (level !== undefined) {
-    scene.add(createObstacleMeshes(level, quality.props.meshDetail));
+  // 警報燈與救護車的燈條疊在這些模型上（純視覺）；一開始是相位 0（定格截圖每次都一樣）。
+  const obstacles =
+    level === undefined ? undefined : createObstacleMeshes(level, quality.props.meshDetail);
+  const beacons =
+    obstacles === undefined
+      ? undefined
+      : createVehicleBeacons(
+          obstacles,
+          quality.props.meshDetail,
+          quality.headlights,
+          usesHdrChain(quality),
+        );
+  if (obstacles !== undefined && beacons !== undefined) {
+    beacons.update(NO_ALARMS, 'frozen');
+    scene.add(obstacles, beacons.root);
   }
 
   // 目標車位的發光標記：每一關都有（原型關沒有環境模組，所以不能掛在 createEnvironment 裡）。
@@ -807,6 +827,9 @@ export function createGameScene(
       glow.show(parked, frameSeconds);
     },
     spotGlow: () => glow.snapshot(),
+    updateBeacons(alarms, motion) {
+      beacons?.update(alarms, motion);
+    },
     groundMirror,
     update(pose, frameSeconds = 0) {
       updateCarMesh(car, pose);

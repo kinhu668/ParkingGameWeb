@@ -661,6 +661,13 @@ export function createObstacleMeshes(source: ObstacleSource, detail: VehicleDeta
       });
       const cars = createParkedCars(placements, detail);
       cars.userData.obstacleIndices = indices;
+      // 每一款的網格也記下各實例是哪個障礙物（obstacleInstances 用）。
+      for (const child of cars.children) {
+        const members = child.userData.cars as readonly number[] | undefined;
+        if (members !== undefined) {
+          child.userData.obstacleIndices = members.map((car) => indices[car]);
+        }
+      }
       group.add(cars);
       continue;
     }
@@ -755,6 +762,30 @@ export function createObstacleMeshes(source: ObstacleSource, detail: VehicleDeta
     }
   }
   return group;
+}
+
+/** 一個實例化的障礙物：它在關卡 `obstaclesFt` 裡的索引，以及模型那個實例的矩陣。 */
+export interface ObstacleInstance {
+  readonly index: number;
+  readonly matrix: Matrix4;
+}
+
+/**
+ * 某個實例化網格（`obstacle:<type>`，或停放車輛的 `parkedCars:<車款>:rest`）的全部實例。
+ * 警報燈的疊加層（effects/vehicleBeacons.ts）用同一個矩陣，亮起來的鏡片才會剛好蓋在車身的燈上。
+ * @param obstacles createObstacleMeshes 的回傳值
+ */
+export function obstacleInstances(obstacles: Group, meshName: string): ObstacleInstance[] {
+  const mesh = obstacles.getObjectByName(meshName);
+  if (!(mesh instanceof InstancedMesh)) {
+    return [];
+  }
+  const indices = mesh.userData.obstacleIndices as readonly number[];
+  return indices.map((index, instance) => {
+    const matrix = new Matrix4();
+    mesh.getMatrixAt(instance, matrix);
+    return { index, matrix };
+  });
 }
 
 /** `?show=obstacle_<type>` 用：原點上一個這種障礙物（預設大小；牆給一段 12 × 1 ft）。 */
