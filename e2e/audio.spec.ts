@@ -142,11 +142,10 @@ test('撞車警報：被撞的車閃燈加喇叭約 6 秒，碰撞只算一次�
   await expect
     .poll(async () => alarmVoices(await nextState(page)), { timeout: 5_000 })
     .toEqual([]);
-  // 車還掛著 R 檔、車尾貼著那台車：倒車雷達是長音。
+  // 車還掛著 R 檔，停在那台車前面不遠（撞到會彈開一兩英尺）：倒車雷達還在響，而且比慢節奏急。
   const resting = await nextState(page);
-  expect(resting.audio.continuousBeep).toBe(true);
-  expect(resting.audio.rearDistanceFt).toBeLessThan(1);
-  expect(resting.audio.voices).toEqual(['beepTone']);
+  expect(resting.audio.rearDistanceFt).toBeLessThan(4);
+  expect(resting.audio.beepIntervalS).toBeLessThan(0.8);
 
   // 往前開離那台車再倒回去撞第二次，警報又響；按 T 重來，同一幀就全部清掉。
   await page.keyboard.press('KeyR');
