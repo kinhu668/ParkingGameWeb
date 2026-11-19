@@ -3,8 +3,9 @@
 // 後照鏡尖端在 x = ±3.5、前車牌在 z = −10、後踏板保險桿在 z = +10。
 // 識別標誌是車廂兩側青綠色的心電圖折線；不放紅十字、生命之星、號碼或任何真實單位的名稱。
 // 字樣不做成幾何，由 AMBULANCE_LABELS_FT 的平面牌子貼上去。
-import type { BufferGeometry } from 'three';
+import { Shape, ShapeGeometry, Vector2, type BufferGeometry } from 'three';
 import { LENS, slopedPanel, wheelParts } from './deliveryVan';
+import { tinted } from './lotProps';
 import { assemble, bar, box, roller } from './partShapes';
 
 const BODY = 0xf2f1ea;
@@ -27,6 +28,11 @@ const BOX_MID = (BOX_FRONT + BOX_REAR) / 2;
 // 車頂燈條（在車廂前上緣、駕駛艙上方）：鏡片底面的高度與 Z。
 const BAR_Y = BOX_ROOF + 0.26;
 const BAR_Z = -4.05;
+// 車尾兩扇門下半的人字形警示板：兩條外側門縫之間的半寬、下門縫上緣的高度、上緣（車窗與扶手的下面）、每扇門的斜條數。
+const CHEVRON_HALF = 2.38;
+const CHEVRON_BOTTOM = 1.65;
+const CHEVRON_TOP = 4.2;
+const CHEVRON_STRIPES = 6;
 
 /** 字樣牌子的中心（英尺）：rightFt 是離中線的距離（貼在車皮外一點點，兩側對稱）、aheadFt 朝車頭為正、yFt 是中心高度。 */
 export const AMBULANCE_LABELS_FT: {
@@ -140,6 +146,52 @@ function ecgTrace(side: number): BufferGeometry[] {
   return segments;
 }
 
+/** 凸多邊形（x、y）被斜線 x + y = level 切開後留下的一邊：side = 1 是斜線的上方、−1 是下方。 */
+function cutDiagonal(polygon: readonly Vector2[], level: number, side: number): Vector2[] {
+  const kept: Vector2[] = [];
+  let from = polygon[polygon.length - 1];
+  for (const to of polygon) {
+    if (from) {
+      const fromOver = side * (from.x + from.y - level);
+      const toOver = side * (to.x + to.y - level);
+      if (fromOver * toOver < 0) kept.push(from.clone().lerp(to, fromOver / (fromOver - toOver)));
+      if (toOver >= 0) kept.push(to);
+    }
+    from = to;
+  }
+  return kept;
+}
+
+/**
+ * 車尾的人字形警示板：橘、青綠相間的 45° 斜條，往中間的門縫升高（倒 V），左門是右門的鏡像。
+ * 一深一亮，頭燈把白色車身照到過曝時還看得出條紋。每條都是朝後的平面（板面在 z），
+ * 剛好裁在長方形裡：x 到 ±CHEVRON_HALF、y 從 CHEVRON_BOTTOM 到 CHEVRON_TOP。
+ */
+function rearChevrons(z: number): BufferGeometry[] {
+  // 右門的長方形（逆時針），沿 x + y 從中間下角到外側上角等分。
+  let rest = [
+    new Vector2(0, CHEVRON_BOTTOM),
+    new Vector2(CHEVRON_HALF, CHEVRON_BOTTOM),
+    new Vector2(CHEVRON_HALF, CHEVRON_TOP),
+    new Vector2(0, CHEVRON_TOP),
+  ];
+  const stripes: Vector2[][] = [];
+  for (let line = 1; line < CHEVRON_STRIPES; line += 1) {
+    const level = CHEVRON_BOTTOM + (line / CHEVRON_STRIPES) * (CHEVRON_HALF + CHEVRON_TOP - CHEVRON_BOTTOM);
+    stripes.push(cutDiagonal(rest, level, -1));
+    rest = cutDiagonal(rest, level, 1);
+  }
+  stripes.push(rest);
+  return stripes.flatMap((stripe, index) =>
+    [-1, 1].map((side) =>
+      tinted(
+        new ShapeGeometry(new Shape(stripe.map((point) => new Vector2(side * point.x, point.y)))).translate(0, 0, z),
+        index % 2 === 0 ? ORANGE : TEAL,
+      ),
+    ),
+  );
+}
+
 /** 救護車的幾何（公尺，底面在 y = 0，帶頂點顏色；警示燈是沒亮的鏡片）。 */
 export function createAmbulanceGeometry(): BufferGeometry {
   const amber = LENS.amber.off;
@@ -173,13 +225,14 @@ export function createAmbulanceGeometry(): BufferGeometry {
     box(6.3, 0.6, 0.5, 0, 1.3, -9.71, GREY),
     box(5.9, 0.4, 0.36, 0, 0.9, -9.68, TRIM),
     box(1, 0.45, 0.04, 0, 1.38, -9.98, PLATE),
-    // 車尾：橫過兩扇門的色帶（兩端停在外側門縫，角柱留給尾燈座）、門縫、車牌、灰色的後踏板保險桿與止滑面。
-    box(4.76, 0.75, 0.04, 0, 3.05, rearSkin, ORANGE),
-    box(4.76, 0.1, 0.04, 0, 3.86, rearSkin, TEAL),
+    // 車尾：兩扇門下半的人字形警示板（兩端停在外側門縫，角柱留給尾燈座）與上緣的深色框線、門縫、
+    // 車牌（比警示板再凸出一點）、灰色的後踏板保險桿與止滑面。
+    ...rearChevrons(rearSkin + 0.02),
+    box(CHEVRON_HALF * 2, 0.05, 0.07, 0, CHEVRON_TOP, 9.63, TRIM),
     box(0.06, 5.1, 0.07, 0, 1.6, 9.63, TRIM),
     box(4.76, 0.05, 0.07, 0, 6.7, 9.63, TRIM),
     box(4.76, 0.05, 0.07, 0, 1.6, 9.63, TRIM),
-    box(1, 0.45, 0.05, -1.2, 2.2, 9.64, PLATE),
+    box(1, 0.45, 0.05, -1.2, 2.2, 9.66, PLATE),
     box(6.5, 0.35, 0.95, 0, 1, 9.525, GREY),
     box(5.8, 0.04, 0.7, 0, 1.35, 9.6, TRIM),
     // 車頂：冷氣箱、天線、燈條的深色底座與中段（鏡片在 LAMPS；短腳、隔板與端蓋在下面左右各一份）。
