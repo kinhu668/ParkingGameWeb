@@ -21,6 +21,7 @@ import { pointInBox, sightTargets, type SightBox } from '../src/render/occlusion
 import { QUALITY_LEVELS } from '../src/render/quality';
 import { CAR_VISUAL_CONFIG, GAME_CAMERA_CONFIG, QUALITY_PRESETS } from '../src/render/renderConfig';
 import type { VehiclePose } from '../src/vehicle/bicycleModel';
+import { createCarMesh, updateCarMesh } from '../src/vehicle/carMesh';
 import { VEHICLE_CONFIG_SI } from '../src/vehicle/vehicleConfig';
 import { PASSABLE_MESHES, blockedBetween, buildLevelWorld, solidMeshes } from './levelWorld';
 
@@ -279,6 +280,90 @@ describe('使用者回報的畫面：w1_l08 遠距離跟車', () => {
     expect(camera.position.y).toBeGreaterThan(VEHICLE_CONFIG_SI.heightM + ftToM(4));
     expect(carOnScreen(camera, pose).visibleFraction).toBeGreaterThanOrEqual(0.9);
     expect(groundSeenAheadM(camera, pose)).toBeGreaterThan(HALF_LENGTH_M + ftToM(20));
+  });
+});
+
+// 玩家回報（2026-11-18）：w1_l07 的兩個交通錐原本貼在車頭前 3 ft（車位口），開場被自己的車擋住看不到。
+// 現在擺在正前方那一格的深處；這裡把玩家的車也當成擋視線的東西，確認每個鏡頭開場都看得到它們。
+describe.each(['w1_l07', 'w1_l10'])('%s：擋在正前方那一格的交通錐，開場每個鏡頭都看得到', (id) => {
+  const level = LEVELS.find((candidate) => candidate.id === id);
+  if (level === undefined) {
+    throw new Error(`找不到 ${id}`);
+  }
+  const world = worldOf(level, 'medium');
+  const pose = level.layout.startState;
+  const car = createCarMesh(QUALITY_PRESETS.medium.vehicleDetail);
+  updateCarMesh(car, pose);
+  car.root.updateMatrixWorld(true);
+  // 自己的車身（玻璃是透明的，不算）加上場景裡實心的東西；交通錐自己不算擋住自己。
+  const occluders = [
+    ...solidMeshes(car.root),
+    ...world.hardMeshes.filter((mesh) => mesh.name !== 'obstacle:cone'),
+  ];
+  /** 交通錐的高度（ft），略低於錐尖。 */
+  const CONE_HEIGHT_FT = 2.2;
+  const cones = level.obstaclesFt.filter(
+    (obstacle) =>
+      obstacle.type === 'cone' &&
+      Math.abs(obstacle.centerXFt - level.startFt.xFt) < 4.5 &&
+      obstacle.centerZFt > 3 &&
+      obstacle.centerZFt < 21,
+  );
+
+  test('正前方那一格裡有兩個交通錐', () => {
+    expect(cones).toHaveLength(2);
+  });
+
+  /** 每個錐從上到下 4 個點在畫面上的位置（NDC），以及它與鏡頭之間有沒有被車身或場景擋住。 */
+  function conePoints(camera: PerspectiveCamera): { x: number; y: number; inFrame: boolean; clear: boolean }[] {
+    camera.updateMatrixWorld(true);
+    return cones.flatMap((cone) =>
+      [0.25, 0.5, 0.75, 1].map((fraction) => {
+        const point = new Vector3(
+          ftToM(cone.centerXFt),
+          ftToM(CONE_HEIGHT_FT * fraction),
+          ftToM(cone.centerZFt),
+        );
+        const inFront = point.clone().applyMatrix4(camera.matrixWorldInverse).z < -camera.near;
+        const screen = point.clone().project(camera);
+        return {
+          x: screen.x,
+          y: screen.y,
+          inFrame: inFront && Math.abs(screen.x) < 0.9 && Math.abs(screen.y) < 0.9,
+          clear: blockedBetween(camera.position, point, occluders) === undefined,
+        };
+      }),
+    );
+  }
+
+  describe.each(ASPECTS)('%s', (_label, aspect) => {
+    test.each(['chase_far', 'hood', 'cockpit', 'top'] as const)(
+      '%s：每個錐 4 個點至少 3 個在畫面裡、沒被車身或場景擋住',
+      (view) => {
+        const points = conePoints(openingCamera(view, level, world, aspect));
+        for (let cone = 0; cone < cones.length; cone += 1) {
+          const seen = points.slice(cone * 4, cone * 4 + 4).filter((point) => point.inFrame && point.clear);
+          expect(seen.length, `第 ${cone + 1} 個錐`).toBeGreaterThanOrEqual(3);
+        }
+      },
+    );
+
+    // 俯視：畫面正上方中央是 HUD（狀態列與「車位 N ft」），下緣在 NDC y ≈ 0.64（1280×720 與 412×892 的截圖量的）。
+    // 錐要在它下面：擺在 z = 8 時剛好被「車位 N ft」蓋住。
+    test('top：錐在 HUD 下面，沒有被畫面上方中央的狀態列與車位指示蓋住', () => {
+      for (const point of conePoints(openingCamera('top', level, world, aspect))) {
+        expect(point.y).toBeLessThan(0.62);
+        expect(point.y).toBeGreaterThan(0);
+      }
+    });
+
+    // 近距離跟車的鏡頭只比車頂高一點、就在車尾後面：正前方比車頂矮的東西一律在自己的車後面（每一關都一樣），
+    // 錐只能隔著前後擋玻璃看到一點。這裡只確認它們在畫面裡，不宣稱看得清楚。
+    test('chase_near：錐在畫面裡（被自己的車擋在後面，只隔著玻璃看得到）', () => {
+      for (const point of conePoints(openingCamera('chase_near', level, world, aspect))) {
+        expect(point.inFrame).toBe(true);
+      }
+    });
   });
 });
 
