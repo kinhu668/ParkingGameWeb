@@ -24,20 +24,24 @@ export interface LevelCardView {
   readonly stars: number;
   /** 最佳時間（秒）；沒過關是 undefined。 */
   readonly bestTimeS: number | undefined;
+  /** 這個分頁正在玩／剛離開的那一關（還鎖著也照標：可能是用 `?level=` 直接進去的）。 */
+  readonly current: boolean;
 }
 
 /**
  * 由一個世界的格子與存檔算出每張卡的內容。
  * @param unlockAll `?unlock=all`：做好的關全部可以點（還沒做的關仍然是 soon）
+ * @param currentLevelId 這個分頁正在玩／剛離開的關卡 id；第一次來是 undefined（沒有任何一張標成「目前」）
  */
 export function levelCards(
   slots: readonly WorldSlot[],
   save: SaveData,
   unlockAll: boolean,
+  currentLevelId?: string,
 ): readonly LevelCardView[] {
   return slots.map(({ number, id, level }) => {
     if (level === undefined) {
-      return { number, id, state: 'soon', nameKey: undefined, stars: 0, bestTimeS: undefined };
+      return { number, id, state: 'soon', nameKey: undefined, stars: 0, bestTimeS: undefined, current: false };
     }
     const record = levelRecord(save, id);
     return {
@@ -47,6 +51,7 @@ export function levelCards(
       nameKey: isTranslationKey(level.nameKey) ? level.nameKey : undefined,
       stars: record?.stars ?? 0,
       bestTimeS: record?.bestTimeS,
+      current: id === currentLevelId,
     };
   });
 }
@@ -78,6 +83,7 @@ function lockIcon(): SVGSVGElement {
 /**
  * 在 parent 裡建立關卡選擇畫面（`#level-select`），並訂閱語言切換。
  * 每張卡是 `.level-card`，有 `data-state`；做好的關另有 `data-level`（關卡 id）與 `data-stars`。
+ * 正在玩／剛離開的那一關多一個 `data-current="true"`、亮色外框與右上角的「目前」標籤（`.level-card-badge`）。
  * @param onPick 點了已解鎖的卡；參數是關卡 id
  */
 export function createLevelSelect(
@@ -113,6 +119,11 @@ export function createLevelSelect(
 
     button.dataset.level = card.id;
     button.dataset.stars = String(card.stars);
+    if (card.current) {
+      button.dataset.current = 'true';
+      button.setAttribute('aria-current', 'true');
+      ui.translatedElement('span', 'level-card-badge', button, 'select.current');
+    }
     if (card.nameKey === undefined) {
       ui.element('span', 'level-card-name', button).textContent = card.id;
     } else {

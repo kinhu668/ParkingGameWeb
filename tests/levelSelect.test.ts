@@ -31,6 +31,7 @@ describe('關卡選擇的卡片', () => {
       nameKey: 'level.w1_l01.name',
       stars: 0,
       bestTimeS: undefined,
+      current: false,
     });
     for (const [index, card] of cards.entries()) {
       const made = slots[index]?.level !== undefined;
@@ -44,6 +45,32 @@ describe('關卡選擇的卡片', () => {
     expect(made[0]).toMatchObject({ id: 'w1_l01', state: 'unlocked', stars: 2, bestTimeS: 12.5 });
     expect(made[1]).toMatchObject({ state: 'unlocked', stars: 0, bestTimeS: undefined });
     expect(made.slice(2).every((card) => card.state === 'locked')).toBe(true);
+  });
+
+  test('沒有「目前的關卡」（第一次來）：沒有任何一張標成目前', () => {
+    expect(levelCards(slots, EMPTY_SAVE, false).some((card) => card.current)).toBe(false);
+    expect(levelCards(slots, EMPTY_SAVE, true, undefined).some((card) => card.current)).toBe(false);
+  });
+
+  test('目前的關卡：只有那一張標成目前，解鎖狀態、星數、時間不受影響', () => {
+    const save = recordResult(EMPTY_SAVE, 'w1_l01', { stars: 2, timeS: 12.5, challenges: [] });
+    const plain = levelCards(slots, save, false);
+    const marked = levelCards(slots, save, false, 'w1_l02');
+    expect(marked.filter((card) => card.current).map((card) => card.id)).toEqual(['w1_l02']);
+    expect(marked.map((card) => ({ ...card, current: false }))).toEqual(plain);
+  });
+
+  test('用 ?level= 直接進了還鎖著的關：那張卡仍然鎖著，但照樣標成目前', () => {
+    const cards = levelCards(slots, EMPTY_SAVE, false, 'w1_l07');
+    const card = cards.find((candidate) => candidate.id === 'w1_l07');
+    expect(card).toMatchObject({ state: 'locked', current: true });
+    expect(cards.filter((candidate) => candidate.current)).toHaveLength(1);
+  });
+
+  test('目前的關卡不在這個世界的格子裡（原型關、不認得的 id）：沒有任何一張標成目前', () => {
+    for (const id of ['prototype', 'w2_l01', 'nope', '']) {
+      expect(levelCards(slots, EMPTY_SAVE, true, id).some((card) => card.current), id).toBe(false);
+    }
   });
 
   test('unlockAll：做好的關全部可以點，還沒做的關仍然不能點', () => {

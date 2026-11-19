@@ -8,6 +8,7 @@ import {
   storeView,
 } from './core/cameraView';
 import { loadBindings, saveBindings } from './core/controls';
+import { loadCurrentLevel, storeCurrentLevel } from './core/currentLevel';
 import { advanceFixedLoop } from './core/fixedLoop';
 import { PHYSICS_HZ } from './core/gameConfig';
 import { detectLocale, getLocale, onLocaleChange, setLocale, t } from './core/i18n';
@@ -119,6 +120,15 @@ function browserStorage(): Storage | undefined {
   }
 }
 
+/** 記住「正在玩哪一關」用的 sessionStorage（這個分頁內有效）；停用儲存時當作沒有。 */
+function browserSessionStorage(): Storage | undefined {
+  try {
+    return window.sessionStorage;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * 換關／回關卡選擇：換網址重新載入（場景還不能在頁內整個換掉），
  * 保留 `quality`、`lang`、`view` 等參數。
@@ -165,6 +175,8 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
     throw new Error('找不到 #hud');
   }
 
+  // 回關卡選擇時那張卡要標成「目前」（選卡、下一關、`?level=` 直接進來都算）。
+  storeCurrentLevel(browserSessionStorage(), level.id);
   const gameScene = createLevelScene(renderer, quality, level);
   // 按鍵綁定：讀存檔（壞檔會被丟掉並回到預設）；玩家在按鍵設定裡改了就立刻生效並存起來。
   const storage = browserStorage();
@@ -518,6 +530,7 @@ function runLevelSelect({ renderer, quality, pipeline }: RenderContext): void {
       worldSlots(SELECT_WORLD),
       loadSave(browserStorage()),
       parseUnlockAllParam(window.location.search),
+      loadCurrentLevel(browserSessionStorage()),
     ),
     navigateTo,
   );
