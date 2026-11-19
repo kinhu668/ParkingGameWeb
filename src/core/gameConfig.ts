@@ -32,6 +32,34 @@ export const COLLISION_RULES = {
   maxBounceSpeedMph: 3,
 } as const;
 
+/**
+ * 撞車警報與救護車燈條（docs/web-b1-plan.md §2.1、§2.2）。純表現層：不加碰撞次數，不影響星數與挑戰。
+ * 閃光安全：每顆燈每秒明暗不超過 3 次（WCAG 2.3.1），所以三個週期都不能小於 1/3 秒。
+ */
+export const ALARM_RULES = {
+  /** 車的警報從最後一次被計次算起響多久（秒）。 */
+  durationS: 6,
+  /** 警報燈一明一暗的週期（秒；亮暗各半，約 1.4 Hz）。喇叭跟著同一個相位。 */
+  flashPeriodS: 0.7,
+  /** 同時發聲的警報上限；超過時最舊的那一個讓位，它的燈照常閃完。 */
+  maxVoices: 3,
+  /** 停妥或失敗時聲音淡出的秒數。 */
+  endFadeS: 0.8,
+  /** 重來時聲音淡出的秒數。 */
+  restartFadeS: 0.03,
+  /** 救護車被撞後短鳴、燈條快閃多久（秒）。 */
+  sirenYelpS: 2.5,
+  /** 燈條平常左右交替的週期（秒）。 */
+  lightbarIdlePeriodS: 1,
+  /** 燈條警戒時的週期（秒；每顆燈每秒 2.5 次）。 */
+  lightbarAlertPeriodS: 0.4,
+  /** 警戒時燈條的亮度倍數（待機是 1）。 */
+  lightbarAlertLevel: 1.4,
+  /** 系統要求減少動態效果時，待機的燈條恆亮並緩慢明暗：頻率（Hz）與最暗時少掉的比例。 */
+  steadyPulseHz: 0.5,
+  steadyPulseDepth: 0.25,
+} as const;
+
 /** 評分規則（計畫 7.2）。 */
 export const SCORING_RULES = {
   /** 3 星：停妥當下的角度誤差要嚴格小於這個值。 */
