@@ -98,10 +98,10 @@ export function createSwayMeshes(
   });
 
   /** 把一台車擺到「原位再套上 matrix」；undefined = 放回原位。 */
-  const placed = new Matrix4();
+  const moved = new Matrix4();
   const show = (target: SwayTarget, matrix: Matrix4 | undefined): void => {
     for (const { part, rest } of target.parts) {
-      fade.place(part, matrix === undefined ? rest : placed.multiplyMatrices(matrix, rest), matrix !== undefined);
+      fade.place(part, matrix === undefined ? rest : moved.multiplyMatrices(matrix, rest), matrix !== undefined);
     }
     for (const { mesh, rest } of target.labels) {
       if (matrix === undefined) {
