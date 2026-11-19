@@ -7,16 +7,18 @@ import {
   resolveInitialView,
   storeView,
 } from './core/cameraView';
+import { browserAudioHost, createAudioEngine, type AudioSnapshot } from './audio/audioEngine';
+import { DIRECTOR_START, directSound } from './audio/soundDirector';
 import { loadBindings, saveBindings } from './core/controls';
 import { loadCurrentLevel, storeCurrentLevel } from './core/currentLevel';
 import { advanceFixedLoop } from './core/fixedLoop';
-import { PHYSICS_HZ } from './core/gameConfig';
+import { FIXED_STEP_SECONDS, PHYSICS_HZ } from './core/gameConfig';
 import { detectLocale, getLocale, onLocaleChange, setLocale, t } from './core/i18n';
 import { attachKeyboardInput } from './core/input';
 import { mergePedalInputs } from './core/touchInput';
 import { msToS } from './core/units';
 import { resolveWeather } from './core/weather';
-import { loadSave, updateSave, withLocale } from './core/save';
+import { loadSave, savedAudio, updateSave, withLocale } from './core/save';
 import {
   navigationSearch,
   parseAssistOffParam,
@@ -28,7 +30,19 @@ import {
   parseUrlMode,
   type CameraPreset,
 } from './core/urlParams';
+import {
+  NO_ALARMS,
+  alarmKinds,
+  alarmSnapshots,
+  lampMotionFor,
+  lightbarSnapshots,
+  silenceAlarms,
+  stepAlarms,
+  type AlarmSnapshot,
+  type LightbarSnapshot,
+} from './level/alarm';
 import { challengeTimeS, sessionChallenges } from './level/challenges';
+import { countedHits, type CountedHit } from './level/hitEvents';
 import { DEMO_ROUTE_STEPS, demoVehicleAfterSteps } from './level/demoRoute';
 import {
   LEVEL_IDS,
@@ -102,6 +116,12 @@ declare global {
       readonly spotGlow: () => SpotGlowSnapshot;
       /** 鏡頭目前的模式、位置、視角，以及車在畫面上的位置。 */
       readonly camera: () => CameraSnapshot;
+      /** 音效：解鎖了沒、AudioContext 的狀態、音量、正在響的聲音、累計的嗶聲與悶響。 */
+      readonly audio: () => AudioSnapshot;
+      /** 響著的車輛警報：障礙物索引、剩餘秒數、燈現在亮不亮。 */
+      readonly alarms: () => AlarmSnapshot[];
+      /** 每台救護車的燈條：障礙物索引、模式、三組燈現在亮不亮。 */
+      readonly lightbars: () => LightbarSnapshot[];
     };
   }
 }
@@ -304,11 +324,28 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
   /** 已經寫進存檔的那一次成績；同一次停妥只寫一次，重來後再過關會是新的成績。 */
   let savedResult: SessionResult | null = null;
 
+  // 音效與警報（純表現層，不影響判定）：第一個手勢才出聲；分頁切到背景就停住。
+  const audio = createAudioEngine(browserAudioHost(window), savedAudio(loadSave(storage)));
+  document.addEventListener('visibilitychange', () => {
+    audio.setHidden(document.hidden);
+  });
+  /** 每個障礙物被撞到的反應（與 `level.obstaclesFt` 同索引；邊界牆不在裡面）。 */
+  const reactions = alarmKinds(level.obstaclesFt);
+  const lampMotion = lampMotionFor(
+    parseFxOffParam(window.location.search),
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+  );
+  let alarms = NO_ALARMS;
+  let director = DIRECTOR_START;
+
   window.__parkingGame = Object.freeze({
     levelId: level.id,
     snapshot: () => sessionSnapshot(session),
     spotGlow: () => gameScene.spotGlow(),
     camera: () => cameraSnapshot(gameCamera, shownPose),
+    audio: () => audio.snapshot(),
+    alarms: () => alarmSnapshots(alarms, lampMotion),
+    lightbars: () => lightbarSnapshots(alarms, reactions, lampMotion),
   });
 
   function frame(nowMs: number): void {
@@ -372,10 +409,39 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
     // 鍵盤與觸控層的踏板合在一起，再套上檔位：油門往目前檔位的方向推（D 向前、R 向後），剎車只剎車。
     const pedals = held ? NO_PEDAL_INPUT : mergePedalInputs(input.pedalInput(), touch.pedalInput());
     const driveInput = driveInputForGear(pedals, gear);
+    /** 這一幀計入的碰撞（警報與悶響用）。 */
+    const hits: CountedHit[] = [];
     for (let step = 0; step < loop.steps; step += 1) {
       previousVehicle = session.vehicle;
+      const before = session;
       session = stepSession(session, driveInput);
+      hits.push(...countedHits(before, session));
     }
+
+    // 警報與聲音吃的是模擬時間（跑了幾步），所以暫停時停在當下，分頁切回來也不會一次跳很多。
+    const steppedSeconds = loop.steps * FIXED_STEP_SECONDS;
+    const stillRunning = session.status === 'ready' || session.status === 'driving';
+    alarms = stepAlarms(
+      restarted ? NO_ALARMS : alarms,
+      steppedSeconds,
+      hits.map((hit) => hit.index),
+      reactions,
+    );
+    if (!stillRunning) {
+      // 停妥或失敗：警報全停（聲音 0.8 秒淡出）、燈熄。
+      alarms = silenceAlarms(alarms);
+    }
+    const sound = directSound(director, {
+      dtS: steppedSeconds,
+      restarted,
+      running: stillRunning,
+      gear,
+      hits,
+      alarms,
+    });
+    director = sound.state;
+    audio.setHeld(held);
+    audio.run(sound.commands);
 
     // 剛停妥：把成績併進存檔（星數取大、時間取小、挑戰取聯集）。原型關不存。
     // 結算畫面的打鉤先看這一局、再看存檔，所以存檔在 hud.update 之前或之後寫，畫面都一樣。

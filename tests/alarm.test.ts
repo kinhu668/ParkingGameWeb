@@ -8,6 +8,7 @@ import {
   alarmLampOn,
   alarmPulseOn,
   alarmSnapshots,
+  lampMotionFor,
   silenceAlarms,
   stepAlarms,
   type AlarmKind,
@@ -185,4 +186,13 @@ test('警報的常數：6 秒、最多 3 個聲音、短鳴 2.5 秒', () => {
   expect(ALARM_RULES.sirenYelpS).toBe(2.5);
   expect(ALARM_RULES.endFadeS).toBe(0.8);
   expect(ALARM_RULES.restartFadeS).toBe(0.03);
+});
+
+describe('燈怎麼動', () => {
+  test('?fx=off 優先（定格、可重現）；其次是系統的減少動態效果（恆亮）；否則照常閃', () => {
+    expect(lampMotionFor(false, false)).toBe('flash');
+    expect(lampMotionFor(false, true)).toBe('steady');
+    expect(lampMotionFor(true, false)).toBe('frozen');
+    expect(lampMotionFor(true, true)).toBe('frozen');
+  });
 });

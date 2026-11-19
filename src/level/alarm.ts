@@ -26,6 +26,14 @@ export function alarmKinds(
  */
 export type LampMotion = 'flash' | 'steady' | 'frozen';
 
+/** 這一局的燈怎麼動：`?fx=off` 優先（截圖要能重現），其次是系統的「減少動態效果」。 */
+export function lampMotionFor(fxOff: boolean, reducedMotion: boolean): LampMotion {
+  if (fxOff) {
+    return 'frozen';
+  }
+  return reducedMotion ? 'steady' : 'flash';
+}
+
 /** 一個響著的警報（救護車是「警戒中」）。 */
 export interface ActiveAlarm {
   /** 障礙物在關卡 `obstaclesFt` 裡的索引。 */
