@@ -57,7 +57,7 @@ describe('雜訊緩衝', () => {
 });
 
 describe('碰撞悶響', () => {
-  test('雜訊過 300 Hz 低通（悶的那一層）與 1100 Hz 帶通（短促的「喀」），加 70→40 Hz 與 185→110 Hz 兩個下滑的正弦，0.12 秒內結束', () => {
+  test('雜訊過 900 Hz 低通（車殼悶悶的那一層）與 1100 Hz 帶通（短促的「喀」），加 70→40 Hz 與 185→110 Hz 兩個下滑的正弦，0.12 秒內結束', () => {
     const { context, bus } = stage();
     const noise = noiseOf(context);
     playThud(asContext(context), asNode(bus), noise as unknown as AudioBuffer, 0.6);
@@ -72,8 +72,8 @@ describe('碰撞悶響', () => {
     expect(context.of('filter')).toHaveLength(2);
     expect(burst?.outputs).toEqual([lowpass, bandpass]);
     expect(lowpass?.type).toBe('lowpass');
-    expect(lowpass?.frequency.value).toBe(300);
-    // 手機喇叭聽得到的那一層：中頻、0.04 秒就收掉。
+    expect(lowpass?.frequency.value).toBe(900);
+    // 碰到的那一下：中頻、0.04 秒就收掉。
     expect(bandpass?.type).toBe('bandpass');
     expect(bandpass?.frequency.value).toBe(1100);
     const crack = context.of('gain').find((node) => bandpass?.outputs.includes(node));

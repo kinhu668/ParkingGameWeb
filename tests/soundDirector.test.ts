@@ -73,9 +73,9 @@ function ofType<Type extends SoundCommand['type']>(
 }
 
 describe('悶響', () => {
-  test('音量依撞擊車速：0 mph 是 0.25，6 mph 以上是 1，中間線性', () => {
-    expect(thudGain(0)).toBeCloseTo(0.25, 6);
-    expect(thudGain(mphToMps(3))).toBeCloseTo(0.625, 6);
+  test('音量依撞擊車速：0 mph 是 0.4，6 mph 以上是 1，中間線性', () => {
+    expect(thudGain(0)).toBeCloseTo(0.4, 6);
+    expect(thudGain(mphToMps(3))).toBeCloseTo(0.7, 6);
     expect(thudGain(mphToMps(6))).toBeCloseTo(1, 6);
     expect(thudGain(mphToMps(25))).toBe(1);
   });

@@ -3,25 +3,29 @@
 import { createRng } from '../core/rng';
 
 export const VOICE_SETTINGS = {
-  /** 碰撞悶響：雜訊短脈衝過低通，加一個下滑的正弦。 */
+  /**
+   * 碰撞悶響：雜訊短脈衝過低通（車殼悶悶的那一聲）與帶通（碰到的那一下「喀」），加兩個下滑的正弦（低頻的「咚」）。
+   * 各層的音量是量出來的（OfflineAudioContext 算出整段聲音，看 A 加權與 500 Hz 以上的音量）：
+   * 手機喇叭放不出 300 Hz 以下，所以聽得到的是前兩層；正弦只在有低音的喇叭與耳機上加分，太大會先撞到限幅器。
+   */
   thud: {
     durationS: 0.12,
-    noiseLowpassHz: 300,
-    noiseGain: 0.9,
-    /** 一開始很短的中頻「喀」（同一段雜訊過帶通）：手機喇叭放不出低頻，聽到的主要是這一層；也讓悶響有個清楚的起點。 */
+    noiseLowpassHz: 900,
+    noiseGain: 2.2,
+    /** 很短的中頻「喀」（同一段雜訊過帶通）：讓悶響有個清楚的起點。 */
     crackHz: 1100,
     crackQ: 0.8,
-    crackGain: 0.4,
+    crackGain: 2,
     crackDurationS: 0.04,
     /** 下滑的正弦（Hz，從…到…）。 */
     subHz: [70, 40],
-    subGain: 0.9,
-    /** 高一個八度多的敲擊聲：手機喇叭放不出 70 Hz，靠這一層才聽得到「咚」。 */
+    subGain: 0.45,
+    /** 高一個八度多的敲擊聲。 */
     knockHz: [185, 110],
     knockGain: 0.35,
     knockDurationS: 0.07,
     /** 音量依撞擊車速：幾乎沒有速度時是 minGain，fullSpeedMph 以上是 1。 */
-    minGain: 0.25,
+    minGain: 0.4,
     fullSpeedMph: 6,
   },
   /** 車輛警報（喇叭型）：兩個方波過低通，跟著燈號一響一停。 */
