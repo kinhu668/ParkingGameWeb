@@ -466,6 +466,88 @@ describe('暫停與背景分頁', () => {
     expect(engine.snapshot().contextState).toBe('running');
     expect(target.listening()).toEqual([]);
   });
+
+  test.each([
+    [
+      '被系統打斷（來電、Siri）後一直沒恢復',
+      async ({ context }: ReturnType<typeof setup>) => {
+        context.blocked = true;
+        context.setState('suspended');
+        await settled();
+      },
+    ],
+    [
+      '從背景回來，瀏覽器要等下一個手勢才讓它恢復（iPhone）',
+      async ({ context, engine }: ReturnType<typeof setup>) => {
+        engine.setHidden(true);
+        await settled();
+        context.blocked = true;
+        engine.setHidden(false);
+        await settled();
+      },
+    ],
+  ])(
+    '%s：頭幾幀之後，悶響、嗶聲與新的警報都丟掉（不會疊在同一個時間點、恢復時一起爆出來）；已經在響的警報照樣開關與停掉',
+    async (_name, stall) => {
+      const stage = await unlocked();
+      const { context, target, engine } = stage;
+      engine.run([HORN]);
+      const horn = context.of('oscillator');
+      await stall(stage);
+      expect(context.state).toBe('suspended');
+
+      // 頭 30 幀照收（恢復得快就聽得到）。
+      for (let frame = 0; frame < 29; frame += 1) {
+        engine.run([]);
+      }
+      engine.run([{ type: 'beep' }]);
+      expect(engine.snapshot().beeps).toBe(1);
+      const queued = context.of('oscillator').length;
+
+      // 之後：這段時間的嗶聲、悶響、新的警報都不排隊。
+      for (let frame = 0; frame < 5; frame += 1) {
+        engine.run([{ type: 'beep' }, { type: 'thud', gain: 1 }, SIREN]);
+      }
+      expect(engine.snapshot()).toMatchObject({ voices: ['alarm:12'], beeps: 1, thuds: 0 });
+      expect(context.of('oscillator')).toHaveLength(queued);
+      expect(context.of('bufferSource').filter((source) => source.buffer?.length !== 1)).toEqual([]);
+
+      // 已經在響的那一台照樣停得掉（恢復時不會卡著一直響）。
+      engine.run([{ type: 'alarmGate', index: 12, on: false }]);
+      engine.run([{ type: 'alarmStop', index: 12, fadeS: 0.15 }]);
+      expect(engine.snapshot().voices).toEqual([]);
+      for (const oscillator of horn) {
+        expect(oscillator.stops).toEqual([context.currentTime + 0.15]);
+      }
+
+      // 手指放開、恢復之後照常。
+      context.blocked = false;
+      target.fire('touchend');
+      await settled();
+      engine.run([{ type: 'beep' }, { type: 'thud', gain: 1 }, SIREN]);
+      expect(engine.snapshot()).toMatchObject({
+        contextState: 'running',
+        voices: ['siren:0'],
+        beeps: 2,
+        thuds: 1,
+      });
+    },
+  );
+
+  test('暫停了很久再繼續：resume 還沒完成的那幾幀，聲音照收不漏', async () => {
+    const { context, engine } = await unlocked();
+    engine.setHeld(true);
+    await settled();
+    for (let frame = 0; frame < 100; frame += 1) {
+      engine.run([]);
+    }
+    engine.setHeld(false);
+    expect(context.state).toBe('suspended');
+    engine.run([{ type: 'beep' }, { type: 'thud', gain: 1 }, HORN]);
+    expect(engine.snapshot()).toMatchObject({ voices: ['alarm:12'], beeps: 1, thuds: 1 });
+    await settled();
+    expect(context.state).toBe('running');
+  });
 });
 
 describe('不能出聲的環境', () => {

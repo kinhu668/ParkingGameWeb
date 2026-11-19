@@ -26,11 +26,12 @@ const LIMITER = { thresholdDb: -6, kneeDb: 0, ratio: 20, attackS: 0.003, release
 const GESTURES = ['pointerdown', 'pointerup', 'keydown', 'touchend'] as const;
 const GESTURE_OPTIONS = { capture: true, passive: true } as const;
 /**
- * context 建立之後要過一小段才真的開始出聲。這幾幀收到的指令照收：它們排在 context 的時間 0，一開始就播，
- * 所以第一個動作就是切到 R 檔也聽得到第一聲嗶。過了這麼多幀還沒開始就丟掉，
- * 不然全部疊在同一個時間點，等它終於開始時一起爆出來。
+ * context 沒在出聲時（剛建立、剛解除暫停、剛回到前景，或被系統打斷），會開始新聲音的指令只再收這麼多幀：
+ * 它們排在 context 停住的那個時間點，一出聲就播，所以第一個動作就是切到 R 檔也聽得到第一聲嗶。
+ * 過了這麼多幀還沒出聲就丟掉，不然全部疊在同一個時間點，等它終於出聲時一起爆出來
+ *（iPhone 從背景回來，要等下一次手指放開才出聲；這段時間的倒車嗶聲會疊成很大的一聲）。
  */
-const STARTUP_RUNS = 30;
+const STALLED_RUNS = 30;
 
 /** 引擎需要的瀏覽器功能（測試時換成假的）。 */
 export interface AudioHost {
@@ -68,7 +69,10 @@ export interface AudioSnapshot {
 }
 
 export interface AudioEngine {
-  /** 執行這一幀的聲音指令。解鎖之前的指令直接丟掉，不排隊補播。 */
+  /**
+   * 執行這一幀的聲音指令。解鎖之前的指令直接丟掉；context 停住超過一小段時間，
+   * 會開始新聲音的指令（悶響、嗶聲、新的警報）也丟掉，都不排隊補播。開關與停止已有的聲音一定執行。
+   */
   run(commands: readonly SoundCommand[]): void;
   /** 改音量或靜音（靜音只把主音量降到 0，聲音照常進行，取消靜音就接上）。 */
   setAudio(settings: AudioSettings): void;
@@ -100,6 +104,11 @@ function cannotUnlock(event: Event): boolean {
   );
 }
 
+/** 這個指令會開始一個新的聲音（其餘的只是開關或停掉已有的）。 */
+function startsSound(command: SoundCommand): boolean {
+  return command.type === 'thud' || command.type === 'beep' || command.type === 'alarmStart';
+}
+
 /** resume／suspend 被瀏覽器拒絕（還沒有手勢、被系統打斷）不算錯：下一個手勢會再試。 */
 function quietly(pending: Promise<void>): void {
   pending.catch(() => undefined);
@@ -120,8 +129,8 @@ export function createAudioEngine(host: AudioHost, initial: AudioSettings): Audi
   let unlockRequested = false;
   /** context 曾經進到 running（解鎖成功過）。 */
   let everRan = false;
-  /** context 建立之後、開始出聲之前已經收了幾幀的指令（上限 STARTUP_RUNS）。 */
-  let startupRuns = 0;
+  /** context 沒在出聲已經連續幾幀（上限 STALLED_RUNS）；開始出聲、暫停或前景背景一變就歸零。 */
+  let stalledRuns = 0;
   let held = false;
   let hidden = false;
   let listening = false;
@@ -290,14 +299,18 @@ export function createAudioEngine(host: AudioHost, initial: AudioSettings): Audi
       if (graph === null) {
         return;
       }
-      if (!everRan) {
-        if (startupRuns === STARTUP_RUNS) {
-          return;
-        }
-        startupRuns += 1;
+      let canStart = true;
+      if (graph.context.state === 'running') {
+        stalledRuns = 0;
+      } else if (stalledRuns === STALLED_RUNS) {
+        canStart = false;
+      } else {
+        stalledRuns += 1;
       }
       for (const command of commands) {
-        execute(graph, command);
+        if (canStart || !startsSound(command)) {
+          execute(graph, command);
+        }
       }
     },
     setAudio: (next) => {
@@ -318,12 +331,14 @@ export function createAudioEngine(host: AudioHost, initial: AudioSettings): Audi
     setHeld: (next) => {
       if (held !== next) {
         held = next;
+        stalledRuns = 0;
         sync();
       }
     },
     setHidden: (next) => {
       if (hidden !== next) {
         hidden = next;
+        stalledRuns = 0;
         sync();
       }
     },
