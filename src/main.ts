@@ -48,6 +48,16 @@ import {
 } from './level/alarm';
 import { challengeTimeS, sessionChallenges } from './level/challenges';
 import { countedHits, type CountedHit } from './level/hitEvents';
+import {
+  stepSways,
+  swayKick,
+  swayScaleFor,
+  swaySnapshots,
+  swaysWhenHit,
+  type Sway,
+  type SwayKick,
+  type SwaySnapshot,
+} from './level/hitSway';
 import { DEMO_ROUTE_STEPS, demoVehicleAfterSteps } from './level/demoRoute';
 import {
   LEVEL_IDS,
@@ -128,9 +138,15 @@ declare global {
       readonly alarms: () => AlarmSnapshot[];
       /** 每台救護車的燈條：障礙物索引、模式、三組燈現在亮不亮。 */
       readonly lightbars: () => LightbarSnapshot[];
+      /** 被撞到、正在晃的車：障礙物索引與現在的幅度（1 = 滿格的一撞）。 */
+      readonly sways: () => SwaySnapshot[];
     };
   }
 }
+
+/** 沒有車在晃、這一幀也沒有車被撞（絕大多數的幀）：共用的空清單，不必每幀配置。 */
+const NO_SWAYS: readonly Sway[] = [];
+const NO_KICKS: readonly SwayKick[] = [];
 
 /** 關卡選擇畫面列的世界（本階段只有第 1 世界）。 */
 const SELECT_WORLD = 1;
@@ -347,11 +363,13 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
 
   /** 每個障礙物被撞到的反應（與 `level.obstaclesFt` 同索引；邊界牆不在裡面）。 */
   const reactions = alarmKinds(level.obstaclesFt);
-  const lampMotion = lampMotionFor(
-    parseFxOffParam(window.location.search),
-    window.matchMedia('(prefers-reduced-motion: reduce)').matches,
-  );
+  const fxOff = parseFxOffParam(window.location.search);
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const lampMotion = lampMotionFor(fxOff, reducedMotion);
   let alarms = NO_ALARMS;
+  /** 被撞的車晃多大（純畫面）：`?fx=off` 不晃，減少動態效果時只輕輕一點。 */
+  const swayScale = swayScaleFor(fxOff, reducedMotion);
+  let sways = NO_SWAYS;
   let director = DIRECTOR_START;
 
   window.__parkingGame = Object.freeze({
@@ -362,6 +380,7 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
     audio: () => ({ ...audio.snapshot(), ...sensorSnapshot(director) }),
     alarms: () => alarmSnapshots(alarms, lampMotion),
     lightbars: () => lightbarSnapshots(alarms, reactions, lampMotion),
+    sways: () => swaySnapshots(sways),
   });
 
   function frame(nowMs: number): void {
@@ -427,12 +446,23 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
     const driveInput = driveInputForGear(pedals, gear);
     /** 這一幀計入的碰撞（警報與悶響用）。 */
     const hits: CountedHit[] = [];
+    /** 這一幀被撞到的車各自挨的那一推（撞到牆、錐這些不會晃的就沒有）。 */
+    let kicks: SwayKick[] | undefined;
     for (let step = 0; step < loop.steps; step += 1) {
       previousVehicle = session.vehicle;
       const before = session;
       session = stepSession(session, driveInput);
-      hits.push(...countedHits(before, session));
+      for (const hit of countedHits(before, session)) {
+        hits.push(hit);
+        const struck = level.obstaclesFt[hit.index];
+        const box = layout.obstacles?.[hit.index];
+        if (swayScale > 0 && struck !== undefined && box !== undefined && swaysWhenHit(struck.type)) {
+          (kicks ??= []).push(swayKick(hit.index, before.vehicle, box, swayScale));
+        }
+      }
     }
+    // 被撞的車晃動吃的是這一幀的模擬時間（暫停時是 0，停在當下）；重來就全部回到原位。
+    sways = stepSways(restarted ? NO_SWAYS : sways, simSeconds, kicks ?? NO_KICKS);
 
     // 警報與聲音吃的是模擬時間（跑了幾步），所以暫停時停在當下，分頁切回來也不會一次跳很多。
     const steppedSeconds = loop.steps * FIXED_STEP_SECONDS;
