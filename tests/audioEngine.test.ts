@@ -21,7 +21,7 @@ import {
   settled,
 } from './fakeAudio';
 
-const GESTURES = ['pointerdown', 'keydown', 'touchend'];
+const GESTURES = ['pointerdown', 'pointerup', 'keydown', 'touchend'];
 
 const HORN: SoundCommand = { type: 'alarmStart', index: 12, variant: { sound: 'horn', detuneCents: 0 } };
 const SIREN: SoundCommand = { type: 'alarmStart', index: 0, variant: { sound: 'siren' } };
@@ -159,6 +159,60 @@ describe('解鎖', () => {
     target.fire('keydown');
     engine.run([{ type: 'thud', gain: 0.5 }, { type: 'beep' }, HORN]);
     expect(engine.snapshot()).toMatchObject({ voices: ['alarm:12'], beeps: 1, thuds: 1 });
+  });
+
+  test('context 一直起不來：只收開頭那幾幀的指令，之後的丟掉（不會疊在一起等它開始時一次爆出來）', async () => {
+    const { context, target, engine } = setup();
+    context.blocked = true;
+    target.fire('keydown');
+    for (let frame = 0; frame < 30; frame += 1) {
+      engine.run([]);
+    }
+    engine.run([{ type: 'thud', gain: 0.5 }, { type: 'beep' }, HORN]);
+    target.fire('keydown');
+    engine.run([{ type: 'beep' }]);
+    await settled();
+    expect(engine.snapshot()).toMatchObject({ contextState: 'suspended', voices: [], beeps: 0, thuds: 0 });
+    expect(context.of('oscillator')).toEqual([]);
+
+    // 終於開始之後就照常。
+    context.blocked = false;
+    target.fire('keydown');
+    await settled();
+    engine.run([{ type: 'beep' }]);
+    expect(engine.snapshot()).toMatchObject({ contextState: 'running', beeps: 1 });
+  });
+
+  test.each([
+    ['觸控按下去', 'pointerdown', { pointerType: 'touch' }],
+    ['筆按下去', 'pointerdown', { pointerType: 'pen' }],
+    ['Esc 鍵', 'keydown', { key: 'Escape' }],
+  ])('%s 不算使用者啟動：不建立 context、不算解鎖，繼續聽', (_name, type, detail) => {
+    const { target, engine, created } = setup();
+    target.fire(type, detail);
+    engine.run([{ type: 'beep' }]);
+    expect(created()).toBe(0);
+    expect(engine.snapshot()).toMatchObject({ unlockRequested: false, contextState: 'none', beeps: 0 });
+    expect(target.listening().sort()).toEqual([...GESTURES].sort());
+  });
+
+  test('觸控放開（pointerup）就解鎖', async () => {
+    const { target, engine, created } = setup();
+    target.fire('pointerdown', { pointerType: 'touch' });
+    target.fire('pointerup', { pointerType: 'touch' });
+    await settled();
+    expect(created()).toBe(1);
+    expect(engine.snapshot()).toMatchObject({ unlockRequested: true, contextState: 'running' });
+  });
+
+  test('context 一建立就已經是 running（沒有 statechange）：不再 resume，也不再聽手勢', () => {
+    const { context, target, engine } = setup();
+    context.state = 'running';
+    target.fire('keydown');
+    expect(context.resumes).toBe(0);
+    expect(target.listening()).toEqual([]);
+    engine.setHeld(true);
+    expect(context.suspends).toBe(1);
   });
 });
 
@@ -462,6 +516,22 @@ describe('不能出聲的環境', () => {
     expect(engine.snapshot()).toMatchObject({ unlockRequested: true, contextState: 'none', beeps: 0 });
     expect(error).not.toHaveBeenCalled();
     expect(warn).not.toHaveBeenCalled();
+  });
+
+  test('建好 context 之後接線丟例外：把 context 關掉，之後不再試', () => {
+    const { context, target, engine, created } = setup();
+    context.createDynamicsCompressor = () => {
+      throw new Error('no compressor');
+    };
+    expect(() => {
+      target.fire('keydown');
+    }).not.toThrow();
+    target.fire('keydown');
+    engine.run([{ type: 'beep' }]);
+    expect(created()).toBe(1);
+    expect(context.closes).toBe(1);
+    expect(target.listening()).toEqual([]);
+    expect(engine.snapshot()).toMatchObject({ unlockRequested: true, contextState: 'none', beeps: 0 });
   });
 
   test('resume／suspend 被拒絕：沒有未處理的 rejection，下一個手勢再試', async () => {

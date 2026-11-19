@@ -102,6 +102,7 @@ export class FakeAudioContext {
   readonly nodes: FakeNode[] = [];
   resumes = 0;
   suspends = 0;
+  closes = 0;
   /** true = 瀏覽器不讓它開始：resume 之後還是 suspended。 */
   blocked = false;
   /** true = resume／suspend 回傳被拒絕的 promise。 */
@@ -155,6 +156,11 @@ export class FakeAudioContext {
     return this.settle('suspended');
   }
 
+  close(): Promise<void> {
+    this.closes += 1;
+    return this.settle('closed');
+  }
+
   private settle(next: FakeAudioContext['state']): Promise<void> {
     if (this.rejecting) {
       return Promise.reject(new Error('not allowed'));
@@ -181,24 +187,26 @@ export class FakeAudioContext {
 
 /** 假的 window：記錄掛了哪些手勢監聽，fire 模擬一次手勢。 */
 export class FakeGestureTarget {
-  readonly listeners = new Map<string, Set<() => void>>();
+  readonly listeners = new Map<string, Set<(event: Event) => void>>();
   /** 每次 addEventListener 傳進來的選項。 */
   readonly options: unknown[] = [];
 
-  addEventListener(type: string, listener: () => void, options?: unknown): void {
+  addEventListener(type: string, listener: (event: Event) => void, options?: unknown): void {
     const set = this.listeners.get(type) ?? new Set();
     set.add(listener);
     this.listeners.set(type, set);
     this.options.push(options);
   }
 
-  removeEventListener(type: string, listener: () => void): void {
+  removeEventListener(type: string, listener: (event: Event) => void): void {
     this.listeners.get(type)?.delete(listener);
   }
 
-  fire(type: string): void {
+  /** 送一個事件；沒有另外指定的話是滑鼠的指標事件、一般的按鍵。 */
+  fire(type: string, detail: { pointerType?: string; key?: string } = {}): void {
+    const event = { type, pointerType: 'mouse', key: 'w', ...detail } as unknown as Event;
     for (const listener of [...(this.listeners.get(type) ?? [])]) {
-      listener();
+      listener(event);
     }
   }
 

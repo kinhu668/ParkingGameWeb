@@ -19,9 +19,18 @@ export const MASTER_HEADROOM = 0.8;
 const VOLUME_TAU_S = 0.02;
 /** 限幅器（內建的壓縮器調成很硬）：三台車同時叫也不破音。 */
 const LIMITER = { thresholdDb: -6, kneeDb: 0, ratio: 20, attackS: 0.003, releaseS: 0.25 } as const;
-/** 會解鎖聲音的手勢。 */
-const GESTURES = ['pointerdown', 'keydown', 'touchend'] as const;
+/**
+ * 會解鎖聲音的手勢。瀏覽器只在算「使用者啟動」的事件裡才讓聲音開始：滑鼠是按下去，
+ * 觸控與筆是放開（pointerup／touchend），鍵盤是按下去（Esc 除外）。
+ */
+const GESTURES = ['pointerdown', 'pointerup', 'keydown', 'touchend'] as const;
 const GESTURE_OPTIONS = { capture: true, passive: true } as const;
+/**
+ * context 建立之後要過一小段才真的開始出聲。這幾幀收到的指令照收：它們排在 context 的時間 0，一開始就播，
+ * 所以第一個動作就是切到 R 檔也聽得到第一聲嗶。過了這麼多幀還沒開始就丟掉，
+ * 不然全部疊在同一個時間點，等它終於開始時一起爆出來。
+ */
+const STARTUP_RUNS = 30;
 
 /** 引擎需要的瀏覽器功能（測試時換成假的）。 */
 export interface AudioHost {
@@ -80,6 +89,17 @@ function voiceKey(index: number, siren: boolean): string {
   return `${siren ? 'siren' : 'alarm'}:${index}`;
 }
 
+/**
+ * 瀏覽器不當成使用者啟動的事件：觸控與筆按下去的那一刻（放開才算）、Esc 鍵。
+ * 在這種事件裡 resume 起不來，只會留下一個停住的 context。
+ */
+function cannotUnlock(event: Event): boolean {
+  return (
+    (event.type === 'pointerdown' && (event as PointerEvent).pointerType !== 'mouse') ||
+    (event.type === 'keydown' && (event as KeyboardEvent).key === 'Escape')
+  );
+}
+
 /** resume／suspend 被瀏覽器拒絕（還沒有手勢、被系統打斷）不算錯：下一個手勢會再試。 */
 function quietly(pending: Promise<void>): void {
   pending.catch(() => undefined);
@@ -100,6 +120,8 @@ export function createAudioEngine(host: AudioHost, initial: AudioSettings): Audi
   let unlockRequested = false;
   /** context 曾經進到 running（解鎖成功過）。 */
   let everRan = false;
+  /** context 建立之後、開始出聲之前已經收了幾幀的指令（上限 STARTUP_RUNS）。 */
+  let startupRuns = 0;
   let held = false;
   let hidden = false;
   let listening = false;
@@ -138,8 +160,13 @@ export function createAudioEngine(host: AudioHost, initial: AudioSettings): Audi
   }
 
   function build(create: () => AudioContext): Graph | null {
+    let context: AudioContext;
     try {
-      const context = create();
+      context = create();
+    } catch {
+      return null;
+    }
+    try {
       const limiter = context.createDynamicsCompressor();
       limiter.threshold.value = LIMITER.thresholdDb;
       limiter.knee.value = LIMITER.kneeDb;
@@ -164,12 +191,16 @@ export function createAudioEngine(host: AudioHost, initial: AudioSettings): Audi
       });
       return { context, sfx, master, noise: createNoiseBuffer(context) };
     } catch {
+      quietly(context.close());
       return null;
     }
   }
 
   /** 手勢的處理函式：同步建立 context、resume、播一格無聲的緩衝（舊版 iOS 要這一步才算解鎖）。 */
-  function unlock(): void {
+  function unlock(event: Event): void {
+    if (cannotUnlock(event)) {
+      return;
+    }
     unlockRequested = true;
     if (graph === null && !failed && host.createContext !== undefined) {
       graph = build(host.createContext);
@@ -180,9 +211,15 @@ export function createAudioEngine(host: AudioHost, initial: AudioSettings): Audi
       return;
     }
     const { context } = graph;
+    if (context.state === 'running') {
+      // 已經在出聲（有的瀏覽器一建立就是 running，不會另外通知）。
+      everRan = true;
+      listen(false);
+      return;
+    }
     // 我們自己停住的時候（暫停、背景）不靠手勢叫醒；但第一次解鎖一定要在手勢裡 resume
     //（開始之後 statechange 那邊的 sync 會再把它停住）。
-    if (context.state !== 'running' && ((!held && !hidden) || !everRan)) {
+    if ((!held && !hidden) || !everRan) {
       quietly(context.resume());
       const silent = context.createBufferSource();
       silent.buffer = context.createBuffer(1, 1, context.sampleRate);
@@ -252,6 +289,12 @@ export function createAudioEngine(host: AudioHost, initial: AudioSettings): Audi
     run: (commands) => {
       if (graph === null) {
         return;
+      }
+      if (!everRan) {
+        if (startupRuns === STARTUP_RUNS) {
+          return;
+        }
+        startupRuns += 1;
       }
       for (const command of commands) {
         execute(graph, command);
