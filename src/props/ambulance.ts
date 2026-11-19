@@ -24,6 +24,9 @@ const BOX_REAR = 9.6;
 const BOX_ROOF = 8.3;
 const BOX_LENGTH = BOX_REAR - BOX_FRONT;
 const BOX_MID = (BOX_FRONT + BOX_REAR) / 2;
+// 車頂燈條（在車廂前上緣、駕駛艙上方）：鏡片底面的高度與 Z。
+const BAR_Y = BOX_ROOF + 0.26;
+const BAR_Z = -4.05;
 
 /** 字樣牌子的中心（英尺）：rightFt 是離中線的距離（貼在車皮外一點點，兩側對稱）、aheadFt 朝車頭為正、yFt 是中心高度。 */
 export const AMBULANCE_LABELS_FT: {
@@ -63,10 +66,12 @@ const CLEAR = { off: 0xd9dee0, lit: 0xf4f8ff };
 const LAMPS: readonly Lamp[] = [-1, 1].flatMap((side): Lamp[] => {
   const group: LampGroup = side < 0 ? 'left' : 'right';
   return [
-    // 車頂燈條的半邊（在車廂前上緣、駕駛艙上方）。
-    { group, w: 2.5, h: 0.36, d: 0.8, x: side * 1.55, y: BOX_ROOF + 0.1, z: -4.05, lens: side < 0 ? RED : CLEAR, facing: 'all' },
-    // 水箱罩上的紅燈。
-    { group, w: 0.5, h: 0.3, d: 0.08, x: side * 0.75, y: 3.2, z: -9.63, lens: RED, facing: 'front' },
+    // 車頂燈條的半邊：內、外兩節鏡片（左半紅、右半透明白）。
+    ...[0.85, 2.15].map(
+      (x): Lamp => ({ group, w: 1.2, h: 0.42, d: 0.8, x: side * x, y: BAR_Y, z: BAR_Z, lens: side < 0 ? RED : CLEAR, facing: 'all' }),
+    ),
+    // 水箱罩上緣兩個角落的紅燈。
+    { group, w: 0.5, h: 0.3, d: 0.08, x: side * 0.98, y: 3.29, z: -9.63, lens: RED, facing: 'front' },
     // 車尾上緣角落的紅燈。
     { group, w: 0.8, h: 0.45, d: 0.08, x: side * 2.6, y: 7.6, z: BOX_REAR + 0.02, lens: RED, facing: 'back' },
     // 車廂側面上緣前角、後角的紅燈。
@@ -161,10 +166,11 @@ export function createAmbulanceGeometry(): BufferGeometry {
     slopedPanel(5.5, 0.08, 0, 4.6, -7.8, 6.85, -6.95, GLASS),
     // 駕駛艙車頂到醫療艙車頂的楔形導流罩：厚板，下半埋在車頂與車廂裡。
     slopedPanel(5.4, 1, 0, 6.615, -6.553, 7.865, -4.353, BODY),
-    // 水箱罩與橫條、前保險桿、前車牌。
+    // 水箱罩與橫條、前保險桿與下面內縮的深色下擾流、前車牌。
     box(2.6, 1.05, 0.08, 0, 2.6, -9.57, TRIM),
-    box(6.3, 0.7, 0.5, 0, 1.2, -9.71, GREY),
-    box(1, 0.45, 0.04, 0, 1.32, -9.98, PLATE),
+    box(6.3, 0.6, 0.5, 0, 1.3, -9.71, GREY),
+    box(5.9, 0.4, 0.36, 0, 0.9, -9.68, TRIM),
+    box(1, 0.45, 0.04, 0, 1.38, -9.98, PLATE),
     // 車尾：橫過兩扇門的色帶、門縫、車牌、灰色的後踏板保險桿與止滑面。
     box(BOX_HALF * 2, 0.75, 0.04, 0, 3.05, rearSkin, ORANGE),
     box(BOX_HALF * 2, 0.1, 0.04, 0, 3.86, rearSkin, TEAL),
@@ -174,16 +180,19 @@ export function createAmbulanceGeometry(): BufferGeometry {
     box(1, 0.45, 0.05, -1.2, 2.2, 9.64, PLATE),
     box(6.5, 0.35, 0.95, 0, 1, 9.525, GREY),
     box(5.8, 0.04, 0.7, 0, 1.35, 9.6, TRIM),
-    // 車頂：冷氣箱、天線、燈條的深色底座與中段。
+    // 車頂：冷氣箱、天線、燈條的深色底座與中段（鏡片在 LAMPS；短腳、隔板與端蓋在下面左右各一份）。
     box(2.4, 0.4, 3.2, 0, BOX_ROOF, 5.2, PANEL),
     box(0.2, 0.08, 0.2, 1.9, BOX_ROOF, 0.5, TRIM),
     bar([1.9, BOX_ROOF, 0.5], [1.9, 8.95, 0.75], 0.04, TRIM),
-    box(5.6, 0.1, 0.9, 0, BOX_ROOF, -4.05, TRIM),
-    box(0.6, 0.36, 0.8, 0, BOX_ROOF + 0.1, -4.05, TRIM),
+    box(5.9, 0.1, 0.96, 0, BAR_Y - 0.1, BAR_Z, TRIM),
+    box(0.5, 0.46, 0.88, 0, BAR_Y, BAR_Z, TRIM),
+    // 車尾上緣中間的白色照明燈：深色框與淺灰鏡片（不閃）。
+    box(1.1, 0.46, 0.05, 0, 7.6, rearSkin, TRIM),
+    box(0.9, 0.3, 0.08, 0, 7.68, rearSkin, CLEAR.off),
     // 警示燈沒亮的鏡片。
     ...LAMPS.map((lamp) => lampBox(lamp, false)),
   ];
-  for (const y of [2.72, 2.87, 3.02]) {
+  for (const y of [2.72, 2.87, 3.02, 3.17]) {
     parts.push(box(2.4, 0.05, 0.04, 0, y, -9.62, GREY));
   }
   // 車頂的橫肋、駕駛艙車頂前緣的示廓燈（橘）、車尾上緣的示廓燈（紅）。
@@ -207,9 +216,21 @@ export function createAmbulanceGeometry(): BufferGeometry {
       slopedPanel(0.2, 0.8, side * 2.78, 4.459, -7.426, 6.709, -6.576, GLASS),
       slopedPanel(0.05, 0.05, side * 1.3, 4.7, -7.83, 5.5, -7.53, TRIM),
       box(0.04, 2, 2, side * 2.82, 4.7, -5.9, GLASS),
-      // 頭燈與橘色方向燈。
-      box(0.9, 0.7, 0.08, side * 2.05, 2.85, -9.57, LENS.head.off),
-      box(0.3, 0.7, 0.08, side * 2.7, 2.85, -9.57, amber),
+      // 頭燈與橘色方向燈，後面墊一塊深色燈框；保險桿上的霧燈也是深色框加鏡片。
+      box(1.52, 0.9, 0.06, side * 2.14, 2.75, -9.56, TRIM),
+      box(0.9, 0.66, 0.08, side * 1.95, 2.87, -9.6, LENS.head.off),
+      box(0.32, 0.66, 0.08, side * 2.64, 2.87, -9.6, amber),
+      box(0.7, 0.26, 0.02, side * 2.2, 1.47, -9.97, TRIM),
+      box(0.44, 0.14, 0.02, side * 2.2, 1.53, -9.985, LENS.head.off),
+      // 車頂燈條：短腳、兩節鏡片之間的深色隔板、矮的灰色端蓋（鏡片的端面露在端蓋上方，側面也看得到）。
+      box(0.45, 0.16, 0.6, side * 1.9, BOX_ROOF, BAR_Z, TRIM),
+      box(0.1, 0.46, 0.88, side * 1.5, BAR_Y, BAR_Z, TRIM),
+      box(0.2, 0.24, 0.92, side * 2.85, BAR_Y, BAR_Z, GREY),
+      // 車廂側面上緣、紅燈與橘燈之間的白色照明燈：深色框與淺灰鏡片（不閃，不在 LAMPS）。
+      ...[-0.7, 5.7].flatMap((z) => [
+        box(0.06, 0.5, 1.3, boxSkin, 7.55, z, TRIM),
+        box(0.08, 0.34, 1.1, side * (BOX_HALF + 0.03), 7.63, z, CLEAR.off),
+      ]),
       // 後照鏡：兩支桿、直立的鏡殼與鏡面（鏡殼外緣在 x = ±3.5）。
       box(0.55, 0.07, 0.07, side * 3.13, 5.85, -7.5, TRIM),
       box(0.55, 0.07, 0.07, side * 3.13, 4.95, -7.5, TRIM),
