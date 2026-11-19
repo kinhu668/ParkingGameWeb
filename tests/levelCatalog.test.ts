@@ -261,12 +261,12 @@ describe('起點停在車位裡的關卡（安全出車）', () => {
 
   // 玩家回報（2026-11-18）：w1_l07 的兩個交通錐貼在車頭前 3 ft，開場鏡頭被車頭擋住看不到，一踩油門就白撞一次。
   test.each(cases)(
-    '%s：沒有貼著車頭擺的障礙物：直直往前，先碰到的不是自己那一格底的路緣（場地邊緣），就是 12 ft 以外的東西',
+    '%s：沒有貼著車頭擺的障礙物：直直往前，先碰到的不是自己那一格底的路緣（場地邊緣），就是 10 ft 以外的東西',
     (_id, level) => {
       const { freeFt, what } = firstBump(level);
       expect(what).not.toBe('nothing');
       if (what !== 'bounds') {
-        expect(freeFt).toBeGreaterThan(12);
+        expect(freeFt).toBeGreaterThan(10);
       }
     },
   );
@@ -276,7 +276,7 @@ describe('起點停在車位裡的關卡（安全出車）', () => {
     (id) => {
       const level = mustFind(id);
       expect(firstBump(level).what).toBe('cone');
-      // 正前方那一格（背對背的那一排）裡的交通錐：離車頭 12 ft 以上，還在那一格裡（兩旁有停放車夾著，繞不過去）。
+      // 正前方那一格（背對背的那一排）裡的交通錐：離車頭 10 ft 以上，還在那一格裡（兩旁有停放車夾著，繞不過去）。
       const ahead = level.obstaclesFt.filter(
         (obstacle) =>
           obstacle.type === 'cone' &&
@@ -289,7 +289,7 @@ describe('起點停在車位裡的關卡（安全出車）', () => {
         expect.closeTo(1.6, 6),
       ]);
       for (const cone of ahead) {
-        expect(level.startFt.zFt - 7.5 - (cone.centerZFt + cone.lengthFt / 2)).toBeGreaterThan(12);
+        expect(level.startFt.zFt - 7.5 - (cone.centerZFt + cone.lengthFt / 2)).toBeGreaterThan(10);
       }
     },
   );

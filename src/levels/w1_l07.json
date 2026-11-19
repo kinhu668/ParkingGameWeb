@@ -14,8 +14,8 @@
   "start": { "pos": [-22.5, 0, 30], "heading": 0, "parked": true },
   "target": { "pos": [6.75, 0, -30], "heading": 0, "size": [8.5, 18] },
   "obstacles": [
-    { "type": "cone", "pos": [-24.1, 0, 8] },
-    { "type": "cone", "pos": [-20.9, 0, 8] },
+    { "type": "cone", "pos": [-24.1, 0, 11] },
+    { "type": "cone", "pos": [-20.9, 0, 11] },
     { "type": "surf_suv", "pos": [4.5, 0, 10.5], "heading": 180 },
     { "type": "pillar", "pos": [-40.5, 0, -22] },
     { "type": "pillar", "pos": [-30, 0, -22] },
