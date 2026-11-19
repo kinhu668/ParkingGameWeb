@@ -1,12 +1,33 @@
 // 警報燈與救護車燈條的疊加層：平常一個實例都不畫；被撞的那一台才亮，用的是車身同一個矩陣；
 // 燈條照 lightbarState 左右交替；地上的光與點光源跟著畫質設定；鏡片的幾何落在車身的外框裡。
-import { Box3, Color, Group, InstancedMesh, Matrix4, Mesh, MeshBasicMaterial, PointLight } from 'three';
+import {
+  AdditiveBlending,
+  Box3,
+  Color,
+  Group,
+  InstancedBufferGeometry,
+  InstancedMesh,
+  Matrix4,
+  Mesh,
+  MeshBasicMaterial,
+  PointLight,
+  ShaderMaterial,
+  Vector3,
+} from 'three';
 import { describe, expect, test } from 'vitest';
 import { ALARM_RULES } from '../src/core/gameConfig';
 import { ftToM } from '../src/core/units';
-import { createParkedCarLampGeometry, createVehicleBeacons } from '../src/effects/vehicleBeacons';
+import {
+  createParkedCarLampGeometry,
+  createVehicleBeacons,
+  lampGlowPoints,
+} from '../src/effects/vehicleBeacons';
 import { NO_ALARMS, alarmKinds, stepAlarms, type AlarmState } from '../src/level/alarm';
-import { createAmbulanceGeometry, createAmbulanceLampGeometry } from '../src/props/ambulance';
+import {
+  ambulanceLampGlowsFt,
+  createAmbulanceGeometry,
+  createAmbulanceLampGeometry,
+} from '../src/props/ambulance';
 import { createDeliveryVanGeometry, createDeliveryVanLampGeometry } from '../src/props/deliveryVan';
 import {
   createObstacleMeshes,
@@ -33,9 +54,13 @@ const SOURCE: ObstacleSource = {
 const KINDS = alarmKinds(SOURCE.obstaclesFt);
 const NO_GLOW = { groundPool: false, spotLights: 0 };
 
-function build(lights = NO_GLOW, hdr = false): { obstacles: Group; root: Group; update: (alarms: AlarmState, motion?: 'flash' | 'steady' | 'frozen') => void } {
+function build(
+  lights = NO_GLOW,
+  hdr = false,
+  night = true,
+): { obstacles: Group; root: Group; update: (alarms: AlarmState, motion?: 'flash' | 'steady' | 'frozen') => void } {
   const obstacles = createObstacleMeshes(SOURCE, 'low');
-  const beacons = createVehicleBeacons(obstacles, 'low', lights, hdr);
+  const beacons = createVehicleBeacons(obstacles, 'low', lights, hdr, night);
   return {
     obstacles,
     root: beacons.root,
@@ -63,7 +88,7 @@ describe('警報燈的疊加層', () => {
   test('每一款有車的車款、貨車、休旅車各一個，救護車三個；沒有車的車款不建', () => {
     const { root } = build();
     expect(root.children.map((child) => child.name).sort()).toEqual(
-      [...CAR_OVERLAYS, 'ambulance:left', 'ambulance:right', 'ambulance:rear']
+      [...CAR_OVERLAYS, 'ambulance:left', 'ambulance:right', 'ambulance:rear', 'glow']
         .map((name) => `beacon:${name}`)
         .sort(),
     );
@@ -74,7 +99,7 @@ describe('警報燈的疊加層', () => {
       { obstaclesFt: [{ type: 'cone', centerXFt: 0, centerZFt: 0, headingDeg: 0, widthFt: 1.5, lengthFt: 1.5 }] },
       'low',
     );
-    expect(createVehicleBeacons(obstacles, 'low', { groundPool: true, spotLights: 2 }, true).root.children).toEqual([]);
+    expect(createVehicleBeacons(obstacles, 'low', { groundPool: true, spotLights: 2 }, true, true).root.children).toEqual([]);
   });
 
   test('沒有警報時車的燈一個實例都不畫', () => {
@@ -237,6 +262,121 @@ describe('救護車的燈條', () => {
     expect(light?.color.equals(red ?? new Color())).toBe(false);
     update(hit(NO_ALARMS, 6));
     expect(light?.intensity).toBeCloseTo(idle * ALARM_RULES.lightbarAlertLevel, 6);
+  });
+});
+
+describe('燈周圍的光暈', () => {
+  const AMBULANCE = 6;
+  function glowMesh(root: Group): Mesh<InstancedBufferGeometry, ShaderMaterial> {
+    const mesh = root.getObjectByName('beacon:glow');
+    if (!(mesh instanceof Mesh)) {
+      throw new Error('沒有 beacon:glow');
+    }
+    return mesh as Mesh<InstancedBufferGeometry, ShaderMaterial>;
+  }
+  /** 目前畫出來的每一圈：世界座標的中心、直徑、顏色（已乘亮度）。 */
+  function shown(root: Group): { center: Vector3; sizeM: number; tint: Color }[] {
+    const { geometry } = glowMesh(root);
+    const place = geometry.getAttribute('glow');
+    const tint = geometry.getAttribute('tint');
+    return Array.from({ length: geometry.instanceCount }, (_, slot) => ({
+      center: new Vector3(place.getX(slot), place.getY(slot), place.getZ(slot)),
+      sizeM: place.getW(slot),
+      tint: new Color(tint.getX(slot), tint.getY(slot), tint.getZ(slot)),
+    }));
+  }
+
+  test('定格時只有救護車左組的燈有光暈：每顆鏡片一圈，車頂燈條的半邊合成一圈大的', () => {
+    const { obstacles, root, update } = build();
+    update(NO_ALARMS, 'frozen');
+    const left = ambulanceLampGlowsFt().left;
+    const glows = shown(root);
+    expect(glows).toHaveLength(left.length);
+    expect(glowMesh(root).visible).toBe(true);
+    // 中心就是車身矩陣把本地座標換到世界座標的位置；最大的一圈在車頂燈條上、偏紅。
+    const body = obstacleInstances(obstacles, 'obstacle:ambulance').find((car) => car.index === AMBULANCE);
+    const [bar] = left;
+    const expected = new Vector3(ftToM(bar?.x ?? 0), ftToM(bar?.y ?? 0), ftToM(bar?.z ?? 0)).applyMatrix4(
+      body?.matrix ?? new Matrix4(),
+    );
+    const biggest = glows.reduce((a, b) => (b.sizeM > a.sizeM ? b : a));
+    expect(biggest.center.distanceTo(expected)).toBeLessThan(1e-4);
+    expect(biggest.center.y).toBeGreaterThan(ftToM(8.3));
+    expect(biggest.sizeM).toBeCloseTo(ftToM(bar?.sizeFt ?? 0), 5);
+    expect(biggest.tint.r).toBeGreaterThan(biggest.tint.b * 2);
+  });
+
+  test('左右交替時光暈跟著換邊；右半的燈條是白的', () => {
+    const { root, update } = build();
+    update(stepAlarms(NO_ALARMS, 0.9 * ALARM_RULES.lightbarIdlePeriodS, [], KINDS));
+    const glows = shown(root);
+    expect(glows).toHaveLength(ambulanceLampGlowsFt().right.length);
+    const biggest = glows.reduce((a, b) => (b.sizeM > a.sizeM ? b : a));
+    expect(biggest.tint.b).toBeGreaterThan(biggest.tint.r * 0.8);
+  });
+
+  test('被撞的車四個角落各多一圈，暗的半個週期收回去；沒有任何燈亮就整個不畫', () => {
+    const source: ObstacleSource = { obstaclesFt: SOURCE.obstaclesFt.slice(0, 4) };
+    const obstacles = createObstacleMeshes(source, 'low');
+    const beacons = createVehicleBeacons(obstacles, 'low', NO_GLOW, false, true);
+    const kinds = alarmKinds(source.obstaclesFt);
+    beacons.update(NO_ALARMS, 'flash');
+    expect(glowMesh(beacons.root).visible).toBe(false);
+    expect(glowMesh(beacons.root).geometry.instanceCount).toBe(0);
+    let alarms = stepAlarms(NO_ALARMS, 0, [1], kinds);
+    beacons.update(alarms, 'flash');
+    const glows = shown(beacons.root);
+    expect(glows).toHaveLength(4);
+    // 那台車在 x = 20 ft：四圈都在它的外框附近、離地不到車頂。
+    for (const glow of glows) {
+      expect(Math.abs(glow.center.x - ftToM(20))).toBeLessThan(ftToM(3.2));
+      expect(Math.abs(glow.center.z)).toBeLessThan(ftToM(8));
+      expect(glow.center.y).toBeGreaterThan(ftToM(1));
+      expect(glow.center.y).toBeLessThan(ftToM(4));
+    }
+    alarms = stepAlarms(alarms, ALARM_RULES.flashPeriodS * 0.75, [], kinds);
+    beacons.update(alarms, 'flash');
+    expect(glowMesh(beacons.root).geometry.instanceCount).toBe(0);
+    expect(glowMesh(beacons.root).visible).toBe(false);
+  });
+
+  test('加色、不寫深度、不做色調映射、不進環境光遮蔽；不做視錐剔除（頂點在著色器裡才攤開）', () => {
+    const mesh = glowMesh(build().root);
+    expect(mesh.material.blending).toBe(AdditiveBlending);
+    expect(mesh.material.depthWrite).toBe(false);
+    expect(mesh.material.depthTest).toBe(true);
+    expect(mesh.material.toneMapped).toBe(false);
+    expect(mesh.frustumCulled).toBe(false);
+    expect(mesh.castShadow).toBe(false);
+    expect(mesh.userData[SKIP_AMBIENT_OCCLUSION]).toBe(true);
+  });
+
+  test('白天比夜裡淡；高動態範圍的級別比較亮', () => {
+    const level = (hdr: boolean, night: boolean): number => {
+      const { root, update } = build(NO_GLOW, hdr, night);
+      update(NO_ALARMS, 'frozen');
+      return Math.max(...shown(root).map((glow) => glow.tint.r));
+    };
+    expect(level(false, false)).toBeLessThan(level(false, true) * 0.6);
+    expect(level(true, true)).toBeGreaterThan(level(false, true));
+  });
+
+  test.each(CAR_MODEL_IDS)('%s：鏡片分成四個角落，車頭的光偏白、車尾的偏紅', (model) => {
+    const points = lampGlowPoints(createParkedCarLampGeometry(model, 'low'));
+    expect(points).toHaveLength(4);
+    const dims = carModelDimsM(model);
+    for (const point of points) {
+      expect(Math.abs(point.position.x)).toBeLessThanOrEqual(dims.widthM / 2 + 0.02);
+      expect(Math.abs(point.position.z)).toBeGreaterThan(dims.lengthM / 4);
+      expect(point.sizeM).toBeGreaterThanOrEqual(ftToM(1.8) - 1e-9);
+      expect(point.sizeM).toBeLessThanOrEqual(ftToM(3.4) + 1e-9);
+      // 本地 −Z 是車頭。
+      if (point.position.z < 0) {
+        expect(point.color.g).toBeGreaterThan(point.color.r * 0.5);
+      } else {
+        expect(point.color.r).toBeGreaterThan(point.color.b * 2);
+      }
+    }
   });
 });
 

@@ -286,6 +286,38 @@ export function createAmbulanceGeometry(): BufferGeometry {
   return assemble(parts);
 }
 
+/** 一顆警示燈周圍的光暈（英尺，車身的本地座標）：中心、直徑、亮起來的顏色。 */
+export interface AmbulanceGlowFt {
+  x: number;
+  y: number;
+  z: number;
+  sizeFt: number;
+  color: number;
+}
+
+/**
+ * 各組警示燈的光暈，位置與顏色都來自同一張警示燈的表：每顆鏡片一個，車頂燈條每半邊的兩節合成一個大的。
+ * 夜裡遠遠就看得到燈在閃，靠的是這一圈光，不是那幾片小鏡片。
+ */
+export function ambulanceLampGlowsFt(): Record<LampGroup, AmbulanceGlowFt[]> {
+  const glows: Record<LampGroup, AmbulanceGlowFt[]> = { left: [], right: [], rear: [] };
+  for (const group of ['left', 'right', 'rear'] as const) {
+    const lamps = LAMPS.filter((lamp) => lamp.group === group);
+    const bar = lamps.filter((lamp) => lamp.facing === 'all');
+    const [segment] = bar;
+    if (segment) {
+      const x = bar.reduce((sum, lamp) => sum + lamp.x, 0) / bar.length;
+      glows[group].push({ x, y: segment.y + segment.h / 2, z: segment.z, sizeFt: 5, color: segment.lens.lit });
+    }
+    for (const lamp of lamps) {
+      if (lamp.facing !== 'all') {
+        glows[group].push({ x: lamp.x, y: lamp.y + lamp.h / 2, z: lamp.z, sizeFt: 3.2 * Math.max(lamp.w, lamp.d), color: lamp.lens.lit });
+      }
+    }
+  }
+  return glows;
+}
+
 /** 警報時會亮的鏡片，依閃爍的組別分開：與車身幾何同一個本地座標（公尺），頂點顏色是亮起來的顏色。 */
 export function createAmbulanceLampGeometry(): { left: BufferGeometry; right: BufferGeometry; rear: BufferGeometry } {
   const lit = (group: LampGroup): BufferGeometry =>

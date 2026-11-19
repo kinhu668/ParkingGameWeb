@@ -686,6 +686,7 @@ export function createGameScene(
           quality.props.meshDetail,
           quality.headlights,
           usesHdrChain(quality),
+          preset.lampsOn,
         );
   if (obstacles !== undefined && beacons !== undefined) {
     beacons.update(NO_ALARMS, 'frozen');
