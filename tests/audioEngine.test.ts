@@ -99,6 +99,8 @@ describe('第一個手勢之前', () => {
       voices: [],
       beeps: 0,
       thuds: 0,
+      ambience: null,
+      thunders: 0,
     });
     // 解鎖之後也不會補播剛才那幾個。
     target.fire('pointerdown');
@@ -641,6 +643,8 @@ describe('不能出聲的環境', () => {
       voices: [],
       beeps: 0,
       thuds: 0,
+      ambience: null,
+      thunders: 0,
     });
   });
 
@@ -712,5 +716,103 @@ describe('browserAudioHost', () => {
     expect(browserAudioHost(view({ AudioContext: Modern })).createContext?.()).toBeInstanceOf(Modern);
     expect(browserAudioHost(view({ webkitAudioContext: Legacy })).createContext?.()).toBeInstanceOf(Legacy);
     expect(browserAudioHost(view({})).createContext).toBeUndefined();
+  });
+});
+
+describe('天氣的環境聲', () => {
+  /** 用某種環境聲建立引擎，做第一個手勢並等 context 開始。 */
+  async function unlockedWith(kind: 'rain' | 'storm' | 'drips' | null): Promise<{
+    context: FakeAudioContext;
+    engine: AudioEngine;
+    before: ReturnType<AudioEngine['snapshot']>;
+  }> {
+    const context = new FakeAudioContext();
+    const target = new FakeGestureTarget();
+    const engine = createAudioEngine(fakeHost(context, target), DEFAULT_AUDIO, kind);
+    const before = engine.snapshot();
+    engine.run([{ type: 'thunder', strike: 0 }]);
+    target.fire('keydown');
+    await settled();
+    return { context, engine, before };
+  }
+
+  function loopsOf(context: FakeAudioContext): FakeNode[] {
+    return context.of('bufferSource').filter((node) => node.loop);
+  }
+
+  test('解鎖之前沒有環境聲、雷聲指令丟掉；解鎖後雨聲走自己的匯流排接到主音量（不經過 sfx）', async () => {
+    const { context, engine, before } = await unlockedWith('rain');
+    expect(before.ambience).toBeNull();
+    expect(engine.snapshot().ambience).toBe('rain');
+    expect(engine.snapshot().thunders).toBe(0);
+    const master = masterOf(context);
+    const sfx = sfxOf(context);
+    const buses = context.of('gain').filter((node) => node.outputs.includes(master));
+    expect(buses).toHaveLength(2);
+    const loops = loopsOf(context);
+    expect(loops).toHaveLength(2);
+    for (const loop of loops) {
+      const path = downstream(loop);
+      expect(path).toContain(buses[1]);
+      expect(path).toContain(master);
+      expect(path).not.toContain(sfx);
+    }
+  });
+
+  test('雷雨與雨後各自的環境聲', async () => {
+    const storm = await unlockedWith('storm');
+    expect(storm.engine.snapshot().ambience).toBe('storm');
+    expect(loopsOf(storm.context)).toHaveLength(3);
+    const drips = await unlockedWith('drips');
+    expect(drips.engine.snapshot().ambience).toBe('drips');
+    expect(loopsOf(drips.context)).toHaveLength(2);
+  });
+
+  test('沒有環境聲的天氣：不建立環境聲匯流排，也沒有循環的音源', async () => {
+    const { context, engine } = await unlockedWith(null);
+    expect(engine.snapshot().ambience).toBeNull();
+    expect(loopsOf(context)).toEqual([]);
+    expect(context.of('gain').filter((node) => node.outputs.includes(masterOf(context)))).toHaveLength(1);
+    const count = context.nodes.length;
+    engine.run([{ type: 'thunder', strike: 0 }, { type: 'ambienceDip' }]);
+    expect(context.nodes).toHaveLength(count);
+    expect(engine.snapshot().thunders).toBe(0);
+  });
+
+  test('雷聲：雷雨才排進去並累計；雨天不打雷', async () => {
+    const storm = await unlockedWith('storm');
+    const count = storm.context.nodes.length;
+    storm.engine.run([{ type: 'thunder', strike: 0 }]);
+    storm.engine.run([{ type: 'thunder', strike: 1 }]);
+    expect(storm.engine.snapshot().thunders).toBe(2);
+    expect(storm.context.nodes.length).toBeGreaterThan(count);
+
+    const rain = await unlockedWith('rain');
+    rain.engine.run([{ type: 'thunder', strike: 0 }]);
+    expect(rain.engine.snapshot().thunders).toBe(0);
+  });
+
+  test('context 停住太久：雷聲丟掉，不會等它恢復時一起爆出來', async () => {
+    const { context, engine } = await unlockedWith('storm');
+    context.setState('suspended');
+    for (let frame = 0; frame < 30; frame += 1) {
+      engine.run([]);
+    }
+    const count = context.nodes.length;
+    engine.run([{ type: 'thunder', strike: 0 }]);
+    expect(engine.snapshot().thunders).toBe(0);
+    expect(context.nodes).toHaveLength(count);
+  });
+
+  test('重來的指令：環境聲的匯流排壓下去再回來', async () => {
+    const { context, engine } = await unlockedWith('rain');
+    const bus = context.of('gain').filter((node) => node.outputs.includes(masterOf(context)))[1];
+    const before = bus?.gain.events.length ?? 0;
+    engine.run([{ type: 'ambienceDip' }]);
+    expect(bus?.gain.events.slice(before).map(([method, value]) => [method, value])).toEqual([
+      ['cancelScheduledValues', 0],
+      ['setTargetAtTime', 0],
+      ['setTargetAtTime', 1],
+    ]);
   });
 });

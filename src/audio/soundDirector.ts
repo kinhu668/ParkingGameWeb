@@ -23,7 +23,11 @@ export type SoundCommand =
   | { readonly type: 'alarmStart'; readonly index: number; readonly variant: AlarmVariant }
   | { readonly type: 'alarmGate'; readonly index: number; readonly on: boolean }
   | { readonly type: 'alarmStop'; readonly index: number; readonly fadeS: number }
-  | { readonly type: 'stopAll'; readonly fadeS: number };
+  | { readonly type: 'stopAll'; readonly fadeS: number }
+  /** 第 strike 道閃電剛開始閃：排它的雷聲（隔多久到由 audio/ambience.ts 的 thunderPlan 決定）。 */
+  | { readonly type: 'thunder'; readonly strike: number }
+  /** 重來：天氣的環境聲先壓下去再回來。 */
+  | { readonly type: 'ambienceDip' };
 
 /** 導演記得的一個警報：sounding = 還有聲音（讓位之後是 false，燈照閃）；gateOn = 上一幀喇叭是不是響的。 */
 interface KnownAlarm {
@@ -45,6 +49,8 @@ export interface DirectorState {
   readonly rearDistanceFt: number | null;
   /** 上一幀這一局是不是還在進行。 */
   readonly running: boolean;
+  /** 到上一幀為止場景打過幾道閃電（重來不歸零：天氣的時間不會倒回去）。 */
+  readonly lightningStrikes: number;
 }
 
 /** 開局。 */
@@ -55,6 +61,7 @@ export const DIRECTOR_START: DirectorState = {
   tone: false,
   rearDistanceFt: null,
   running: true,
+  lightningStrikes: 0,
 };
 
 /** 一幀的遊戲狀態。 */
@@ -72,6 +79,8 @@ export interface DirectorFrame {
   readonly hits: readonly CountedHit[];
   /** 這一幀之後的警報狀態。 */
   readonly alarms: AlarmState;
+  /** 場景到這一幀為止打過幾道閃電（與畫面上的閃光同一份時間表；沒有閃電的天氣是 0）。 */
+  readonly lightningStrikes: number;
 }
 
 /** 喇叭型警報每台車的變調（音分），依障礙物索引輪流。 */
@@ -148,7 +157,7 @@ export function directSound(
   const commands: SoundCommand[] = [];
   let before = state.known;
   if (frame.restarted) {
-    commands.push({ type: 'stopAll', fadeS: ALARM_RULES.restartFadeS });
+    commands.push({ type: 'stopAll', fadeS: ALARM_RULES.restartFadeS }, { type: 'ambienceDip' });
     before = [];
   } else if (state.running && !frame.running) {
     commands.push({ type: 'stopAll', fadeS: ALARM_RULES.endFadeS });
@@ -224,8 +233,20 @@ export function directSound(
   if (tone !== state.tone) {
     commands.push({ type: 'beepTone', on: tone });
   }
+  // 雷聲：閃電開始閃的那一幀排進去。一幀裡跳過好幾道（分頁從背景回來）只排最後一道，不會一次爆出一串。
+  if (frame.lightningStrikes > state.lightningStrikes) {
+    commands.push({ type: 'thunder', strike: frame.lightningStrikes - 1 });
+  }
   return {
-    state: { known, reverseS, beepLengthS: lengthS, tone, rearDistanceFt, running: frame.running },
+    state: {
+      known,
+      reverseS,
+      beepLengthS: lengthS,
+      tone,
+      rearDistanceFt,
+      running: frame.running,
+      lightningStrikes: frame.lightningStrikes,
+    },
     commands,
   };
 }

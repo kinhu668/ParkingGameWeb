@@ -1,7 +1,8 @@
-// 音效引擎：第一個手勢才建立並解鎖 AudioContext；聲音 → sfx 匯流排 → 主音量 → 限幅器 → 輸出；
+// 音效引擎：第一個手勢才建立並解鎖 AudioContext；聲音 → sfx 匯流排（天氣的環境聲走自己的匯流排）→ 主音量 → 限幅器 → 輸出；
 // 音量與靜音、暫停與背景分頁時停住、執行 soundDirector 的指令、給 e2e 的唯讀快照。
 // 沒有 AudioContext 或建立失敗時整個引擎是空動作：不丟例外、不寫 console。
 import { MAX_VOLUME, type AudioSettings } from '../core/save';
+import { startAmbience, type Ambience, type AmbienceKind } from './ambience';
 import type { SoundCommand } from './soundDirector';
 import {
   createNoiseBuffer,
@@ -68,6 +69,10 @@ export interface AudioSnapshot {
   readonly beeps: number;
   /** 累計幾聲悶響。 */
   readonly thuds: number;
+  /** 正在響的天氣環境聲（雨、雷雨、雨後的滴水）；這一關沒有、或還沒解鎖是 null。 */
+  readonly ambience: AmbienceKind | null;
+  /** 累計排了幾聲雷。 */
+  readonly thunders: number;
 }
 
 export interface AudioEngine {
@@ -111,7 +116,12 @@ function cannotUnlock(event: Event): boolean {
 
 /** 這個指令會開始一個新的聲音（其餘的只是開關或停掉已有的）。 */
 function startsSound(command: SoundCommand): boolean {
-  return command.type === 'thud' || command.type === 'beep' || command.type === 'alarmStart';
+  return (
+    command.type === 'thud' ||
+    command.type === 'beep' ||
+    command.type === 'alarmStart' ||
+    command.type === 'thunder'
+  );
 }
 
 /** resume／suspend 被瀏覽器拒絕（還沒有手勢、被系統打斷）不算錯：下一個手勢會再試。 */
@@ -124,9 +134,18 @@ interface Graph {
   readonly sfx: GainNode;
   readonly master: GainNode;
   readonly noise: AudioBuffer;
+  /** 天氣的環境聲（有自己的匯流排）；這一關沒有就是 null，也不建立空的匯流排。 */
+  readonly ambience: Ambience | null;
 }
 
-export function createAudioEngine(host: AudioHost, initial: AudioSettings): AudioEngine {
+/**
+ * @param ambienceKind 這一關的天氣環境聲（audio/ambience.ts 的 ambienceFor）；null = 沒有
+ */
+export function createAudioEngine(
+  host: AudioHost,
+  initial: AudioSettings,
+  ambienceKind: AmbienceKind | null = null,
+): AudioEngine {
   let settings = initial;
   let graph: Graph | null = null;
   /** 建立失敗過就不再試。 */
@@ -141,6 +160,7 @@ export function createAudioEngine(host: AudioHost, initial: AudioSettings): Audi
   let listening = false;
   let beeps = 0;
   let thuds = 0;
+  let thunders = 0;
   /** 持續的聲音：名字 → 聲音；keys 記每個障礙物索引的警報用的是哪個名字。 */
   const voices = new Map<string, SustainedVoice>();
   const keys = new Map<number, string>();
@@ -208,7 +228,14 @@ export function createAudioEngine(host: AudioHost, initial: AudioSettings): Audi
         }
         sync();
       });
-      return { context, sfx, master, noise: createNoiseBuffer(context) };
+      return {
+        context,
+        sfx,
+        master,
+        noise: createNoiseBuffer(context),
+        // 環境聲一解鎖就開始（從無聲淡入），之後一直響；暫停時跟著 context 停住。
+        ambience: ambienceKind === null ? null : startAmbience(context, master, ambienceKind),
+      };
     } catch {
       quietly(context.close());
       return null;
@@ -256,8 +283,16 @@ export function createAudioEngine(host: AudioHost, initial: AudioSettings): Audi
     }
   }
 
-  function execute({ context, sfx, noise }: Graph, command: SoundCommand): void {
+  function execute({ context, sfx, noise, ambience }: Graph, command: SoundCommand): void {
     switch (command.type) {
+      case 'thunder':
+        if (ambience?.thunder(command.strike) === true) {
+          thunders += 1;
+        }
+        break;
+      case 'ambienceDip':
+        ambience?.dip();
+        break;
       case 'thud':
         playThud(context, sfx, noise, command.gain);
         thuds += 1;
@@ -370,6 +405,8 @@ export function createAudioEngine(host: AudioHost, initial: AudioSettings): Audi
       voices: [...voices.keys()],
       beeps,
       thuds,
+      ambience: graph?.ambience?.kind ?? null,
+      thunders,
     }),
   };
 }

@@ -36,6 +36,7 @@ const QUIET: DirectorFrame = {
   rearDistanceFt: Number.POSITIVE_INFINITY,
   hits: [],
   alarms: NO_ALARMS,
+  lightningStrikes: 0,
 };
 
 /** 一幀一幀跑：每一幀先走警報，再問導演；回傳最後的狀態與全部指令（連同第幾幀）。 */
@@ -478,5 +479,53 @@ describe('倒車雷達：導演', () => {
       beepIntervalS: beepIntervalS(4.5),
       continuousBeep: false,
     });
+  });
+});
+
+describe('雷聲與環境聲', () => {
+  test('場景多打了一道閃電的那一幀排一聲雷（第幾道就是那一道）；沒有新的閃電就沒有', () => {
+    const { commands, director } = play([
+      ...quiet(0.5),
+      { lightningStrikes: 1 },
+      ...quiet(0.5, { lightningStrikes: 1 }),
+      { lightningStrikes: 2 },
+      ...quiet(0.2, { lightningStrikes: 2 }),
+    ]);
+    expect(ofType(commands, 'thunder').map(({ frame, strike }) => [frame, strike])).toEqual([
+      [30, 0],
+      [61, 1],
+    ]);
+    expect(director.lightningStrikes).toBe(2);
+  });
+
+  test('一幀裡跳過好幾道（分頁從背景回來）只排最後一道', () => {
+    const { commands } = play([{ lightningStrikes: 1 }, { lightningStrikes: 6 }]);
+    expect(ofType(commands, 'thunder').map(({ strike }) => strike)).toEqual([0, 5]);
+  });
+
+  test('暫停（dtS = 0）時場景的閃電不走，也就沒有雷', () => {
+    const started = play([{ lightningStrikes: 1 }]);
+    const paused = play(quiet(2, { dtS: 0, lightningStrikes: 1 }), started);
+    expect(paused.commands).toEqual([]);
+  });
+
+  test('重來：環境聲壓下去再回來；已經打過的閃電不會再響一次，之後新的照常', () => {
+    const { commands } = play([
+      { lightningStrikes: 3 },
+      { restarted: true, lightningStrikes: 3 },
+      ...quiet(0.2, { lightningStrikes: 3 }),
+      { lightningStrikes: 4 },
+    ]);
+    expect(ofType(commands, 'ambienceDip').map(({ frame }) => frame)).toEqual([1]);
+    expect(ofType(commands, 'thunder').map(({ frame, strike }) => [frame, strike])).toEqual([
+      [0, 2],
+      [14, 3],
+    ]);
+  });
+
+  test('停妥或失敗不壓環境聲（結算畫面雨照下、雷照打）', () => {
+    const { commands } = play([{ running: false }, { running: false, lightningStrikes: 1 }]);
+    expect(ofType(commands, 'ambienceDip')).toEqual([]);
+    expect(ofType(commands, 'thunder')).toHaveLength(1);
   });
 });

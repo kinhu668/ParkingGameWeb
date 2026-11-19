@@ -177,6 +177,8 @@ export interface GameScene {
    * 目前畫的是第幾道閃電的電弧（0 = 第一道）；沒有在閃、沒有閃電的天氣、`?fx=off` 都是 undefined。唯讀；e2e 與除錯用。
    */
   lightningStrike(): number | undefined;
+  /** 到目前為止打過幾道閃電（雷聲用：多了一道就是剛開始閃）。沒有閃電的天氣、`?fx=off` 都是 0。 */
+  lightningStrikes(): number;
   /**
    * 目標車位的發光標記的顯示狀態走一幀：停妥後變綠再淡出、重來後回來。
    * 每個畫面幀呼叫。沒呼叫過（定格截圖、關卡選擇的背景）就是琥珀色、完全顯示。
@@ -837,6 +839,7 @@ export function createGameScene(
       const shown = arcs?.shown();
       return shown !== undefined && shown.visible ? shown.strikeIndex : undefined;
     },
+    lightningStrikes: () => (lightning === undefined ? 0 : lightning.strikeIndex() + 1),
     updateSpotGlow(parked, frameSeconds) {
       glow.show(parked, frameSeconds);
     },

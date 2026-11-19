@@ -37,21 +37,37 @@ export class FakeParam {
     this.events.push(['cancelScheduledValues', time]);
     return this;
   }
+
+  /** 曲線本身記在 curves，事件裡只記點數、開始時間與長度。 */
+  readonly curves: Float32Array[] = [];
+
+  setValueCurveAtTime(values: Float32Array, time: number, duration: number): this {
+    this.curves.push(values);
+    this.events.push(['setValueCurveAtTime', values.length, time, duration]);
+    return this;
+  }
 }
 
 export class FakeBuffer {
+  /** 第一個聲道（單聲道的緩衝區只有它）。 */
   readonly data: Float32Array;
+  private readonly channels: Float32Array[];
 
   constructor(
     readonly numberOfChannels: number,
     readonly length: number,
     readonly sampleRate: number,
   ) {
-    this.data = new Float32Array(length);
+    this.channels = Array.from({ length: numberOfChannels }, () => new Float32Array(length));
+    this.data = this.channels[0] ?? new Float32Array(length);
   }
 
-  getChannelData(): Float32Array {
-    return this.data;
+  get duration(): number {
+    return this.length / this.sampleRate;
+  }
+
+  getChannelData(channel = 0): Float32Array {
+    return this.channels[channel] ?? this.data;
   }
 }
 
@@ -64,6 +80,9 @@ export class FakeNode {
   /** start(when)／stop(when) 被叫到的時間。 */
   readonly starts: number[] = [];
   readonly stops: number[] = [];
+  /** 緩衝音源：start 的第二個參數（從緩衝區的第幾秒開始）、要不要循環。 */
+  readonly offsets: number[] = [];
+  loop = false;
   /** 振盪器的波形或濾波器的種類。 */
   type = '';
   buffer: FakeBuffer | null = null;
@@ -84,8 +103,9 @@ export class FakeNode {
     return target;
   }
 
-  start(when = 0): void {
+  start(when = 0, offset = 0): void {
     this.starts.push(when);
+    this.offsets.push(offset);
   }
 
   stop(when = 0): void {

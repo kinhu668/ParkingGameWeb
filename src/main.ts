@@ -7,6 +7,7 @@ import {
   resolveInitialView,
   storeView,
 } from './core/cameraView';
+import { ambienceFor } from './audio/ambience';
 import { browserAudioHost, createAudioEngine, type AudioSnapshot } from './audio/audioEngine';
 import {
   DIRECTOR_START,
@@ -132,7 +133,7 @@ declare global {
       readonly spotGlow: () => SpotGlowSnapshot;
       /** 鏡頭目前的模式、位置、視角，以及車在畫面上的位置。 */
       readonly camera: () => CameraSnapshot;
-      /** 音效：解鎖了沒、AudioContext 的狀態、音量、正在響的聲音、累計的嗶聲與悶響；倒車雷達量到的距離與節奏。 */
+      /** 音效：解鎖了沒、AudioContext 的狀態、音量、正在響的聲音、累計的嗶聲、悶響與雷聲、天氣的環境聲；倒車雷達量到的距離與節奏。 */
       readonly audio: () => AudioSnapshot & SensorSnapshot;
       /** 響著的車輛警報：障礙物索引、剩餘秒數、燈現在亮不亮。 */
       readonly alarms: () => AlarmSnapshot[];
@@ -252,7 +253,12 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
   // 音效（純表現層，不影響判定）：第一個手勢才出聲；分頁切到背景就停住。
   // 音量與靜音：HUD 的靜音鈕或暫停面板改了就立刻套用並存起來。
   let audioSettings = savedAudio(loadSave(storage));
-  const audio = createAudioEngine(browserAudioHost(window), audioSettings);
+  // 天氣的環境聲（雨、雷雨、雨後的滴水）跟著這一場實際用的天氣（`?weather=` 蓋過關卡的）。
+  const audio = createAudioEngine(
+    browserAudioHost(window),
+    audioSettings,
+    ambienceFor(resolveWeather(window.location.search, level.weather)),
+  );
   document.addEventListener('visibilitychange', () => {
     audio.setHidden(document.hidden);
   });
@@ -489,6 +495,7 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
           : Number.POSITIVE_INFINITY,
       hits,
       alarms,
+      lightningStrikes: gameScene.lightningStrikes(),
     });
     director = sound.state;
     audio.setHeld(held);
