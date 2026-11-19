@@ -17,6 +17,8 @@ export interface SignStyle {
   readonly color: string;
   /** 外框的顏色；不給就沒有外框。 */
   readonly border?: string;
+  /** 直接漆在車身上的字樣：貼圖只有字、沒有底，車身的烤漆從字的周圍透出來（background 寫車身的顏色，只有沒有 DOM 時退回的那片牌子用得到）。 */
+  readonly painted?: true;
 }
 
 /** 招牌樣式表。配色避開常見量販店的紅藍、郵政的藍紅白。 */
@@ -43,8 +45,8 @@ export const SIGN_STYLES = {
   foodTruck: { background: '#fff3d6', color: '#12807a' },
   /** 貨車車身的字樣：深藍底、米白字、橘框（配車身的色帶）。 */
   parcel: { background: '#1f4e8c', color: '#f4f1e6', border: '#e8862e' },
-  /** 救護車車身的字樣：底色與車身的白一樣（牌子的邊看不出來）、青綠字。 */
-  ambulance: { background: '#f2f1ea', color: '#0f6f6a' },
+  /** 救護車車身的字樣：青綠字直接漆在白色車身上。 */
+  ambulance: { background: '#f2f1ea', color: '#0f6f6a', painted: true },
   /** 巷子牆上的噴漆牌：黃底黑字。 */
   alley: { background: '#e2c33b', color: '#1b1b1a', border: '#1b1b1a' },
   /** 禁止停車：白底、暗紅字。 */
@@ -73,7 +75,7 @@ function signTexture(text: string, style: SignStyle, aspect: number): Texture | 
     return undefined;
   }
   const { width, height } = signTextureSize(aspect);
-  const key = `${text}|${style.background}|${style.color}|${style.border ?? ''}|${width}x${height}`;
+  const key = `${text}|${style.painted === true ? '' : style.background}|${style.color}|${style.border ?? ''}|${width}x${height}`;
   const cached = textureCache.get(key);
   if (cached !== undefined) {
     return cached;
@@ -85,8 +87,10 @@ function signTexture(text: string, style: SignStyle, aspect: number): Texture | 
   if (context === null) {
     return undefined;
   }
-  context.fillStyle = style.background;
-  context.fillRect(0, 0, width, height);
+  if (style.painted !== true) {
+    context.fillStyle = style.background;
+    context.fillRect(0, 0, width, height);
+  }
   const borderPx = style.border === undefined ? 0 : Math.max(2, Math.round(height * 0.06));
   if (style.border !== undefined) {
     context.strokeStyle = style.border;
@@ -144,6 +148,9 @@ export function createSignMesh(sign: SignPlacement): Mesh {
           emissive: 0xffffff,
           emissiveMap: texture,
           emissiveIntensity: sign.glow,
+          // 漆在車身上的字：貼圖的底是透明的，不寫深度（字的周圍不該擋住後面畫的東西）。
+          transparent: style.painted === true,
+          depthWrite: style.painted !== true,
         });
   const mesh = new Mesh(new PlaneGeometry(sign.widthM, sign.heightM), material);
   mesh.name = 'sign';

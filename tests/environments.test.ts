@@ -262,6 +262,12 @@ describe('招牌', () => {
       expect(style.background).toMatch(/^#[0-9a-f]{6}$/);
       expect(style.color).toMatch(/^#[0-9a-f]{6}$/);
     }
+    // 只有救護車的字樣是直接漆在車身上的（貼圖沒有底）；其他都是有底色的牌子。
+    expect(
+      Object.entries(SIGN_STYLES)
+        .filter(([, style]) => 'painted' in style)
+        .map(([id]) => id),
+    ).toEqual(['ambulance']);
     const mesh = createSignMesh({
       text: 'MAIL', style: 'mail', x: 1, y: 2, z: 3, facingRad: 0, widthM: 2, heightM: 1, glow: 0,
     });
