@@ -182,6 +182,11 @@ export interface OcclusionFade {
    * 沒有東西淡掉時直接跑 draw，什麼都不動。
    */
   drawUnfaded(draw: () => void): void;
+  /**
+   * 把某個實例擺到 matrix（被撞的車晃動用）。實例的矩陣一律經過這裡改：正淡著的實例是藏起來的，動的是它的替身；
+   * 之後淡出、恢復、drawUnfaded 都以這個位置為準。
+   */
+  place(part: OccluderPart, matrix: Matrix4): void;
 }
 
 /** 一個實例的替身。 */
@@ -202,6 +207,7 @@ interface FadeGroup {
 }
 
 const HIDDEN_MATRIX = new Matrix4().makeScale(0, 0, 0);
+const NO_STAND_INS: readonly StandIn[] = [];
 /** 替身排在其他半透明的東西（光錐、雨絲、車窗）之後畫：後面的東西都畫好了才疊上去。 */
 const STAND_IN_RENDER_ORDER = 10;
 
@@ -342,6 +348,22 @@ export function createOcclusionFade(root: Object3D): OcclusionFade {
       }
     },
     fadedCount: () => groups.filter((group) => group.opacity < 1).length,
+    place(part, matrix) {
+      for (const group of groups) {
+        for (const standIn of group.standIns ?? NO_STAND_INS) {
+          if (standIn.part.mesh === part.mesh && standIn.part.index === part.index) {
+            standIn.original.copy(matrix);
+            standIn.mesh.matrix.copy(matrix);
+            standIn.mesh.matrixWorldNeedsUpdate = true;
+            if (group.opacity < 1) {
+              // 正淡著：實例藏著，畫的是替身。
+              return;
+            }
+          }
+        }
+      }
+      setInstanceMatrix(part, matrix);
+    },
     drawUnfaded(draw) {
       const faded = groups.filter((group) => group.opacity < 1);
       // 實例放回原位、替身藏起來；牌面的材質留在半透明那一路（不必重編著色器），不透明度先拉回 1。

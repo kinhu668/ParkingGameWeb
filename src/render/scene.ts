@@ -17,8 +17,10 @@ import { createLightning } from '../effects/lightning';
 import { createLightningArcs } from '../effects/lightningArc';
 import type { StrikeArea } from '../effects/lightningBolt';
 import { createSceneEffects } from '../effects/sceneEffects';
+import { createSwayMeshes } from '../effects/swayMeshes';
 import { createVehicleBeacons } from '../effects/vehicleBeacons';
 import { NO_ALARMS, type AlarmState, type LampMotion } from '../level/alarm';
+import type { Sway } from '../level/hitSway';
 import type { ParkingSpot } from '../level/parkingJudge';
 import {
   configureSurfaceLibrary,
@@ -187,6 +189,11 @@ export interface GameScene {
    * 沒呼叫過（定格截圖）就是相位 0：沒有警報，救護車的燈條只有左組亮。
    */
   updateBeacons(alarms: AlarmState, motion: LampMotion): void;
+  /**
+   * 被撞到的車晃動（純視覺）：正在晃的車擺到現在的姿勢，停了的放回原位。每個畫面幀、updateBeacons 之前呼叫
+   * （亮著的警報燈跟著車身走）。`?fx=off` 不晃，什麼都不做。
+   */
+  updateSways(sways: readonly Sway[]): void;
   /** 發光標記目前的位置、大小、顏色與不透明度（唯讀；e2e 與除錯用）。 */
   spotGlow(): SpotGlowSnapshot;
   /**
@@ -772,6 +779,13 @@ export function createGameScene(
 
   // 遮擋半透明：擺設都就位了才收集（佔地方塊要換成世界座標）。玩家車沒有登記，不會被淡掉。
   const occlusion = ambientFx ? createOcclusionFade(scene) : undefined;
+  // 被撞的車晃動：實例的矩陣經過遮擋半透明改（正淡著的車動的是替身）。`?fx=off` 不晃，也就不建立。
+  const swayMeshes =
+    occlusion === undefined || obstacles === undefined || level === undefined
+      ? undefined
+      : createSwayMeshes(obstacles, level, occlusion.place, (index, matrix) => {
+          beacons?.move(index, matrix);
+        });
 
   // 場景裡的東西都建好了：只烘這一關實際用到的表面（每一關大約用到庫的一半到三分之二）。
   // 要在第一次畫之前；沒烘的表面維持中性貼圖，之後才出現的庫材質頂多是沒有紋路的底色。
@@ -829,6 +843,9 @@ export function createGameScene(
     spotGlow: () => glow.snapshot(),
     updateBeacons(alarms, motion) {
       beacons?.update(alarms, motion);
+    },
+    updateSways(sways) {
+      swayMeshes?.update(sways);
     },
     groundMirror,
     update(pose, frameSeconds = 0) {

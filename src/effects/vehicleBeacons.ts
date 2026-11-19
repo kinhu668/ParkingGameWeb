@@ -16,6 +16,7 @@ import {
   InstancedBufferAttribute,
   InstancedBufferGeometry,
   InstancedMesh,
+  Matrix4,
   Mesh,
   MeshBasicMaterial,
   PlaneGeometry,
@@ -87,6 +88,12 @@ export interface VehicleBeacons {
   readonly root: Group;
   /** 依警報狀態更新哪些燈亮著；每幀呼叫，狀態沒變就什麼都不做。 */
   update(alarms: AlarmState, motion: LampMotion): void;
+  /**
+   * 被撞的車晃動時，它亮著的鏡片與光暈跟著車身走（地上的光與點光源不動）。下一次 update 生效。
+   * @param index 障礙物索引
+   * @param matrix 從原位到現在位置的變換（世界座標）；undefined = 回到原位
+   */
+  move(index: number, matrix: Matrix4 | undefined): void;
 }
 
 /** 某個障礙物上的這一組燈現在的亮度（0 = 不亮）。 */
@@ -445,10 +452,35 @@ export function createVehicleBeacons(
   }
 
   const tint = new Color();
+  /** 正在晃的車：從原位到現在位置的變換。 */
+  const moved = new Map<number, Matrix4>();
+  const placed = new Matrix4();
+  const glowAt = new Vector3();
   /** 上一次更新時沒有警報、這一關也沒有救護車：所有的燈都已經關掉，之後不必再算。 */
   let allOff = false;
   return {
     root,
+    move(index, matrix) {
+      if (matrix === undefined) {
+        if (!moved.delete(index)) {
+          return;
+        }
+      } else {
+        const current = moved.get(index);
+        if (current === undefined) {
+          moved.set(index, matrix.clone());
+        } else {
+          current.copy(matrix);
+        }
+      }
+      // 這台車的燈下一次 update 要重擺。
+      for (const overlay of overlays) {
+        if (overlay.instances.some((instance) => instance.index === index)) {
+          overlay.shown = '';
+        }
+      }
+      glowsShown = '';
+    },
     update(alarms, motion) {
       const quiet = alarms.active.length === 0 && ambulances.length === 0;
       if (quiet && allOff) {
@@ -464,10 +496,11 @@ export function createVehicleBeacons(
         overlay.shown = key;
         const { mesh } = overlay;
         let lit = 0;
-        overlay.instances.forEach(({ matrix }, instance) => {
+        overlay.instances.forEach(({ index, matrix }, instance) => {
           const level = levels[instance] ?? 0;
           if (level > 0) {
-            mesh.setMatrixAt(lit, matrix);
+            const sway = moved.get(index);
+            mesh.setMatrixAt(lit, sway === undefined ? matrix : placed.multiplyMatrices(sway, matrix));
             mesh.setColorAt(lit, tint.setScalar(level * brightness));
             lit += 1;
           }
@@ -491,7 +524,12 @@ export function createVehicleBeacons(
           glows.forEach((glow, slot) => {
             const level = levels[slot] ?? 0;
             if (level > 0) {
-              place.setXYZW(lit, glow.position.x, glow.position.y, glow.position.z, glow.sizeM);
+              const sway = moved.get(glow.index);
+              glowAt.copy(glow.position);
+              if (sway !== undefined) {
+                glowAt.applyMatrix4(sway);
+              }
+              place.setXYZW(lit, glowAt.x, glowAt.y, glowAt.z, glow.sizeM);
               tint.copy(glow.color).multiplyScalar(level * glowBrightness);
               color.setXYZ(lit, tint.r, tint.g, tint.b);
               lit += 1;

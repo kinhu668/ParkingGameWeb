@@ -691,6 +691,10 @@ export function createObstacleMeshes(source: ObstacleSource, detail: VehicleDeta
       // 貼在模型上的字（投遞箱的 MAIL、回收架的 CART RETURN）：跟著這一個模型一起淡。
       const labels = obstacleLabels(type, obstacle);
       if (labels.length > 0) {
+        // 這幾片字屬於哪個障礙物（被撞的車晃動時跟著走：effects/swayMeshes.ts）。
+        for (const label of labels) {
+          label.userData.obstacleIndex = index;
+        }
         group.add(...labels);
       }
       if (heightM >= FADE.minHeightM) {

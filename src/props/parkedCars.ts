@@ -315,6 +315,16 @@ export function createParkedCars(
   plateTexts.receiveShadow = true;
   plateTexts.userData.plates = plates;
   group.add(plateTexts);
+  // 被撞的車晃動時，它車牌上的字跟著走（moveParkedCarPlate）：記下每台車的字從第幾個頂點開始、原本在哪裡。
+  const plateStarts = [0];
+  for (const geometry of plateGeometries) {
+    plateStarts.push((plateStarts[plateStarts.length - 1] ?? 0) + geometry.getAttribute('position').count);
+  }
+  plateMovers.set(group, {
+    positions: plateGeometry.getAttribute('position') as BufferAttribute,
+    rest: Float32Array.from(plateGeometry.getAttribute('position').array),
+    starts: plateStarts,
+  });
 
   // 擋到跟車鏡頭時整台一起淡（烤漆、第二車色、rest）；車牌上的字藏起來。擋住鏡頭的範圍就是這款車的外框。
   registerOccluders(
@@ -337,4 +347,36 @@ export function createParkedCars(
     }),
   );
   return group;
+}
+
+/** 一群停放的車車牌上的字：合併後的頂點、原本的位置、每台車從第幾個頂點開始（最後多一格 = 總數）。 */
+interface PlateMover {
+  readonly positions: BufferAttribute;
+  readonly rest: Float32Array;
+  readonly starts: readonly number[];
+}
+
+const plateMovers = new WeakMap<Group, PlateMover>();
+const platePoint = new Vector3();
+
+/**
+ * 把第 car 台車車牌上的字擺到「原位再套上 matrix」（被撞的車晃動用；字全部併在一個網格裡，所以改的是那一段頂點）。
+ * @param cars createParkedCars 的回傳值
+ * @param matrix 從原位到現在位置的變換（群組的本地座標）；undefined = 放回原位
+ */
+export function moveParkedCarPlate(cars: Group, car: number, matrix: Matrix4 | undefined): void {
+  const mover = plateMovers.get(cars);
+  const start = mover?.starts[car];
+  const end = mover?.starts[car + 1];
+  if (mover === undefined || start === undefined || end === undefined) {
+    return;
+  }
+  for (let vertex = start; vertex < end; vertex += 1) {
+    platePoint.fromArray(mover.rest, vertex * 3);
+    if (matrix !== undefined) {
+      platePoint.applyMatrix4(matrix);
+    }
+    mover.positions.setXYZ(vertex, platePoint.x, platePoint.y, platePoint.z);
+  }
+  mover.positions.needsUpdate = true;
 }
