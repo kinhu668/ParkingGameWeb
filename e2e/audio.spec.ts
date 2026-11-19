@@ -120,9 +120,10 @@ test('撞車警報：被撞的車閃燈加喇叭約 6 秒，碰撞只算一次�
 
   // 放著不動：約 6 秒（遊戲時間）後自己停，沒有多算碰撞。
   const cleared = await watchUntil(page, '警報響完', (state) => state.alarms.length === 0);
-  const ringS = cleared.snapshot.elapsedS - hit.snapshot.elapsedS;
-  expect(ringS).toBeGreaterThan(ALARM_S - 0.2);
-  expect(ringS).toBeLessThan(ALARM_S + 1.5);
+  // 該停的時刻用警報自己的剩餘時間推算：第一次讀到碰撞時，遊戲可能已經又走了幾幀。
+  const endS = hit.snapshot.elapsedS + (alarm?.remainingS ?? 0);
+  expect(cleared.snapshot.elapsedS).toBeGreaterThan(endS - 0.05);
+  expect(cleared.snapshot.elapsedS).toBeLessThan(endS + 1.5);
   expect(cleared.snapshot.collisions).toBe(1);
   expect(cleared.snapshot.status).toBe('driving');
   await expect
@@ -259,7 +260,8 @@ test('救護車（w1_l09）：燈條平常左右交替；撞上車尾短鳴警�
 
   const idle = await watchUntil(page, '回到待機', (state) => state.lightbars[0]?.mode === 'idle');
   const alertS = idle.snapshot.elapsedS - hit.snapshot.elapsedS;
-  expect(alertS).toBeGreaterThan(SIREN_S - 0.2);
+  // 下限放寬 1 秒：快照裡沒有警戒的剩餘時間，而第一次讀到碰撞時遊戲可能已經又走了幾幀。
+  expect(alertS).toBeGreaterThan(SIREN_S - 1);
   expect(alertS).toBeLessThan(SIREN_S + 1.5);
   expect(idle.snapshot.collisions).toBe(1);
   await expect
