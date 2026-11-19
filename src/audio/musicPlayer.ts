@@ -61,17 +61,23 @@ export function createMusic(
   let ducked = false;
   let load: 'none' | 'loading' | 'playing' | 'failed' = 'none';
 
-  /** 開：從無聲淡入。關：很快收掉；context 停住時（暫停面板）直接設，繼續時第一個取樣就是無聲。 */
+  /**
+   * 開：淡入。關：很快收掉；context 停住時（暫停面板）直接設，繼續時第一個取樣就是無聲。
+   * 都從現在的音量接著走：淡入到一半就關、剛關又開，音量不會跳一下（取消排程會讓它跳回排程之前的值）。
+   */
   function applyOn(): void {
     const now = context.currentTime;
+    const heard = level.gain.value;
     level.gain.cancelScheduledValues(now);
-    if (on) {
-      level.gain.setValueAtTime(0, now);
-      level.gain.linearRampToValueAtTime(1, now + settings.fadeInS);
-    } else if (context.state === 'running') {
-      level.gain.setTargetAtTime(0, now, settings.offTauS);
-    } else {
+    if (!on && context.state !== 'running') {
       level.gain.value = 0;
+      return;
+    }
+    level.gain.setValueAtTime(heard, now);
+    if (on) {
+      level.gain.linearRampToValueAtTime(1, now + settings.fadeInS);
+    } else {
+      level.gain.setTargetAtTime(0, now, settings.offTauS);
     }
   }
 

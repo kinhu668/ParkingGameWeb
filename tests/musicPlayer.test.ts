@@ -323,19 +323,27 @@ describe('音樂開關與靜音', () => {
     expect(context.of('bufferSource').filter((node) => node.loop)).toHaveLength(1);
   });
 
-  test('出聲中靜音：音樂很快收掉（不是硬切）；取消靜音再淡入', async () => {
+  test('出聲中靜音：音樂從現在的音量很快收掉（不是硬切；淡入到一半也不會跳一下）；取消靜音從現在的音量淡入', async () => {
     const { context, engine } = await unlocked('day');
     const { level } = chainOf(context);
     context.currentTime = 7;
+    // 真的 AudioParam 讀到的是排程走到現在的值（例如淡入到一半）；假的要自己設。
+    level.gain.value = 0.4;
     engine.setAudio({ ...DEFAULT_AUDIO, muted: true });
-    expect(level.gain.events.slice(-2)).toEqual([
+    expect(level.gain.events.slice(-3)).toEqual([
       ['cancelScheduledValues', 7],
+      ['setValueAtTime', 0.4, 7],
       ['setTargetAtTime', 0, 7, MUSIC_SETTINGS.offTauS],
     ]);
     expect(engine.snapshot().music.state).toBe('off');
     context.currentTime = 8;
+    level.gain.value = 0.1;
     engine.setAudio(DEFAULT_AUDIO);
-    expect(level.gain.events.at(-1)).toEqual(['linearRampToValueAtTime', 1, 9.5]);
+    expect(level.gain.events.slice(-3)).toEqual([
+      ['cancelScheduledValues', 8],
+      ['setValueAtTime', 0.1, 8],
+      ['linearRampToValueAtTime', 1, 9.5],
+    ]);
   });
 
   test('載入中關掉：載完照樣開始走，但沒有聲音', async () => {
