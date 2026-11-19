@@ -5,6 +5,7 @@ import { forward, right, type GroundVector } from '../core/heading';
 import { degToRad, ftToM, mpsToMph } from '../core/units';
 import type { VehicleState } from '../vehicle/bicycleModel';
 import { vehicleObb, type Obb } from './collision';
+import type { ObstacleType } from './obstacleTypes';
 
 export const SWAY_RULES = {
   /** 自然頻率（Hz）：車身在懸吊上晃大約是 1.5–2 Hz。 */
@@ -23,6 +24,26 @@ export const SWAY_RULES = {
   /** 系統設了「減少動態效果」時，整個反應縮成這個比例（還是看得出被碰了一下，但只是輕輕一點）。 */
   reducedMotionScale: 0.3,
 } as const;
+
+/** 被撞會晃的障礙物：有懸吊的車。牆、柱、錐、推車這些不會（邊界牆不是關卡的障礙物，也不會）。 */
+const SWAYING_TYPES: ReadonlySet<ObstacleType> = new Set<ObstacleType>([
+  'parked_car',
+  'surf_suv',
+  'delivery_van',
+  'ambulance',
+  'food_truck',
+]);
+
+export function swaysWhenHit(type: ObstacleType): boolean {
+  return SWAYING_TYPES.has(type);
+}
+
+/**
+ * 整個反應的比例：`?fx=off` 是 0（不晃，同一個網址的畫面每次相同）；系統設了「減少動態效果」是 reducedMotionScale；其餘是 1。
+ */
+export function swayScaleFor(fxOff: boolean, reducedMotion: boolean): number {
+  return fxOff ? 0 : reducedMotion ? SWAY_RULES.reducedMotionScale : 1;
+}
 
 const OMEGA = 2 * Math.PI * SWAY_RULES.frequencyHz;
 /** 包絡衰減的速率（每秒）。 */

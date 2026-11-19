@@ -11,11 +11,14 @@ import {
   swayAmplitude,
   swayKick,
   swayPose,
+  swayScaleFor,
   swayShare,
   swaySnapshots,
+  swaysWhenHit,
   type Sway,
   type SwayKick,
 } from '../src/level/hitSway';
+import { OBSTACLE_TYPES } from '../src/level/obstacleTypes';
 import type { VehicleState } from '../src/vehicle/bicycleModel';
 
 const FULL: SwayKick = { index: 3, across: 1, along: 0 };
@@ -69,6 +72,24 @@ describe('撞擊車速 → 晃幾成', () => {
     expect(swayShare(mphToMps(6))).toBeCloseTo(1, 9);
     expect(swayShare(mphToMps(20))).toBe(1);
     expect(swayShare(mphToMps(-3))).toBeCloseTo(0.575, 9);
+  });
+});
+
+describe('哪些東西會晃、晃多大', () => {
+  test('停著的車、休旅車、貨車、救護車、餐車會晃；柱、錐、推車、回收架這些不會', () => {
+    for (const type of ['parked_car', 'surf_suv', 'delivery_van', 'ambulance', 'food_truck'] as const) {
+      expect(swaysWhenHit(type)).toBe(true);
+    }
+    const others = OBSTACLE_TYPES.filter((type) => !swaysWhenHit(type));
+    expect(others).toEqual(expect.arrayContaining(['pillar', 'cone', 'shopping_cart', 'cart_corral']));
+    expect(others).toHaveLength(OBSTACLE_TYPES.length - 5);
+  });
+
+  test('比例：一般是 1；減少動態效果是 0.3；?fx=off 是 0（不論有沒有減少動態效果）', () => {
+    expect(swayScaleFor(false, false)).toBe(1);
+    expect(swayScaleFor(false, true)).toBe(0.3);
+    expect(swayScaleFor(true, false)).toBe(0);
+    expect(swayScaleFor(true, true)).toBe(0);
   });
 });
 
