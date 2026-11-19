@@ -8,7 +8,12 @@ import {
   storeView,
 } from './core/cameraView';
 import { browserAudioHost, createAudioEngine, type AudioSnapshot } from './audio/audioEngine';
-import { DIRECTOR_START, directSound } from './audio/soundDirector';
+import {
+  DIRECTOR_START,
+  directSound,
+  sensorSnapshot,
+  type SensorSnapshot,
+} from './audio/soundDirector';
 import { loadBindings, saveBindings } from './core/controls';
 import { loadCurrentLevel, storeCurrentLevel } from './core/currentLevel';
 import { advanceFixedLoop } from './core/fixedLoop';
@@ -56,6 +61,7 @@ import { PROTOTYPE_WORLD, type LevelDefinition } from './level/levelSchema';
 import { bestChallenges, recordResult } from './level/progress';
 import { bakedSurfaces } from './materials/surfaceLibrary';
 import { PROTOTYPE_LEVEL } from './level/prototypeLayout';
+import { rearClearanceFt } from './level/rearSensor';
 import type { SpotGlowSnapshot } from './props/spotGlow';
 import { stepsToSeconds } from './level/scoring';
 import {
@@ -116,8 +122,8 @@ declare global {
       readonly spotGlow: () => SpotGlowSnapshot;
       /** 鏡頭目前的模式、位置、視角，以及車在畫面上的位置。 */
       readonly camera: () => CameraSnapshot;
-      /** 音效：解鎖了沒、AudioContext 的狀態、音量、正在響的聲音、累計的嗶聲與悶響。 */
-      readonly audio: () => AudioSnapshot;
+      /** 音效：解鎖了沒、AudioContext 的狀態、音量、正在響的聲音、累計的嗶聲與悶響；倒車雷達量到的距離與節奏。 */
+      readonly audio: () => AudioSnapshot & SensorSnapshot;
       /** 響著的車輛警報：障礙物索引、剩餘秒數、燈現在亮不亮。 */
       readonly alarms: () => AlarmSnapshot[];
       /** 每台救護車的燈條：障礙物索引、模式、三組燈現在亮不亮。 */
@@ -353,7 +359,7 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
     snapshot: () => sessionSnapshot(session),
     spotGlow: () => gameScene.spotGlow(),
     camera: () => cameraSnapshot(gameCamera, shownPose),
-    audio: () => audio.snapshot(),
+    audio: () => ({ ...audio.snapshot(), ...sensorSnapshot(director) }),
     alarms: () => alarmSnapshots(alarms, lampMotion),
     lightbars: () => lightbarSnapshots(alarms, reactions, lampMotion),
   });
@@ -446,6 +452,11 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
       restarted,
       running: stillRunning,
       gear,
+      // 倒車雷達：只有 R 檔才量車尾後面的距離。
+      rearDistanceFt:
+        stillRunning && gear === 'reverse'
+          ? rearClearanceFt(session.vehicle, layout.obstacles ?? [])
+          : Number.POSITIVE_INFINITY,
       hits,
       alarms,
     });

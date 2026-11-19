@@ -34,8 +34,31 @@ export const VOICE_SETTINGS = {
   yelp: { lowHz: 650, highHz: 1500, sweepsPerSecond: 4, lowpassHz: 2600, gain: 0.16 },
   /** 救護車警笛的短鳴：鋸齒波過帶通，來回掃頻。 */
   siren: { lowHz: 650, highHz: 1550, sweepsPerSecond: 3.3, bandpassHz: 1100, bandpassQ: 0.8, gain: 0.2 },
-  /** 倒車嗶聲：正弦加一個弱的二倍頻；每 periodS 秒（模擬時間）一聲。 */
-  beep: { hz: 1000, overtoneGain: 0.25, durationS: 0.22, periodS: 0.8, edgeS: 0.008, gain: 0.18 },
+  /**
+   * 倒車嗶聲（倒車雷達）：正弦加一個弱的二倍頻。車尾後面沒有東西時每 periodS 秒（模擬時間）一聲、一聲 durationS 秒；
+   * 車尾離後面的東西不到 farFt 就越嗶越快（週期隨距離線性縮短，到 nearFt 時是 nearPeriodS），不到 nearFt 變成一個長音。
+   */
+  beep: {
+    hz: 1000,
+    overtoneGain: 0.25,
+    durationS: 0.22,
+    periodS: 0.8,
+    edgeS: 0.008,
+    gain: 0.18,
+    /** 8 ft：倒車常見的 3–5 mph 從這裡到 nearFt 要 1–1.6 秒，聽得出來越來越急；再短就只剩一兩聲。 */
+    farFt: 8,
+    /** 1 ft（真車的倒車雷達也是 30 cm 左右變長音）。 */
+    nearFt: 1,
+    nearPeriodS: 0.13,
+    /** 長音響起之後，要退到這個距離以外才變回一聲一聲（不在邊界上來回跳）。 */
+    releaseFt: 1.25,
+    /** 一聲最長佔週期的這個比例：嗶得再快，兩聲之間也有空檔。 */
+    dutyShare: 0.55,
+    /** 上一聲結束之後至少隔這麼久才有下一聲（距離突然變近時也不會疊在一起）。 */
+    gapS: 0.03,
+    /** 長音停掉時的淡出（秒）。 */
+    toneFadeS: 0.03,
+  },
   /** 持續的聲音開始、開關時的斜坡（秒），避免爆音。 */
   edgeS: 0.012,
   /** 悶響用的雜訊：固定種子，每次都是同一段。 */
@@ -132,29 +155,39 @@ export function playThud(
   slidingSine(context, out, thud.knockHz, thud.knockGain, now, thud.knockDurationS);
 }
 
-/** 倒車嗶聲（一聲）。節奏由 soundDirector 用模擬時間決定。 */
-export function playBeep(context: BaseAudioContext, output: AudioNode): void {
+/** 嗶聲的音色：基音加一個弱的二倍頻，接到 output；回傳兩個還沒啟動的振盪器。 */
+function beepPartials(context: BaseAudioContext, output: AudioNode): readonly OscillatorNode[] {
   const beep = VOICE_SETTINGS.beep;
-  const now = context.currentTime;
-  const envelope = context.createGain();
-  envelope.gain.setValueAtTime(0, now);
-  envelope.gain.linearRampToValueAtTime(beep.gain, now + beep.edgeS);
-  envelope.gain.setValueAtTime(beep.gain, now + beep.durationS - beep.edgeS);
-  envelope.gain.linearRampToValueAtTime(0, now + beep.durationS);
-  envelope.connect(output);
-  for (const [hz, level] of [
-    [beep.hz, 1],
-    [beep.hz * 2, beep.overtoneGain],
-  ] as const) {
+  return (
+    [
+      [beep.hz, 1],
+      [beep.hz * 2, beep.overtoneGain],
+    ] as const
+  ).map(([hz, level]) => {
     const oscillator = context.createOscillator();
     oscillator.type = 'sine';
     oscillator.frequency.value = hz;
     const partial = context.createGain();
     partial.gain.value = level;
     oscillator.connect(partial);
-    partial.connect(envelope);
+    partial.connect(output);
+    return oscillator;
+  });
+}
+
+/** 倒車嗶聲（一聲，durationS 秒）。節奏與長度由 soundDirector 用模擬時間與車尾的距離決定。 */
+export function playBeep(context: BaseAudioContext, output: AudioNode, durationS: number): void {
+  const beep = VOICE_SETTINGS.beep;
+  const now = context.currentTime;
+  const envelope = context.createGain();
+  envelope.gain.setValueAtTime(0, now);
+  envelope.gain.linearRampToValueAtTime(beep.gain, now + beep.edgeS);
+  envelope.gain.setValueAtTime(beep.gain, now + durationS - beep.edgeS);
+  envelope.gain.linearRampToValueAtTime(0, now + durationS);
+  envelope.connect(output);
+  for (const oscillator of beepPartials(context, envelope)) {
     oscillator.start(now);
-    oscillator.stop(now + beep.durationS);
+    oscillator.stop(now + durationS);
   }
 }
 
@@ -194,6 +227,11 @@ function sustain(
       }
     },
   };
+}
+
+/** 倒車雷達的長音（快碰到了）：與嗶聲同一個音色、同一個音量，一直響到 stop。 */
+export function startBeepTone(context: BaseAudioContext, output: AudioNode): SustainedVoice {
+  return sustain(context, output, VOICE_SETTINGS.beep.gain, (out) => beepPartials(context, out));
 }
 
 /** 掃頻的鋸齒波：載波在 lowHz 與 highHz 之間，由一個低頻振盪器（sweep 的波形決定怎麼掃）推著走。 */

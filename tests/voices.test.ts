@@ -5,6 +5,7 @@ import {
   createNoiseBuffer,
   playBeep,
   playThud,
+  startBeepTone,
   startHorn,
   startSiren,
   startYelp,
@@ -129,7 +130,7 @@ describe('碰撞悶響', () => {
 describe('倒車嗶聲', () => {
   test('1000 Hz 正弦加弱的 2000 Hz，0.22 秒，起音與收音各 8 ms，音量 0.18', () => {
     const { context, bus } = stage();
-    playBeep(asContext(context), asNode(bus));
+    playBeep(asContext(context), asNode(bus), VOICE_SETTINGS.beep.durationS);
     const now = context.currentTime;
     const tones = context.of('oscillator');
     expect(tones.map((tone) => [tone.type, tone.frequency.value])).toEqual([
@@ -152,6 +153,54 @@ describe('倒車嗶聲', () => {
     expect(partials.map((partial) => partial.gain.value)).toEqual([1, 0.25]);
     for (const partial of partials) {
       expect(partial.outputs).toEqual([envelope]);
+    }
+  });
+});
+
+describe('倒車雷達', () => {
+  test('嗶得快的時候一聲比較短：長度是傳進來的秒數，起音與收音照舊各 8 ms', () => {
+    const { context, bus } = stage();
+    playBeep(asContext(context), asNode(bus), 0.07);
+    const now = context.currentTime;
+    for (const tone of context.of('oscillator')) {
+      expect(tone.starts).toEqual([now]);
+      expect(tone.stops).toEqual([now + 0.07]);
+    }
+    const envelope = context.of('gain').find((node) => node.outputs.includes(bus));
+    expect(envelope?.gain.events).toEqual([
+      ['setValueAtTime', 0, now],
+      ['linearRampToValueAtTime', 0.18, now + 0.008],
+      ['setValueAtTime', 0.18, now + 0.07 - 0.008],
+      ['linearRampToValueAtTime', 0, now + 0.07],
+    ]);
+  });
+
+  test('長音：與嗶聲同一個音色（1000 Hz 加弱的 2000 Hz）與音量，淡入之後一直響到 stop', () => {
+    const { context, bus } = stage();
+    const tone = startBeepTone(asContext(context), asNode(bus));
+    const now = context.currentTime;
+    const tones = context.of('oscillator');
+    expect(tones.map((each) => [each.type, each.frequency.value])).toEqual([
+      ['sine', 1000],
+      ['sine', 2000],
+    ]);
+    expect(tones.map((each) => (each.outputs[0] as FakeNode).gain.value)).toEqual([1, 0.25]);
+    const out = context.of('gain').find((node) => node.outputs.includes(bus));
+    expect(out?.gain.value).toBe(0);
+    expect(out?.gain.events).toEqual([
+      ['setValueAtTime', 0, now],
+      ['linearRampToValueAtTime', VOICE_SETTINGS.beep.gain, now + VOICE_SETTINGS.edgeS],
+    ]);
+    for (const each of tones) {
+      expect(reaches(each, bus)).toBe(true);
+      expect(each.starts).toEqual([now]);
+      expect(each.stops).toEqual([]);
+    }
+    context.currentTime += 2;
+    tone.stop(0.03);
+    expect(lastEvent(out?.gain.events ?? [])).toEqual(['setTargetAtTime', 0, now + 2, 0.03 / 5]);
+    for (const each of tones) {
+      expect(each.stops).toEqual([now + 2 + 0.03]);
     }
   });
 });

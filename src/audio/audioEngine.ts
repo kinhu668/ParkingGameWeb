@@ -7,9 +7,11 @@ import {
   createNoiseBuffer,
   playBeep,
   playThud,
+  startBeepTone,
   startHorn,
   startSiren,
   startYelp,
+  VOICE_SETTINGS,
   type SustainedVoice,
 } from './voices';
 
@@ -60,7 +62,7 @@ export interface AudioSnapshot {
   readonly contextState: string;
   readonly volume: number;
   readonly muted: boolean;
-  /** 正在響的持續聲音，例如 ['alarm:12', 'siren:0']。 */
+  /** 正在響的持續聲音，例如 ['alarm:12', 'siren:0']；倒車雷達的長音是 'beepTone'。 */
   readonly voices: readonly string[];
   /** 累計嗶了幾聲。 */
   readonly beeps: number;
@@ -87,6 +89,9 @@ export interface AudioEngine {
 export function masterGain(settings: AudioSettings): number {
   return settings.muted ? 0 : (settings.volume / MAX_VOLUME) ** 2 * MASTER_HEADROOM;
 }
+
+/** 倒車雷達的長音在快照裡的名字。 */
+const TONE_KEY = 'beepTone';
 
 /** 這個警報的聲音在快照裡的名字。 */
 function voiceKey(index: number, siren: boolean): string {
@@ -136,9 +141,14 @@ export function createAudioEngine(host: AudioHost, initial: AudioSettings): Audi
   let listening = false;
   let beeps = 0;
   let thuds = 0;
-  /** 持續的聲音：名字 → 聲音；alarms 記每個障礙物索引用的是哪個名字。 */
+  /** 持續的聲音：名字 → 聲音；keys 記每個障礙物索引的警報用的是哪個名字。 */
   const voices = new Map<string, SustainedVoice>();
   const keys = new Map<number, string>();
+  /**
+   * 倒車雷達的長音現在該不該響。它是一個「狀態」而不是一次性的聲音：context 停住太久而沒有開始的話，
+   * 恢復出聲後的下一幀補上（車還貼著後面的東西，長音就該在）。
+   */
+  let toneWanted = false;
 
   function listen(on: boolean): void {
     if (listening === on) {
@@ -253,8 +263,15 @@ export function createAudioEngine(host: AudioHost, initial: AudioSettings): Audi
         thuds += 1;
         break;
       case 'beep':
-        playBeep(context, sfx);
+        playBeep(context, sfx, command.durationS);
         beeps += 1;
+        break;
+      case 'beepTone':
+        toneWanted = command.on;
+        if (!command.on) {
+          voices.get(TONE_KEY)?.stop(VOICE_SETTINGS.beep.toneFadeS);
+          voices.delete(TONE_KEY);
+        }
         break;
       case 'alarmStart': {
         if (keys.has(command.index)) {
@@ -311,6 +328,9 @@ export function createAudioEngine(host: AudioHost, initial: AudioSettings): Audi
         if (canStart || !startsSound(command)) {
           execute(graph, command);
         }
+      }
+      if (toneWanted && canStart && !voices.has(TONE_KEY)) {
+        voices.set(TONE_KEY, startBeepTone(graph.context, graph.sfx));
       }
     },
     setAudio: (next) => {

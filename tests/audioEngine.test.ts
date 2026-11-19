@@ -83,7 +83,7 @@ afterEach(() => {
 describe('第一個手勢之前', () => {
   test('不建立 AudioContext、沒有聲音、指令直接丟掉（不排隊）', async () => {
     const { context, engine, created, target } = setup();
-    engine.run([{ type: 'thud', gain: 1 }, { type: 'beep' }, HORN]);
+    engine.run([{ type: 'thud', gain: 1 }, { type: 'beep', durationS: 0.22 }, HORN]);
     engine.setHeld(true);
     engine.setHeld(false);
     engine.setHidden(true);
@@ -157,7 +157,7 @@ describe('解鎖', () => {
   test('解鎖的手勢之後的指令照常執行，即使 context 還沒回報 running', () => {
     const { target, engine } = setup();
     target.fire('keydown');
-    engine.run([{ type: 'thud', gain: 0.5 }, { type: 'beep' }, HORN]);
+    engine.run([{ type: 'thud', gain: 0.5 }, { type: 'beep', durationS: 0.22 }, HORN]);
     expect(engine.snapshot()).toMatchObject({ voices: ['alarm:12'], beeps: 1, thuds: 1 });
   });
 
@@ -168,9 +168,9 @@ describe('解鎖', () => {
     for (let frame = 0; frame < 30; frame += 1) {
       engine.run([]);
     }
-    engine.run([{ type: 'thud', gain: 0.5 }, { type: 'beep' }, HORN]);
+    engine.run([{ type: 'thud', gain: 0.5 }, { type: 'beep', durationS: 0.22 }, HORN]);
     target.fire('keydown');
-    engine.run([{ type: 'beep' }]);
+    engine.run([{ type: 'beep', durationS: 0.22 }]);
     await settled();
     expect(engine.snapshot()).toMatchObject({ contextState: 'suspended', voices: [], beeps: 0, thuds: 0 });
     expect(context.of('oscillator')).toEqual([]);
@@ -179,7 +179,7 @@ describe('解鎖', () => {
     context.blocked = false;
     target.fire('keydown');
     await settled();
-    engine.run([{ type: 'beep' }]);
+    engine.run([{ type: 'beep', durationS: 0.22 }]);
     expect(engine.snapshot()).toMatchObject({ contextState: 'running', beeps: 1 });
   });
 
@@ -190,7 +190,7 @@ describe('解鎖', () => {
   ])('%s 不算使用者啟動：不建立 context、不算解鎖，繼續聽', (_name, type, detail) => {
     const { target, engine, created } = setup();
     target.fire(type, detail);
-    engine.run([{ type: 'beep' }]);
+    engine.run([{ type: 'beep', durationS: 0.22 }]);
     expect(created()).toBe(0);
     expect(engine.snapshot()).toMatchObject({ unlockRequested: false, contextState: 'none', beeps: 0 });
     expect(target.listening().sort()).toEqual([...GESTURES].sort());
@@ -240,7 +240,7 @@ describe('訊號路徑', () => {
     const sfx = sfxOf(context);
     engine.run([
       { type: 'thud', gain: 0.5 },
-      { type: 'beep' },
+      { type: 'beep', durationS: 0.22 },
       HORN,
       { type: 'alarmStart', index: 2, variant: { sound: 'yelp' } },
       SIREN,
@@ -269,7 +269,7 @@ describe('訊號路徑', () => {
 describe('指令', () => {
   test('悶響與嗶聲累計次數；警報與警笛出現在 voices，停了就消失', async () => {
     const { context, engine } = await unlocked();
-    engine.run([{ type: 'thud', gain: 0.4 }, { type: 'thud', gain: 1 }, { type: 'beep' }]);
+    engine.run([{ type: 'thud', gain: 0.4 }, { type: 'thud', gain: 1 }, { type: 'beep', durationS: 0.22 }]);
     expect(engine.snapshot()).toMatchObject({ thuds: 2, beeps: 1, voices: [] });
     engine.run([HORN, SIREN]);
     expect(engine.snapshot().voices).toEqual(['alarm:12', 'siren:0']);
@@ -317,6 +317,77 @@ describe('指令', () => {
     }
     engine.run([HORN]);
     expect(engine.snapshot().voices).toEqual(['alarm:12']);
+  });
+});
+
+describe('倒車雷達', () => {
+  test('嗶聲的長度照指令；長音出現在 voices，進 sfx 匯流排，關掉就在 0.03 秒內淡出', async () => {
+    const { context, engine } = await unlocked();
+    context.currentTime = 4;
+    engine.run([{ type: 'beep', durationS: 0.07 }]);
+    expect(context.of('oscillator').map((tone) => tone.stops)).toEqual([[4.07], [4.07]]);
+
+    engine.run([{ type: 'beepTone', on: true }]);
+    expect(engine.snapshot().voices).toEqual(['beepTone']);
+    const tones = context.of('oscillator').slice(2);
+    expect(tones).toHaveLength(2);
+    for (const tone of tones) {
+      expect(downstream(tone)).toContain(sfxOf(context));
+      expect(tone.stops).toEqual([]);
+    }
+    // 之後每一幀都不會再疊一個。
+    engine.run([]);
+    engine.run([]);
+    expect(context.of('oscillator')).toHaveLength(4);
+
+    context.currentTime = 6;
+    engine.run([{ type: 'beepTone', on: false }]);
+    expect(engine.snapshot().voices).toEqual([]);
+    for (const tone of tones) {
+      expect(tone.stops).toEqual([6.03]);
+    }
+    engine.run([]);
+    expect(context.of('oscillator')).toHaveLength(4);
+  });
+
+  test('stopAll 只停警報；長音由它自己的指令停', async () => {
+    const { engine } = await unlocked();
+    engine.run([HORN, { type: 'beepTone', on: true }]);
+    engine.run([{ type: 'stopAll', fadeS: 0.03 }]);
+    expect(engine.snapshot().voices).toEqual(['beepTone']);
+  });
+
+  test('context 停住太久時該響的長音：先不開始，恢復出聲後的下一幀補上；期間關掉就不補', async () => {
+    const { context, engine } = await unlocked();
+    context.setState('suspended');
+    for (let frame = 0; frame < 30; frame += 1) {
+      engine.run([]);
+    }
+    engine.run([{ type: 'beepTone', on: true }]);
+    engine.run([]);
+    expect(engine.snapshot().voices).toEqual([]);
+    expect(context.of('oscillator')).toEqual([]);
+    context.setState('running');
+    engine.run([]);
+    expect(engine.snapshot().voices).toEqual(['beepTone']);
+
+    engine.run([{ type: 'beepTone', on: false }]);
+    context.setState('suspended');
+    for (let frame = 0; frame < 30; frame += 1) {
+      engine.run([]);
+    }
+    engine.run([{ type: 'beepTone', on: true }]);
+    engine.run([{ type: 'beepTone', on: false }]);
+    context.setState('running');
+    engine.run([]);
+    expect(engine.snapshot().voices).toEqual([]);
+  });
+
+  test('解鎖之前的長音指令丟掉，不丟例外', () => {
+    const { engine } = setup();
+    engine.run([{ type: 'beepTone', on: true }]);
+    engine.run([{ type: 'beepTone', on: false }]);
+    expect(engine.snapshot().voices).toEqual([]);
   });
 });
 
@@ -500,13 +571,13 @@ describe('暫停與背景分頁', () => {
       for (let frame = 0; frame < 29; frame += 1) {
         engine.run([]);
       }
-      engine.run([{ type: 'beep' }]);
+      engine.run([{ type: 'beep', durationS: 0.22 }]);
       expect(engine.snapshot().beeps).toBe(1);
       const queued = context.of('oscillator').length;
 
       // 之後：這段時間的嗶聲、悶響、新的警報都不排隊。
       for (let frame = 0; frame < 5; frame += 1) {
-        engine.run([{ type: 'beep' }, { type: 'thud', gain: 1 }, SIREN]);
+        engine.run([{ type: 'beep', durationS: 0.22 }, { type: 'thud', gain: 1 }, SIREN]);
       }
       expect(engine.snapshot()).toMatchObject({ voices: ['alarm:12'], beeps: 1, thuds: 0 });
       expect(context.of('oscillator')).toHaveLength(queued);
@@ -524,7 +595,7 @@ describe('暫停與背景分頁', () => {
       context.blocked = false;
       target.fire('touchend');
       await settled();
-      engine.run([{ type: 'beep' }, { type: 'thud', gain: 1 }, SIREN]);
+      engine.run([{ type: 'beep', durationS: 0.22 }, { type: 'thud', gain: 1 }, SIREN]);
       expect(engine.snapshot()).toMatchObject({
         contextState: 'running',
         voices: ['siren:0'],
@@ -543,7 +614,7 @@ describe('暫停與背景分頁', () => {
     }
     engine.setHeld(false);
     expect(context.state).toBe('suspended');
-    engine.run([{ type: 'beep' }, { type: 'thud', gain: 1 }, HORN]);
+    engine.run([{ type: 'beep', durationS: 0.22 }, { type: 'thud', gain: 1 }, HORN]);
     expect(engine.snapshot()).toMatchObject({ voices: ['alarm:12'], beeps: 1, thuds: 1 });
     await settled();
     expect(context.state).toBe('running');
@@ -593,7 +664,7 @@ describe('不能出聲的環境', () => {
     }).not.toThrow();
     expect(target.listening()).toEqual([]);
     target.fire('keydown');
-    engine.run([{ type: 'beep' }]);
+    engine.run([{ type: 'beep', durationS: 0.22 }]);
     expect(attempts).toBe(1);
     expect(engine.snapshot()).toMatchObject({ unlockRequested: true, contextState: 'none', beeps: 0 });
     expect(error).not.toHaveBeenCalled();
@@ -609,7 +680,7 @@ describe('不能出聲的環境', () => {
       target.fire('keydown');
     }).not.toThrow();
     target.fire('keydown');
-    engine.run([{ type: 'beep' }]);
+    engine.run([{ type: 'beep', durationS: 0.22 }]);
     expect(created()).toBe(1);
     expect(context.closes).toBe(1);
     expect(target.listening()).toEqual([]);

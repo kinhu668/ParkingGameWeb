@@ -1,9 +1,13 @@
-// 聲音導演：悶響的音量、每台車的警報聲、喇叭跟燈號同相、再撞不重來、第 4 台讓位、重來與結束全停、倒車嗶聲的節奏。
+// 聲音導演：悶響的音量、每台車的警報聲、喇叭跟燈號同相、再撞不重來、第 4 台讓位、重來與結束全停、倒車嗶聲的節奏、
+// 倒車雷達（越近越快、夠近變長音）。
 import { describe, expect, test } from 'vitest';
 import {
   DIRECTOR_START,
   alarmVariant,
+  beepIntervalS,
+  beepLengthS,
   directSound,
+  sensorSnapshot,
   thudGain,
   type DirectorFrame,
   type DirectorState,
@@ -29,6 +33,7 @@ const QUIET: DirectorFrame = {
   restarted: false,
   running: true,
   gear: 'forward',
+  rearDistanceFt: Number.POSITIVE_INFINITY,
   hits: [],
   alarms: NO_ALARMS,
 };
@@ -292,5 +297,186 @@ describe('倒車嗶聲', () => {
       ...quiet(1),
     ]);
     expect(ofType(commands, 'beep')).toHaveLength(1);
+  });
+});
+
+describe('倒車雷達：距離 → 節奏', () => {
+  const { farFt, nearFt, periodS, nearPeriodS, durationS, dutyShare } = VOICE_SETTINGS.beep;
+
+  test('8 ft 以外（含正後方沒有東西）是原本的 0.8 秒；剛好 1 ft 是 0.13 秒；不到 1 ft 是 0（長音）', () => {
+    expect([farFt, nearFt, periodS, nearPeriodS]).toEqual([8, 1, 0.8, 0.13]);
+    expect(beepIntervalS(Number.POSITIVE_INFINITY)).toBe(periodS);
+    expect(beepIntervalS(40)).toBe(periodS);
+    expect(beepIntervalS(farFt)).toBeCloseTo(periodS, 9);
+    expect(beepIntervalS(nearFt)).toBeCloseTo(nearPeriodS, 9);
+    expect(beepIntervalS(nearFt - 0.001)).toBe(0);
+    expect(beepIntervalS(0)).toBe(0);
+  });
+
+  test('中間隨距離線性縮短：4.5 ft 是兩端的平均', () => {
+    expect(beepIntervalS((farFt + nearFt) / 2)).toBeCloseTo((periodS + nearPeriodS) / 2, 9);
+  });
+
+  test('越近間隔越短（單調），而且在 1 ft 以外是連續的（沒有跳一大格）', () => {
+    let previous = beepIntervalS(12);
+    for (let distance = 12; distance >= 0; distance -= 0.01) {
+      const interval = beepIntervalS(distance);
+      expect(interval).toBeLessThanOrEqual(previous + 1e-12);
+      if (distance >= nearFt) {
+        expect(previous - interval).toBeLessThan(0.002);
+      }
+      previous = interval;
+    }
+  });
+
+  test('一聲的長度跟著間隔縮短，永遠比間隔短：0.8 秒時是 0.22 秒，0.13 秒時約 0.07 秒', () => {
+    expect(beepLengthS(periodS)).toBe(durationS);
+    expect(beepLengthS(nearPeriodS)).toBeCloseTo(nearPeriodS * dutyShare, 9);
+    for (let distance = nearFt; distance <= 12; distance += 0.05) {
+      const interval = beepIntervalS(distance);
+      expect(beepLengthS(interval)).toBeLessThan(interval - VOICE_SETTINGS.beep.gapS);
+      // 起音與收音各 8 ms 放得進去。
+      expect(beepLengthS(interval)).toBeGreaterThan(4 * VOICE_SETTINGS.beep.edgeS);
+    }
+  });
+});
+
+describe('倒車雷達：導演', () => {
+  const beep = VOICE_SETTINGS.beep;
+  const reverse = (rearDistanceFt: number): Partial<DirectorFrame> => ({ gear: 'reverse', rearDistanceFt });
+  const gapsS = (frames: readonly number[]): number[] =>
+    frames.slice(1).map((frame, index) => (frame - (frames[index] ?? 0)) * FIXED_STEP_SECONDS);
+
+  test('距離固定時照那個距離的間隔嗶：4.5 ft 約 0.465 秒一聲，1.2 ft 約 0.15 秒一聲，而且比較短', () => {
+    for (const distance of [4.5, 1.2]) {
+      const beeps = ofType(play(quiet(3, reverse(distance))).commands, 'beep');
+      const interval = beepIntervalS(distance);
+      expect(beeps.length).toBeGreaterThan(3 / interval - 2);
+      for (const gap of gapsS(beeps.map((each) => each.frame))) {
+        // 一幀 1/60 秒：間隔是「不小於那個間隔的最少幀數」。
+        expect(gap).toBeGreaterThanOrEqual(interval - 1e-9);
+        expect(gap).toBeLessThan(interval + FIXED_STEP_SECONDS + 1e-9);
+      }
+      for (const each of beeps) {
+        expect(each.durationS).toBeCloseTo(beepLengthS(interval), 9);
+      }
+    }
+  });
+
+  test('一路倒車靠近：嗶聲越來越密、越來越短，最後換成長音，之後不再一聲一聲地嗶', () => {
+    // 3 秒內從 10 ft 退到 0.4 ft（約 2.2 mph）。
+    const frames = Array.from({ length: 180 }, (_, frame) => reverse(10 - (9.6 * frame) / 179));
+    const { commands, director } = play(frames);
+    const beeps = ofType(commands, 'beep');
+    const gaps = gapsS(beeps.map((each) => each.frame));
+    expect(beeps.length).toBeGreaterThanOrEqual(6);
+    gaps.slice(1).forEach((gap, index) => {
+      expect(gap).toBeLessThanOrEqual((gaps[index] ?? 0) + 1e-9);
+    });
+    expect(gaps[0]).toBeGreaterThan(0.6);
+    expect(gaps.at(-1)).toBeLessThan(0.25);
+    beeps.slice(1).forEach((each, index) => {
+      expect(each.durationS).toBeLessThanOrEqual((beeps[index]?.durationS ?? 0) + 1e-9);
+    });
+    // 下一聲永遠在上一聲結束之後。
+    beeps.slice(1).forEach((each, index) => {
+      const previous = beeps[index];
+      expect((each.frame - (previous?.frame ?? 0)) * FIXED_STEP_SECONDS).toBeGreaterThanOrEqual(
+        (previous?.durationS ?? 0) + beep.gapS - 1e-9,
+      );
+    });
+    const tones = ofType(commands, 'beepTone');
+    expect(tones.map((tone) => tone.on)).toEqual([true]);
+    expect(beeps.every((each) => each.frame < (tones[0]?.frame ?? 0))).toBe(true);
+    expect(director.tone).toBe(true);
+    expect(sensorSnapshot(director)).toMatchObject({ beepIntervalS: 0, continuousBeep: true });
+    expect(sensorSnapshot(director).rearDistanceFt).toBeCloseTo(0.4, 9);
+  });
+
+  test('長音等上一聲嗶結束才開始（同頻率的兩個聲音不疊在一起）', () => {
+    // 遠處先嗶一聲（0.22 秒長），下一幀起突然只剩 0.5 ft。
+    const { commands } = play([reverse(20), ...quiet(1, reverse(0.5))]);
+    const [first] = ofType(commands, 'beep');
+    const [tone] = ofType(commands, 'beepTone');
+    expect(ofType(commands, 'beep')).toHaveLength(1);
+    expect(tone?.on).toBe(true);
+    expect(((tone?.frame ?? 0) - (first?.frame ?? 0)) * FIXED_STEP_SECONDS).toBeGreaterThanOrEqual(
+      beep.durationS - 1e-9,
+    );
+    expect(((tone?.frame ?? 0) - (first?.frame ?? 0)) * FIXED_STEP_SECONDS).toBeLessThan(
+      beep.durationS + 2 * FIXED_STEP_SECONDS,
+    );
+  });
+
+  test('已經貼著後面的東西才掛 R 檔：直接是長音，沒有那一聲嗶', () => {
+    const { commands } = play(quiet(0.5, reverse(0.3)));
+    expect(commands).toEqual([{ frame: 0, command: { type: 'beepTone', on: true } }]);
+  });
+
+  test('長音響起之後要退到 1.25 ft 以外才變回一聲一聲；退開之後隔一個間隔才嗶第一聲', () => {
+    const near = play(quiet(0.5, reverse(0.8)));
+    const held = play(quiet(1, reverse(1.2)), near);
+    expect(held.commands).toEqual([]);
+    expect(sensorSnapshot(held.director)).toEqual({ rearDistanceFt: 1.2, beepIntervalS: 0, continuousBeep: true });
+    const released = play(quiet(1, reverse(1.3)), held);
+    expect(released.commands[0]).toEqual({ frame: 0, command: { type: 'beepTone', on: false } });
+    const beeps = ofType(released.commands, 'beep');
+    expect(beeps.length).toBeGreaterThan(3);
+    expect((beeps[0]?.frame ?? 0) * FIXED_STEP_SECONDS).toBeGreaterThanOrEqual(beepIntervalS(1.3) - 0.02);
+    // 沒開過長音的時候，1.2 ft 是一聲一聲的（遲滯只在長音響著時才有）。
+    expect(ofType(play(quiet(1, reverse(1.2))).commands, 'beepTone')).toEqual([]);
+  });
+
+  const ended: Partial<DirectorFrame> = { ...reverse(0.5), running: false };
+  test.each<[string, Partial<DirectorFrame>, Partial<DirectorFrame>]>([
+    ['切回 D 檔', { gear: 'forward' }, {}],
+    ['這一局結束', ended, ended],
+    ['重來', { restarted: true }, {}],
+  ])('%s：長音停掉', (_name, frame, later) => {
+    const near = play(quiet(0.5, reverse(0.5)));
+    const after = play([frame, ...quiet(0.5, later)], near);
+    expect(ofType(after.commands, 'beepTone')).toEqual([{ type: 'beepTone', on: false, frame: 0 }]);
+    expect(after.director.tone).toBe(false);
+    expect(sensorSnapshot(after.director)).toEqual({
+      rearDistanceFt: null,
+      beepIntervalS: null,
+      continuousBeep: false,
+    });
+  });
+
+  test('暫停（dtS = 0）：不嗶、長音的狀態不變；繼續之後接著原本的相位', () => {
+    const started = play(quiet(0.3, reverse(4.5)));
+    const paused = play(quiet(5, { ...reverse(4.5), dtS: 0 }), started);
+    expect(paused.commands).toEqual([]);
+    const resumed = play(quiet(0.3, reverse(4.5)), paused);
+    // 0.3 秒前嗶過一聲，間隔 0.465 秒：繼續後約 0.165 秒嗶下一聲。
+    const [next] = ofType(resumed.commands, 'beep');
+    expect((next?.frame ?? 0) * FIXED_STEP_SECONDS).toBeCloseTo(beepIntervalS(4.5) - 0.3, 1);
+
+    const toned = play(quiet(0.3, reverse(0.5)));
+    expect(play(quiet(5, { ...reverse(0.5), dtS: 0 }), toned).commands).toEqual([]);
+  });
+
+  test('一幀很長（卡了一下）也只嗶一聲，不會補嗶', () => {
+    const { commands } = play([reverse(1.2), { ...reverse(1.2), dtS: 0.25 }, reverse(1.2)]);
+    expect(ofType(commands, 'beep').map((each) => each.frame)).toEqual([0, 1]);
+  });
+
+  test('快照：不在 R 檔沒有讀數；R 檔而正後方沒有東西，距離是 null、間隔是 0.8 秒', () => {
+    expect(sensorSnapshot(DIRECTOR_START)).toEqual({
+      rearDistanceFt: null,
+      beepIntervalS: null,
+      continuousBeep: false,
+    });
+    expect(sensorSnapshot(play([reverse(Number.POSITIVE_INFINITY)]).director)).toEqual({
+      rearDistanceFt: null,
+      beepIntervalS: 0.8,
+      continuousBeep: false,
+    });
+    expect(sensorSnapshot(play([reverse(4.5)]).director)).toEqual({
+      rearDistanceFt: 4.5,
+      beepIntervalS: beepIntervalS(4.5),
+      continuousBeep: false,
+    });
   });
 });

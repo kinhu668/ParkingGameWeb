@@ -3,6 +3,7 @@
 // 操作一律送真實的鍵盤與滑鼠事件。型別只用 import type（規格檔不能把語系 JSON 帶進來）。
 import type { Page } from '@playwright/test';
 import type { AudioSnapshot } from '../src/audio/audioEngine';
+import type { SensorSnapshot } from '../src/audio/soundDirector';
 import type { AlarmSnapshot, LightbarSnapshot } from '../src/level/alarm';
 import type { SessionSnapshot } from '../src/level/session';
 import { expect, OUTPUT_DIR, test } from './fixtures';
@@ -17,7 +18,7 @@ const SIREN_S = 2.5;
 
 interface GameState {
   readonly snapshot: SessionSnapshot;
-  readonly audio: AudioSnapshot;
+  readonly audio: AudioSnapshot & SensorSnapshot;
   readonly alarms: readonly AlarmSnapshot[];
   readonly lightbars: readonly LightbarSnapshot[];
 }
@@ -91,6 +92,9 @@ test('解鎖：第一個手勢之前聲音引擎什麼都沒做；按鍵之後�
     voices: [],
     beeps: 0,
     thuds: 0,
+    rearDistanceFt: null,
+    beepIntervalS: null,
+    continuousBeep: false,
   });
 
   // 切換鏡頭鍵：不會動到車，但也是玩家的手勢。
