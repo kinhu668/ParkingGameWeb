@@ -18,7 +18,7 @@ import { attachKeyboardInput } from './core/input';
 import { mergePedalInputs } from './core/touchInput';
 import { msToS } from './core/units';
 import { resolveWeather } from './core/weather';
-import { loadSave, savedAudio, updateSave, withLocale } from './core/save';
+import { loadSave, savedAudio, updateSave, withAudio, withLocale } from './core/save';
 import {
   navigationSearch,
   parseAssistOffParam,
@@ -227,6 +227,13 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
       }
     },
   };
+  // 音效（純表現層，不影響判定）：第一個手勢才出聲；分頁切到背景就停住。
+  // 音量與靜音：HUD 的靜音鈕或暫停面板改了就立刻套用並存起來。
+  let audioSettings = savedAudio(loadSave(storage));
+  const audio = createAudioEngine(browserAudioHost(window), audioSettings);
+  document.addEventListener('visibilitychange', () => {
+    audio.setHidden(document.hidden);
+  });
   const hud = createHud(
     hudRoot,
     {
@@ -252,6 +259,14 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
       // 原型關不存檔，只顯示這一局的打鉤。
       best: () =>
         level.world === PROTOTYPE_WORLD ? [] : bestChallenges(loadSave(storage), level.id),
+    },
+    {
+      current: () => audioSettings,
+      change: (next) => {
+        audioSettings = next;
+        audio.setAudio(next);
+        updateSave(storage, (save) => withAudio(save, next));
+      },
     },
   );
   function setPaused(next: boolean): void {
@@ -324,11 +339,6 @@ function runGame({ renderer, quality, pipeline }: RenderContext, level: LevelDef
   /** 已經寫進存檔的那一次成績；同一次停妥只寫一次，重來後再過關會是新的成績。 */
   let savedResult: SessionResult | null = null;
 
-  // 音效與警報（純表現層，不影響判定）：第一個手勢才出聲；分頁切到背景就停住。
-  const audio = createAudioEngine(browserAudioHost(window), savedAudio(loadSave(storage)));
-  document.addEventListener('visibilitychange', () => {
-    audio.setHidden(document.hidden);
-  });
   /** 每個障礙物被撞到的反應（與 `level.obstaclesFt` 同索引；邊界牆不在裡面）。 */
   const reactions = alarmKinds(level.obstaclesFt);
   const lampMotion = lampMotionFor(

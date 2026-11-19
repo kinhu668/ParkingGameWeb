@@ -1,5 +1,5 @@
 // 疊在畫布上的 HTML HUD：車速（mph）、倒數計時、碰撞次數、檔位、角度誤差、「車位在後方」的提示、簡要操作說明、
-// 語言切換按鈕、關卡選擇按鈕、目前鏡頭名稱、結算面板（results.ts）、暫停面板（pausePanel.ts）、
+// 語言切換按鈕、關卡選擇按鈕、快速靜音鈕、目前鏡頭名稱、結算面板（results.ts）、暫停面板（pausePanel.ts）、
 // 按鍵設定面板（controlsPanel.ts）。操作說明列的是目前的按鍵綁定，不寫死。
 // 所有文字都走翻譯鍵；語言切換時就地更新，不重新載入頁面。
 import type { GameCameraView } from '../core/cameraView';
@@ -15,7 +15,7 @@ import type { Gear } from '../vehicle/gearbox';
 import { createControlsPanel, keyText, keysText, type ControlsAccess } from './controlsPanel';
 import { createUiBuilder } from './dom';
 import { GEAR_LABELS, formatAngleDeg, formatCollisions, formatTime } from './format';
-import { createPausePanel } from './pausePanel';
+import { createPausePanel, muteLabelKey, type AudioAccess } from './pausePanel';
 import {
   createResultsPanel,
   resultReadout,
@@ -173,6 +173,7 @@ export interface Hud {
  * @param resume 暫停面板按「繼續」要做的事
  * @param controls 按鍵綁定的存取（操作說明、提示文字、按鍵設定面板都用它）
  * @param challenges 這一關「N 秒內」的門檻與存檔裡拿過的挑戰（結算的打鉤用）
+ * @param audio 音量與靜音的存取（右上角的靜音鈕與暫停面板的音效列共用）
  */
 export function createHud(
   root: HTMLElement,
@@ -180,6 +181,7 @@ export function createHud(
   resume: () => void,
   controls: ControlsAccess,
   challenges: ChallengeContext,
+  audio: AudioAccess,
 ): Hud {
   const ui = createUiBuilder();
   const { element, translatedElement } = ui;
@@ -227,7 +229,8 @@ export function createHud(
   translatedElement('span', 'hud-target-distance-unit', pointerDistance, 'hud.distanceUnit');
   let pointerShown: TargetPointer | null = null;
 
-  // 右上角：語言按鈕（顯示「會切到的語言」的名稱），下面是回關卡選擇的按鈕。
+  // 右上角：語言按鈕（顯示「會切到的語言」的名稱），下面是回關卡選擇的按鈕與快速靜音鈕
+  // （手機在公共場合突然響起警報時要能一下關掉）。
   const cornerButtons = element('div', 'hud-corner', root);
   ui.languageButton('hud-language', 'hud-panel hud-button', cornerButtons);
   ui.button(
@@ -237,6 +240,19 @@ export function createHud(
     'result.levelSelect',
     actions.levelSelect,
   );
+  const muteButton = ui.plainButton('hud-mute', 'hud-panel hud-button', cornerButtons);
+  /** 音量或靜音改了：套用、存檔，靜音鈕與暫停面板的音效列一起重畫。 */
+  const audioAccess: AudioAccess = {
+    current: audio.current,
+    change(next): void {
+      audio.change(next);
+      renderAudio();
+    },
+  };
+  muteButton.addEventListener('click', () => {
+    const current = audio.current();
+    audioAccess.change({ ...current, muted: !current.muted });
+  });
 
   // 操作說明：每列的鍵帽照目前的綁定畫（renderKeys），下面是進入按鍵設定的按鈕。
   const controlsPanel = element('div', 'hud-panel hud-controls', root);
@@ -271,6 +287,7 @@ export function createHud(
       settingsPanel.open();
     },
     () => keysText(controls.current().pause),
+    audioAccess,
   );
   const settingsPanel = createControlsPanel(ui, root, controls, renderTexts, syncPanels);
 
@@ -302,10 +319,21 @@ export function createHud(
     }
   }
 
+  /** 靜音鈕上的字是「按下去會做的事」，跟著靜音狀態與語言變；`data-muted` 是現在的狀態。 */
+  function renderAudio(): void {
+    const current = audio.current();
+    const label = t(muteLabelKey(current));
+    muteButton.textContent = label;
+    muteButton.setAttribute('aria-label', label);
+    muteButton.dataset.muted = String(current.muted);
+    pausePanel.refreshAudio();
+  }
+
   function renderTexts(): void {
     ui.refreshTexts();
     renderGear();
     renderKeys();
+    renderAudio();
     settingsPanel.refresh();
     if (shownView !== undefined) {
       cameraLabel.textContent = t(cameraViewLabelKey(shownView));

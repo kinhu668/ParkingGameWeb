@@ -215,6 +215,11 @@ body {
   background: var(--ui-panel-hover);
 }
 
+/* 快速靜音鈕：靜音中換個顏色，一眼看得出現在沒有聲音。 */
+#hud-mute[data-muted='true'] {
+  color: #ffd76a;
+}
+
 .hud-button:focus-visible,
 .panel-button:focus-visible,
 .level-card:focus-visible {
@@ -488,6 +493,57 @@ body {
 
 .panel-button:hover {
   background: rgb(255 255 255 / 0.18);
+}
+
+.panel-button:disabled {
+  background: rgb(255 255 255 / 0.08);
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* 暫停面板的音效列：標題、靜音鈕、「−」、音量讀數、「＋」排成一行。 */
+.panel-sound {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.panel-sound-title {
+  color: var(--ui-text-dim);
+  font-size: 16px;
+}
+
+.panel-button-step {
+  min-width: 44px;
+  padding-inline: 0;
+}
+
+.panel-sound-value {
+  min-width: 3.2em;
+  font-size: 18px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+/* 靜音中：音量還記著，讀數劃掉。 */
+.panel-sound-value[data-muted='true'] {
+  color: var(--ui-text-dim);
+  text-decoration: line-through;
+}
+
+/* 手機側邊的靜音開關會讓網頁沒有聲音：只在觸控裝置（沒有鍵盤提示）提醒。 */
+.panel-sound-hint {
+  display: none;
+  margin-top: 10px;
+  color: var(--ui-text-dim);
+  font-size: 14px;
+}
+
+#hud[data-keys='off'] .panel-sound-hint {
+  display: block;
 }
 
 .panel-button-primary {
