@@ -74,6 +74,8 @@ const LAMPS: readonly Lamp[] = [-1, 1].flatMap((side): Lamp[] => {
     { group, w: 0.5, h: 0.3, d: 0.08, x: side * 0.98, y: 3.29, z: -9.63, lens: RED, facing: 'front' },
     // 車尾上緣角落的紅燈。
     { group, w: 0.8, h: 0.45, d: 0.08, x: side * 2.6, y: 7.6, z: BOX_REAR + 0.02, lens: RED, facing: 'back' },
+    // 車尾角柱上、色帶高度的紅色尾燈：比上緣的燈低得多，從正後方近處也看得到。
+    { group, w: 0.55, h: 1, d: 0.08, x: side * 2.8, y: 3, z: BOX_REAR + 0.02, lens: RED, facing: 'back' },
     // 車廂側面上緣前角、後角的紅燈。
     { group, w: 0.08, h: 0.4, d: 0.8, x: side * (BOX_HALF + 0.02), y: 7.6, z: -3.9, lens: RED, facing: 'side' },
     { group, w: 0.08, h: 0.4, d: 0.8, x: side * (BOX_HALF + 0.02), y: 7.6, z: 8.9, lens: RED, facing: 'side' },
@@ -171,9 +173,9 @@ export function createAmbulanceGeometry(): BufferGeometry {
     box(6.3, 0.6, 0.5, 0, 1.3, -9.71, GREY),
     box(5.9, 0.4, 0.36, 0, 0.9, -9.68, TRIM),
     box(1, 0.45, 0.04, 0, 1.38, -9.98, PLATE),
-    // 車尾：橫過兩扇門的色帶、門縫、車牌、灰色的後踏板保險桿與止滑面。
-    box(BOX_HALF * 2, 0.75, 0.04, 0, 3.05, rearSkin, ORANGE),
-    box(BOX_HALF * 2, 0.1, 0.04, 0, 3.86, rearSkin, TEAL),
+    // 車尾：橫過兩扇門的色帶（兩端停在外側門縫，角柱留給尾燈座）、門縫、車牌、灰色的後踏板保險桿與止滑面。
+    box(4.76, 0.75, 0.04, 0, 3.05, rearSkin, ORANGE),
+    box(4.76, 0.1, 0.04, 0, 3.86, rearSkin, TEAL),
     box(0.06, 5.1, 0.07, 0, 1.6, 9.63, TRIM),
     box(4.76, 0.05, 0.07, 0, 6.7, 9.63, TRIM),
     box(4.76, 0.05, 0.07, 0, 1.6, 9.63, TRIM),
@@ -260,13 +262,13 @@ export function createAmbulanceGeometry(): BufferGeometry {
       box(0.07, 0.12, 0.28, boxSeam, 2.45, 1, GREY),
       box(0.07, 0.12, 0.28, boxSeam, 2.45, 7, GREY),
       ...ecgTrace(side),
-      // 車尾的門：外側門縫、車窗、扶手，還有尾燈柱（紅、橘、倒車燈）。
+      // 車尾的門：外側門縫、車窗、扶手；角柱下段的尾燈座：深色框，由上到下是紅色尾燈（在 LAMPS，會閃）、橘色方向燈、倒車燈。
       box(0.05, 5.15, 0.07, side * 2.36, 1.6, 9.63, TRIM),
       box(1.45, 1.6, 0.06, side * 1.3, 4.6, 9.61, GLASS),
       box(0.07, 1.3, 0.14, side * 0.3, 4.3, 9.67, GREY),
-      box(0.5, 0.6, 0.08, side * 2.8, 5.5, rearSkin, red),
-      box(0.5, 0.6, 0.08, side * 2.8, 4.85, rearSkin, amber),
-      box(0.5, 0.5, 0.08, side * 2.8, 4.3, rearSkin, 0xeeeade),
+      box(0.7, 2.34, 0.05, side * 2.8, 1.74, rearSkin, TRIM),
+      box(0.5, 0.5, 0.08, side * 2.8, 2.4, rearSkin, amber),
+      box(0.5, 0.5, 0.08, side * 2.8, 1.82, rearSkin, 0xeeeade),
       // 輪子：前輪單胎；後輪較寬、輪轂凸出（雙胎的樣子）。
       ...wheelParts(1.3, 0.8, side * 2.42, -7.2),
       ...wheelParts(1.3, 1.25, side * 2.55, 4.6),
