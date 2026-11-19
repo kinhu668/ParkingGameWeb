@@ -24,6 +24,24 @@ function decode(context: BaseAudioContext, data: ArrayBuffer): Promise<AudioBuff
 }
 
 /**
+ * 循環的接點不要「喀」一聲：循環的最後 seamRampS 秒加一條斜坡，最後一個取樣剛好接上循環的第一個取樣。
+ * 斜坡只有幾十毫秒、頻率很低，聽不出來。要在緩衝區交給音源之前做。
+ */
+function smoothSeam(buffer: AudioBuffer, startS: number, endS: number): void {
+  const first = Math.round(startS * buffer.sampleRate);
+  const last = Math.min(Math.round(endS * buffer.sampleRate), buffer.length) - 1;
+  const ramp = Math.round(MUSIC_SETTINGS.seamRampS * buffer.sampleRate);
+  for (let channel = 0; channel < buffer.numberOfChannels; channel += 1) {
+    const samples = buffer.getChannelData(channel);
+    const step = (samples[first] ?? 0) - (samples[last] ?? 0);
+    for (let offset = 0; offset < ramp; offset += 1) {
+      const at = last - offset;
+      samples[at] = (samples[at] ?? 0) + step * (1 - offset / ramp);
+    }
+  }
+}
+
+/**
  * @param fetchAudio 下載音檔（audioEngine.ts 的 AudioHost.fetchAudio）
  */
 export function createMusic(
@@ -59,6 +77,7 @@ export function createMusic(
 
   function start(buffer: AudioBuffer): void {
     const { startS, endS } = musicLoopS(track, buffer.duration);
+    smoothSeam(buffer, startS, endS);
     const source = context.createBufferSource();
     source.buffer = buffer;
     source.loop = true;
