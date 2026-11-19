@@ -58,6 +58,8 @@
   "audio.volumeUp": "Volume up",
   "audio.mute": "Mute",
   "audio.unmute": "Unmute",
+  "audio.musicOff": "Turn music off",
+  "audio.musicOn": "Turn music on",
   "audio.silentHint": "No sound? Check your phone's silent switch.",
   "controls.title": "Key Bindings",
   "controls.hint": "Click a key, then press the new key. Esc cancels. Use + to add another key, up to three per action.",

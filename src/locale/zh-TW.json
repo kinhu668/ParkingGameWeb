@@ -58,6 +58,8 @@
   "audio.volumeUp": "調高音量",
   "audio.mute": "靜音",
   "audio.unmute": "取消靜音",
+  "audio.musicOff": "關閉音樂",
+  "audio.musicOn": "開啟音樂",
   "audio.silentHint": "聽不到聲音？請檢查手機的靜音開關。",
   "controls.title": "按鍵設定",
   "controls.hint": "點一下按鍵，再按想換成的鍵；按 Esc 取消。按 ＋ 可以多加備用鍵，每個動作最多三個鍵。",

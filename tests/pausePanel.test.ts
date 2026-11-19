@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest';
 import { DEFAULT_AUDIO, MAX_VOLUME, type AudioSettings } from '../src/core/save';
 import en from '../src/locale/en.json';
 import zhTW from '../src/locale/zh-TW.json';
-import { VOLUME_STEP, formatVolume, muteLabelKey, volumeStepped } from '../src/ui/pausePanel';
+import { VOLUME_STEP, formatVolume, muteLabelKey, musicLabelKey, volumeStepped } from '../src/ui/pausePanel';
 
 describe('音量的「−」「＋」', () => {
   test('一次 10，從預設的 70 往上是 80、往下是 60', () => {
@@ -54,6 +54,15 @@ describe('靜音鈕與讀數', () => {
     expect(en['audio.unmute']).toBe('Unmute');
   });
 
+  test('音樂鈕寫的也是按下去會做的事：開著時是「關閉音樂」，關掉後是「開啟音樂」', () => {
+    expect(musicLabelKey(DEFAULT_AUDIO)).toBe('audio.musicOff');
+    expect(musicLabelKey({ ...DEFAULT_AUDIO, music: false })).toBe('audio.musicOn');
+    expect(zhTW['audio.musicOff']).toBe('關閉音樂');
+    expect(zhTW['audio.musicOn']).toBe('開啟音樂');
+    expect(en['audio.musicOff']).toBe('Turn music off');
+    expect(en['audio.musicOn']).toBe('Turn music on');
+  });
+
   test('讀數是百分比', () => {
     expect(formatVolume(DEFAULT_AUDIO)).toBe('70%');
     expect(formatVolume({ volume: 0, muted: false, music: true })).toBe('0%');
@@ -69,10 +78,12 @@ describe('音效的翻譯鍵', () => {
     'audio.volumeUp',
     'audio.mute',
     'audio.unmute',
+    'audio.musicOff',
+    'audio.musicOn',
     'audio.silentHint',
   ] as const;
 
-  test('七個鍵兩種語言都有、都不是空的，而且兩種語言的字不一樣', () => {
+  test('九個鍵兩種語言都有、都不是空的，而且兩種語言的字不一樣', () => {
     for (const key of KEYS) {
       expect(zhTW[key], key).toMatch(/\S/);
       expect(en[key], key).toMatch(/\S/);

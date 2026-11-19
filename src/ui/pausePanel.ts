@@ -1,4 +1,4 @@
-// 暫停面板（預設 Esc）：繼續／重來／關卡選擇／按鍵設定／音效（靜音、音量）。掛在 HUD 的 `#hud-pause` 裡，平常隱藏。
+// 暫停面板（預設 Esc）：繼續／重來／關卡選擇／按鍵設定／音效（靜音、音量、背景音樂）。掛在 HUD 的 `#hud-pause` 裡，平常隱藏。
 import { t, type TranslationKey } from '../core/i18n';
 import { MAX_VOLUME, type AudioSettings } from '../core/save';
 import { fillTemplate } from './controlsPanel';
@@ -24,6 +24,11 @@ export function volumeStepped(audio: AudioSettings, direction: -1 | 1): AudioSet
 /** 靜音鈕上的字：寫的是「按下去會做的事」（還沒靜音時是「靜音」）。 */
 export function muteLabelKey(audio: AudioSettings): TranslationKey {
   return audio.muted ? 'audio.unmute' : 'audio.mute';
+}
+
+/** 音樂鈕上的字：寫的是「按下去會做的事」（音樂開著時是「關閉音樂」）。 */
+export function musicLabelKey(audio: AudioSettings): TranslationKey {
+  return audio.music ? 'audio.musicOff' : 'audio.musicOn';
 }
 
 /** 音量的讀數，例如 `70%`。 */
@@ -87,6 +92,12 @@ export function createPausePanel(
   readout.id = 'pause-volume';
   readout.setAttribute('role', 'status');
   const up = stepButton('pause-volume-up', '＋', 1);
+  // 背景音樂的開關：自己一列（音效列在窄螢幕上已經排滿了）。靜音時一樣沒有音樂。
+  const music = ui.plainButton('pause-music', 'panel-button', ui.element('div', 'panel-sound', panel));
+  music.addEventListener('click', () => {
+    const current = audio.current();
+    audio.change({ ...current, music: !current.music });
+  });
   // 手機側邊的靜音開關會讓網頁沒有聲音：只在觸控裝置顯示（樣式看 `#hud[data-keys]`）。
   ui.translatedElement('div', 'panel-sound-hint', panel, 'audio.silentHint');
   ui.translatedElement('div', 'hud-status-hint', panel, 'pause.hint', (text) =>
@@ -109,6 +120,10 @@ export function createPausePanel(
       readout.textContent = formatVolume(current);
       readout.setAttribute('aria-label', `${t('audio.volume')} ${formatVolume(current)}`);
       readout.dataset.muted = String(current.muted);
+      const musicText = t(musicLabelKey(current));
+      music.textContent = musicText;
+      music.setAttribute('aria-label', musicText);
+      music.dataset.music = String(current.music);
     },
   };
 }
