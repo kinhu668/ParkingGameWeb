@@ -14,16 +14,16 @@ export const LENS = {
   head: { off: 0xf3efd9, lit: 0xfff4d6 },
   amber: { off: 0xf2a23a, lit: 0xffb02e },
   red: { off: 0xc2201c, lit: 0xff2a1f },
-};
+} as const;
 
 /** 警報時會亮的一對燈（左右對稱，英尺）：鏡片的寬、高、離中線的距離、底面高度、Z（負的在車頭、正的在車尾）。 */
 export interface LampPair {
-  w: number;
-  h: number;
-  x: number;
-  y: number;
-  z: number;
-  lens: { off: number; lit: number };
+  readonly w: number;
+  readonly h: number;
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  readonly lens: { readonly off: number; readonly lit: number };
 }
 
 // 包裹貨車警報時會亮的燈：頭燈、前方向燈、尾燈（紅）、後警示燈（橘）。倒車燈與示廓燈不閃。
